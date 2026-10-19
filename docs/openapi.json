@@ -1,0 +1,885 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "智能运输管理平台（STP）API",
+    "description": "整车发运业务全流程接口。包含平台业务接口（基础数据/调度/监控/结算/电子签）与外部系统模拟接口（CRM/WMS/狮桥物流/司机端，对应 PRD 系统交互协议）。\n\n**通用约定**：\n- 所有列表接口支持 `page`（默认1）/ `size`（默认10）分页，返回 `{ list, total, page, size }`\n- 业务校验失败返回 `{ \"message\": \"原因\" }` + 400/404/409 状态码\n- 任务状态机：PENDING待派单 → DISPATCHED已派单 → ACCEPTED已接单 → OUT_BOUND已出库/PICKED_UP已提车 → IN_TRANSIT在途 → ARRIVED已到达 → FINISHED已完结 / CANCELLED已取消\n- 编号规则：任务单号 FY+YYYYMMDD+4位序列（按日重置），运费单号 YF+YYYYMMDD+4位序列，承运商编码 CAR+3位序列",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "http://localhost:3000", "description": "本地后端（推荐：项目在本机运行时使用）" },
+    { "url": "https://preview.example.com", "description": "演示沙箱（替换为实际预览域名，前端服务器已代理 /api）" }
+  ],
+  "tags": [
+    { "name": "01 通用" },
+    { "name": "02 工作台" },
+    { "name": "03 承运商管理" },
+    { "name": "04 司机管理" },
+    { "name": "05 发运任务" },
+    { "name": "06 在途监控" },
+    { "name": "07 应付运费对账" },
+    { "name": "08 电子签台账" },
+    { "name": "09 外部接口·CRM" },
+    { "name": "10 外部接口·WMS" },
+    { "name": "11 外部接口·狮桥物流" },
+    { "name": "12 外部接口·司机端同步" }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["01 通用"],
+        "summary": "健康检查",
+        "responses": {
+          "200": {
+            "description": "服务状态",
+            "content": {
+              "application/json": {
+                "example": { "ok": true, "service": "tms-vehicle-shipping", "time": "2026-10-19T01:19:06.633Z" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "tags": ["02 工作台"],
+        "summary": "工作台统计",
+        "responses": {
+          "200": {
+            "description": "任务状态分布 / 承运商司机数 / 运费汇总",
+            "content": {
+              "application/json": {
+                "example": {
+                  "task": { "pending": 6, "dispatched": 2, "accepted": 1, "outBound": 1, "pickedUp": 0, "inTransit": 2, "arrived": 1, "finished": 2, "cancelled": 1, "total": 16 },
+                  "carriers": 4,
+                  "drivers": 7,
+                  "freightPending": { "count": 1, "amount": 9600 },
+                  "freightMonth": { "count": 3, "amount": 30600 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/carriers": {
+      "get": {
+        "tags": ["03 承运商管理"],
+        "summary": "承运商列表",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } },
+          { "name": "keyword", "in": "query", "schema": { "type": "string" }, "description": "名称/联系人/电话模糊查询" },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["COOPERATING", "DISABLED"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表 + 在册司机数",
+            "content": {
+              "application/json": {
+                "example": {
+                  "list": [{ "id": 1, "carrier_code": "CAR-001", "carrier_name": "狮桥物流股份有限公司", "contact_person": "李强", "contact_phone": "13812340001", "coop_routes": "合肥-华东 / 合肥-华中", "status": "COOPERATING", "driver_count": 3 }],
+                  "total": 4, "page": 1, "size": 10
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["03 承运商管理"],
+        "summary": "新增承运商",
+        "description": "编码系统自动生成（CAR+3位序列）；名称去重，重名返回 409",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["carrier_name", "contact_person", "contact_phone"],
+                "properties": {
+                  "carrier_name": { "type": "string", "description": "承运商名称（唯一）" },
+                  "contact_person": { "type": "string" },
+                  "contact_phone": { "type": "string" },
+                  "coop_routes": { "type": "string", "description": "合作线路" },
+                  "remark": { "type": "string" }
+                }
+              },
+              "example": { "carrier_name": "中储智运物流有限公司", "contact_person": "周敏", "contact_phone": "13955100011", "coop_routes": "合肥-华北 / 合肥-华东", "remark": "干线运力补充" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "新增成功",
+            "content": { "application/json": { "example": { "message": "新增成功", "data": { "id": 5, "carrier_code": "CAR-005", "carrier_name": "中储智运物流有限公司", "status": "COOPERATING" } } } }
+          },
+          "409": { "description": "名称已存在", "content": { "application/json": { "example": { "message": "承运商名称已存在，请勿重复添加" } } } }
+        }
+      }
+    },
+    "/api/carriers/{id}": {
+      "put": {
+        "tags": ["03 承运商管理"],
+        "summary": "编辑承运商",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["carrier_name", "contact_person", "contact_phone"] },
+              "example": { "carrier_name": "狮桥物流股份有限公司", "contact_person": "李强", "contact_phone": "13812340001", "coop_routes": "合肥-华东 / 合肥-华南", "remark": "" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "修改成功", "content": { "application/json": { "example": { "message": "修改成功", "data": {} } } } },
+          "404": { "description": "不存在", "content": { "application/json": { "example": { "message": "承运商不存在" } } } }
+        }
+      }
+    },
+    "/api/carriers/{id}/status": {
+      "put": {
+        "tags": ["03 承运商管理"],
+        "summary": "承运商启用/停用",
+        "description": "停用后不可被派单，不影响在途运单",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["status"], "properties": { "status": { "type": "string", "enum": ["COOPERATING", "DISABLED"] } } },
+              "example": { "status": "DISABLED" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "成功", "content": { "application/json": { "example": { "message": "已停用，该承运商不可被派单，在途运单不受影响" } } } }
+        }
+      }
+    },
+    "/api/drivers": {
+      "get": {
+        "tags": ["04 司机管理"],
+        "summary": "司机列表",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } },
+          { "name": "keyword", "in": "query", "schema": { "type": "string" }, "description": "姓名/手机号/身份证号" },
+          { "name": "carrier_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["ENABLED", "DISABLED"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表",
+            "content": {
+              "application/json": {
+                "example": {
+                  "list": [{ "id": 2, "name": "刘志强", "phone": "13712340002", "id_card": "340102198503150023", "vehicle_type": "重型半挂牵引车", "carrier_id": 1, "carrier_name": "狮桥物流股份有限公司", "status": "ENABLED" }],
+                  "total": 8, "page": 1, "size": 10
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["04 司机管理"],
+        "summary": "新增司机",
+        "description": "身份证号去重（409）；姓名与身份证号创建后不可修改",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "phone", "id_card", "license_valid_from", "license_valid_to"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "id_card": { "type": "string", "description": "唯一" },
+                  "license_no": { "type": "string" },
+                  "vehicle_type": { "type": "string", "description": "准驾车型/车辆类型" },
+                  "license_valid_from": { "type": "string", "format": "date" },
+                  "license_valid_to": { "type": "string", "format": "date" },
+                  "carrier_id": { "type": "integer" },
+                  "remark": { "type": "string" }
+                }
+              },
+              "example": { "name": "孙卫东", "phone": "13655100009", "id_card": "340103199208120011", "license_no": "B2-340103199208", "vehicle_type": "重型半挂牵引车", "license_valid_from": "2024-06-01", "license_valid_to": "2030-06-01", "carrier_id": 1, "remark": "" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "新增成功", "content": { "application/json": { "example": { "message": "新增成功", "data": {} } } } },
+          "409": { "description": "身份证号已存在", "content": { "application/json": { "example": { "message": "该身份证号已存在，请勿重复添加" } } } }
+        }
+      }
+    },
+    "/api/drivers/options": {
+      "get": {
+        "tags": ["04 司机管理"],
+        "summary": "可选司机（启用中）",
+        "description": "承运商接单时分配司机用，可按承运商过滤",
+        "parameters": [{ "name": "carrier_id", "in": "query", "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "启用中司机", "content": { "application/json": { "example": { "list": [{ "id": 2, "name": "刘志强", "phone": "13712340002", "vehicle_type": "重型半挂牵引车", "carrier_id": 1, "carrier_name": "狮桥物流股份有限公司" }] } } } }
+        }
+      }
+    },
+    "/api/drivers/{id}": {
+      "put": {
+        "tags": ["04 司机管理"],
+        "summary": "编辑司机",
+        "description": "姓名与身份证号不可修改",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["phone", "license_valid_from", "license_valid_to"] },
+              "example": { "phone": "13712340002", "license_no": "B2-340102198503", "vehicle_type": "重型半挂牵引车", "license_valid_from": "2024-06-01", "license_valid_to": "2030-06-01", "carrier_id": 1, "remark": "" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "成功", "content": { "application/json": { "example": { "message": "修改成功（姓名与身份证号不可修改）", "data": {} } } } }
+        }
+      }
+    },
+    "/api/drivers/{id}/status": {
+      "put": {
+        "tags": ["04 司机管理"],
+        "summary": "司机启用/停用",
+        "description": "停用后不可再分派任务，不影响在途运单",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["status"], "properties": { "status": { "type": "string", "enum": ["ENABLED", "DISABLED"] } } },
+              "example": { "status": "DISABLED" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "成功", "content": { "application/json": { "example": { "message": "已停用，该司机不可再被分派任务，在途运单不受影响" } } } }
+        }
+      }
+    },
+    "/api/ship-tasks": {
+      "get": {
+        "tags": ["05 发运任务"],
+        "summary": "任务列表（多条件筛选）",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } },
+          { "name": "task_no", "in": "query", "schema": { "type": "string" }, "description": "任务单号" },
+          { "name": "apply_no", "in": "query", "schema": { "type": "string" }, "description": "CRM发运申请号" },
+          { "name": "vin", "in": "query", "schema": { "type": "string" } },
+          { "name": "customer_name", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "DISPATCHED", "ACCEPTED", "OUT_BOUND", "PICKED_UP", "IN_TRANSIT", "ARRIVED", "FINISHED", "CANCELLED"] } },
+          { "name": "carrier_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "start_date", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "创建日期起" },
+          { "name": "end_date", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "创建日期止" }
+        ],
+        "responses": {
+          "200": { "description": "列表", "content": { "application/json": { "example": { "list": [{ "id": 17, "task_no": "FY202610190001", "apply_no": "APITEST1792372773155", "customer_name": "联测物流科技（上海）有限公司", "vin": "LZXBCGH49P1D10099", "vehicle_model": "星辰重卡 H9-460", "origin": "合肥市包河区上海路88号", "dest_region": "上海市", "plan_freight": 9800, "status": "PENDING", "carrier_name": null, "driver_name": null }], "total": 18, "page": 1, "size": 10 } } } }
+        }
+      }
+    },
+    "/api/ship-tasks/{id}": {
+      "get": {
+        "tags": ["05 发运任务"],
+        "summary": "任务详情",
+        "description": "返回 task + events（节点时间轴）+ trackings（位置记录）+ esigns（电子签）",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": {
+            "description": "详情",
+            "content": {
+              "application/json": {
+                "example": {
+                  "task": { "id": 17, "task_no": "FY202610190001", "status": "IN_TRANSIT", "carrier_name": "狮桥物流股份有限公司", "driver_name": "刘志强" },
+                  "events": [{ "id": 130, "node": "APPLY", "node_name": "CRM下发发运申请", "detail": "接收CRM发运申请 APITEST1792372773155，计划运费 9800.00 元", "operator": "CRM系统", "created_at": "2026-10-19 09:19:19" }],
+                  "trackings": [{ "transport_no": "SQ202610190017", "position_desc": "南京市 G42沪蓉高速", "speed": 71, "reported_at": "2026-10-19 09:19:20" }],
+                  "esigns": [{ "esign_id": "ES-APITEST-1792372773000", "sign_type": "物流电子签", "status": "SIGNED" }]
+                }
+              }
+            }
+          },
+          "404": { "description": "不存在", "content": { "application/json": { "example": { "message": "任务不存在" } } } }
+        }
+      }
+    },
+    "/api/ship-tasks/{id}/dispatch": {
+      "post": {
+        "tags": ["05 发运任务"],
+        "summary": "派单",
+        "description": "仅 PENDING 可派单；承运商须为合作中（COOPERATING）",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "任务ID" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["carrier_id"] },
+              "example": { "carrier_id": 1 }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "派单成功", "content": { "application/json": { "example": { "message": "派单成功，已同步狮桥发运系统", "carrier_name": "狮桥物流股份有限公司" } } } },
+          "400": { "description": "状态不允许", "content": { "application/json": { "example": { "message": "仅\"待派单\"状态的任务可以派单" } } } }
+        }
+      }
+    },
+    "/api/ship-tasks/dispatch-batch": {
+      "post": {
+        "tags": ["05 发运任务"],
+        "summary": "批量派单",
+        "description": "仅 PENDING 任务会被派单，非待派单自动跳过",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["task_ids", "carrier_id"], "properties": { "task_ids": { "type": "array", "items": { "type": "integer" } }, "carrier_id": { "type": "integer" } } },
+              "example": { "task_ids": [21, 22, 23], "carrier_id": 1 }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "批量结果", "content": { "application/json": { "example": { "message": "批量派单完成：成功 3 单" } } } }
+        }
+      }
+    },
+    "/api/ship-tasks/{id}/cancel-dispatch": {
+      "post": {
+        "tags": ["05 发运任务"],
+        "summary": "取消派单",
+        "description": "仅 DISPATCHED 可取消，任务回到待派单；取消原因枚举：承运商无法履约/调度调整/其他",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": { "reason": { "type": "string", "enum": ["承运商无法履约", "调度调整", "其他"] } } },
+              "example": { "reason": "调度调整" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "取消成功", "content": { "application/json": { "example": { "message": "已取消派单，任务回到待派单，并同步三方物流系统" } } } }
+        }
+      }
+    },
+    "/api/ship-tasks/{id}/reassign": {
+      "post": {
+        "tags": ["05 发运任务"],
+        "summary": "改派",
+        "description": "仅 DISPATCHED 可改派，新承运商须与原承运商不同",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["carrier_id"] },
+              "example": { "carrier_id": 2 }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "改派成功", "content": { "application/json": { "example": { "message": "改派成功：XX物流有限公司，原派单已同步三方物流系统取消" } } } }
+        }
+      }
+    },
+    "/api/tracking": {
+      "get": {
+        "tags": ["06 在途监控"],
+        "summary": "在途运单列表",
+        "description": "仅展示未完结运单（PENDING~ARRIVED），在途优先排序，附带最新位置",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } },
+          { "name": "task_no", "in": "query", "schema": { "type": "string" } },
+          { "name": "transport_no", "in": "query", "schema": { "type": "string" }, "description": "运输单号" }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表（含最新位置）",
+            "content": {
+              "application/json": {
+                "example": {
+                  "list": [{ "id": 17, "task_no": "FY202610190001", "status": "IN_TRANSIT", "vin": "LZXBCGH49P1D10099", "vehicle_model": "星辰重卡 H9-460", "carrier_name": "狮桥物流股份有限公司", "driver_name": "刘志强", "driver_phone": "13712340002", "transport_no": "SQ202610190017", "position_desc": "南京市 G42沪蓉高速", "speed": 71, "reported_at": "2026-10-19 09:19:20" }],
+                  "total": 13, "page": 1, "size": 10
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tracking/{taskId}": {
+      "get": {
+        "tags": ["06 在途监控"],
+        "summary": "运单详情（运输节点 + 位置轨迹）",
+        "parameters": [{ "name": "taskId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": {
+            "description": "详情",
+            "content": {
+              "application/json": {
+                "example": {
+                  "task": { "id": 17, "task_no": "FY202610190001", "status": "IN_TRANSIT", "driver_name": "刘志强" },
+                  "events": [],
+                  "trackings": []
+                }
+              }
+            }
+          },
+          "404": { "description": "不存在", "content": { "application/json": { "example": { "message": "运单不存在" } } } }
+        }
+      }
+    },
+    "/api/freight-orders": {
+      "get": {
+        "tags": ["07 应付运费对账"],
+        "summary": "运费单列表（含合计金额）",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } },
+          { "name": "freight_no", "in": "query", "schema": { "type": "string" }, "description": "运费单号" },
+          { "name": "task_no", "in": "query", "schema": { "type": "string" } },
+          { "name": "carrier_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING_RECON", "RECONED"] }, "description": "待对账/已对账" }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表 + 筛选结果合计",
+            "content": {
+              "application/json": {
+                "example": {
+                  "list": [{ "id": 4, "freight_no": "YF202610190001", "task_no": "FY202610190001", "carrier_name": "狮桥物流股份有限公司", "driver_name": "刘志强", "plan_freight": 9800, "actual_freight": 9600, "status": "RECONED" }],
+                  "total": 4, "amount": 40200, "page": 1, "size": 10
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/freight-orders/{id}": {
+      "get": {
+        "tags": ["07 应付运费对账"],
+        "summary": "运费单详情 + 修改记录",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": {
+            "description": "详情",
+            "content": {
+              "application/json": {
+                "example": {
+                  "order": { "id": 4, "freight_no": "YF202610190001", "actual_freight": 9600, "status": "RECONED" },
+                  "adjustments": [{ "id": 1, "before_amount": 9800, "after_amount": 9600, "reason": "高速通行费核减", "operator": "联测管理员", "created_at": "2026-10-19 09:19:21" }]
+                }
+              }
+            }
+          },
+          "404": { "description": "不存在", "content": { "application/json": { "example": { "message": "运费单不存在" } } } }
+        }
+      }
+    },
+    "/api/freight-orders/{id}/adjust": {
+      "post": {
+        "tags": ["07 应付运费对账"],
+        "summary": "修改运费",
+        "description": "记录修改前后金额与原因（留痕），前后金额一致会被拒绝",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["amount", "reason"], "properties": { "amount": { "type": "number" }, "reason": { "type": "string" }, "operator": { "type": "string" } } },
+              "example": { "amount": 9600, "reason": "高速通行费核减", "operator": "系统管理员" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "修改成功", "content": { "application/json": { "example": { "message": "运费修改成功，已记录修改日志" } } } }
+        }
+      }
+    },
+    "/api/freight-orders/{id}/recon": {
+      "post": {
+        "tags": ["07 应付运费对账"],
+        "summary": "确认对账",
+        "description": "仅 PENDING_RECON（待对账）可确认",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "成功", "content": { "application/json": { "example": { "message": "确认对账成功" } } } },
+          "400": { "description": "状态不允许", "content": { "application/json": { "example": { "message": "仅\"待对账\"状态的运费单可确认对账" } } } }
+        }
+      }
+    },
+    "/api/esigns": {
+      "get": {
+        "tags": ["08 电子签台账"],
+        "summary": "电子签台账列表",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } },
+          { "name": "esign_id", "in": "query", "schema": { "type": "string" }, "description": "电子签ID" },
+          { "name": "task_no", "in": "query", "schema": { "type": "string" } },
+          { "name": "sign_type", "in": "query", "schema": { "type": "string", "enum": ["物流电子签", "客户电子签"] } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "SIGNED", "CANCELLED"] }, "description": "待签署/已签署/已取消" }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表（含任务状态）",
+            "content": {
+              "application/json": {
+                "example": {
+                  "list": [{ "id": 8, "esign_id": "ES202610190001", "task_no": "FY202610190001", "vin": "LZXBCGH49P1D10099", "sign_type": "物流电子签", "trigger_node": "CRM发运申请审批通过", "signer": "狮桥物流股份有限公司", "initiated_at": "2026-10-19 09:19:20", "status": "SIGNED", "signed_at": "2026-10-19 09:19:20", "task_status": "FINISHED" }],
+                  "total": 8, "page": 1, "size": 10
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mock/crm/apply": {
+      "post": {
+        "tags": ["09 外部接口·CRM"],
+        "summary": "接口1 · CRM 下发发运申请",
+        "description": "模拟 CRM 审批通过后下发发运申请，STP 自动生成任务单号（FY+YYYYMMDD+4位序列）并进入待派单状态。发运申请号幂等，重复下发返回 409。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["apply_no", "customer_name", "vin", "dest_address", "plan_freight"],
+                "properties": {
+                  "apply_no": { "type": "string", "description": "CRM 发运申请号（唯一）" },
+                  "customer_name": { "type": "string" },
+                  "region": { "type": "string", "description": "所属大区" },
+                  "sales_name": { "type": "string" },
+                  "sales_phone": { "type": "string" },
+                  "vin": { "type": "string", "description": "车架号" },
+                  "vehicle_model": { "type": "string", "description": "车型" },
+                  "engine_config": { "type": "string", "description": "发动机配置" },
+                  "cab_type": { "type": "string", "description": "驾驶室类型" },
+                  "order_no": { "type": "string", "description": "订单号" },
+                  "report_no": { "type": "string", "description": "报告号" },
+                  "factory": { "type": "string", "description": "工厂" },
+                  "storage_location": { "type": "string", "description": "库位" },
+                  "origin": { "type": "string", "description": "起始地（默认合肥）" },
+                  "dest_region": { "type": "string", "description": "目的区域" },
+                  "dest_address": { "type": "string", "description": "交付地址" },
+                  "receiver_phone": { "type": "string", "description": "收车人电话" },
+                  "ship_mode": { "type": "string", "enum": ["送车", "自提"], "default": "送车" },
+                  "plan_freight": { "type": "number", "description": "计划运费（元）" }
+                }
+              },
+              "example": {
+                "apply_no": "CRM-20261019-0001",
+                "customer_name": "联测物流科技（上海）有限公司",
+                "region": "华东大区",
+                "sales_name": "王建国",
+                "sales_phone": "13801380000",
+                "vin": "LZXBCGH49P1D10099",
+                "vehicle_model": "星辰重卡 H9-460",
+                "engine_config": "WP13.460E50",
+                "cab_type": "G7豪华版",
+                "order_no": "SO-20261019-001",
+                "report_no": "RPT-20261019-001",
+                "factory": "合肥卡车工厂",
+                "storage_location": "P13库",
+                "origin": "合肥市包河区上海路88号",
+                "dest_region": "上海市",
+                "dest_address": "上海市青浦区华新镇嘉松中路4588号",
+                "receiver_phone": "13916012345",
+                "ship_mode": "送车",
+                "plan_freight": 9800
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "任务已生成",
+            "content": { "application/json": { "example": { "message": "发运申请同步成功，已生成待派单任务", "data": { "id": 17, "task_no": "FY202610190001", "status": "PENDING" } } } }
+          },
+          "409": { "description": "重复下发", "content": { "application/json": { "example": { "message": "发运申请号 CRM-20261019-0001 已同步过，请勿重复下发" } } } }
+        }
+      }
+    },
+    "/api/mock/crm/cancel-query": {
+      "get": {
+        "tags": ["09 外部接口·CRM"],
+        "summary": "接口3 · CRM 取消前查询",
+        "description": "CRM 发起取消前先查询是否可取消：仅待派单可取消；已派单需先在 STP 取消派单；已出库不可取消",
+        "parameters": [{ "name": "apply_no", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "可否取消 + 提示", "content": { "application/json": { "example": { "task_no": "FY202610190002", "status": "PENDING", "status_cn": "待派单", "cancellable": true, "message": "当前为待派单状态，可以取消" } } } },
+          "404": { "description": "任务不存在", "content": { "application/json": { "example": { "message": "未找到申请号 xxx 对应的任务" } } } }
+        }
+      }
+    },
+    "/api/mock/crm/cancel": {
+      "post": {
+        "tags": ["09 外部接口·CRM"],
+        "summary": "接口6 · CRM 同步取消发运申请",
+        "description": "仅待派单状态可取消；已派单需先在 STP 取消派单；已接单需承运商先取消接单；已出库不可取消。取消后关联的待签署电子签同步取消。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["apply_no"], "properties": { "apply_no": { "type": "string" }, "cancel_reason": { "type": "string" } } },
+              "example": { "apply_no": "CRM-20261019-0002", "cancel_reason": "客户订单变更" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "取消成功", "content": { "application/json": { "example": { "message": "任务已取消，关联电子签已同步取消" } } } },
+          "409": { "description": "状态不允许", "content": { "application/json": { "example": { "message": "车辆已出库发运，不可取消" } } } }
+        }
+      }
+    },
+    "/api/mock/esign/init": {
+      "post": {
+        "tags": ["09 外部接口·CRM"],
+        "summary": "接口2 · CRM 同步物流电子签发起",
+        "description": "按 VIN + 发运申请号匹配任务，电子签 ID 唯一（重复返回 409），状态置为待签署",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["esign_id", "vin", "apply_no"],
+                "properties": {
+                  "esign_id": { "type": "string", "description": "电子签ID（唯一）" },
+                  "vin": { "type": "string" },
+                  "apply_no": { "type": "string" },
+                  "sign_type": { "type": "string", "enum": ["物流电子签", "客户电子签"], "default": "物流电子签" },
+                  "trigger_node": { "type": "string", "description": "触发节点" },
+                  "signer": { "type": "string", "description": "签署方" }
+                }
+              },
+              "example": { "esign_id": "ES-20261019-0001", "vin": "LZXBCGH49P1D10099", "apply_no": "CRM-20261019-0001", "sign_type": "物流电子签", "trigger_node": "CRM发运申请审批通过", "signer": "狮桥物流股份有限公司" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "发起成功", "content": { "application/json": { "example": { "message": "电子签已发起，状态：待签署", "esign_id": "ES-20261019-0001" } } } },
+          "404": { "description": "匹配不到任务", "content": { "application/json": { "example": { "message": "未匹配到对应任务，请核对 VIN 与发运申请号" } } } },
+          "409": { "description": "电子签ID已存在", "content": { "application/json": { "example": { "message": "电子签ID ES-20261019-0001 已存在" } } } }
+        }
+      }
+    },
+    "/api/mock/wms/outbound": {
+      "post": {
+        "tags": ["10 外部接口·WMS"],
+        "summary": "接口13 · WMS 出库回传",
+        "description": "承运商已接单且未发运时回传出库，任务状态置为已出库",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["task_no"] },
+              "example": { "task_no": "FY202610190001" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "出库成功", "content": { "application/json": { "example": { "message": "出库回传成功，任务状态：已出库" } } } },
+          "400": { "description": "状态不允许", "content": { "application/json": { "example": { "message": "当前状态不可出库（需承运商已接单且未在途）" } } } }
+        }
+      }
+    },
+    "/api/mock/shiqiao/accept": {
+      "post": {
+        "tags": ["11 外部接口·狮桥物流"],
+        "summary": "接口12 · 狮桥接单（分配司机）",
+        "description": "承运商确认接单并分配司机，任务状态：已派单 → 已接单。司机须启用中且归属当前承运商；plan_pickup_date 缺省为明天。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["task_no", "driver_id"], "properties": { "task_no": { "type": "string" }, "driver_id": { "type": "integer" }, "plan_pickup_date": { "type": "string", "format": "date" } } },
+              "example": { "task_no": "FY202610190001", "driver_id": 2, "plan_pickup_date": "2026-10-20" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "接单成功", "content": { "application/json": { "example": { "message": "接单成功，已分配司机：刘志强" } } } },
+          "400": { "description": "状态/司机校验失败", "content": { "application/json": { "example": { "message": "仅\"已派单\"状态可接单，当前状态不可接单" } } } }
+        }
+      }
+    },
+    "/api/mock/shiqiao/pickup": {
+      "post": {
+        "tags": ["11 外部接口·狮桥物流"],
+        "summary": "接口12 · 司机提车发运",
+        "description": "司机确认提车并发运（同步提车照片），已接单/已出库状态可提车",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["task_no"] },
+              "example": { "task_no": "FY202610190001" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "提车成功", "content": { "application/json": { "example": { "message": "提车成功，任务状态：已提车" } } } }
+        }
+      }
+    },
+    "/api/mock/shiqiao/track": {
+      "post": {
+        "tags": ["11 外部接口·狮桥物流"],
+        "summary": "接口15 · 狮桥位置回传（每小时）",
+        "description": "运输中每小时回传位置；首次回传后任务自动置为在途。运输单号规则 SQ+YYYYMMDD+任务ID。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["task_no"],
+                "properties": { "task_no": { "type": "string" }, "position_desc": { "type": "string", "description": "位置描述，如：南京市 G42沪蓉高速" }, "lng": { "type": "number" }, "lat": { "type": "number" }, "speed": { "type": "number", "description": "时速 km/h" } }
+              },
+              "example": { "task_no": "FY202610190001", "position_desc": "南京市 G42沪蓉高速", "lng": 118.80, "lat": 32.06, "speed": 71 }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "回传成功", "content": { "application/json": { "example": { "message": "位置回传成功", "transport_no": "SQ202610190017" } } } },
+          "400": { "description": "状态不允许", "content": { "application/json": { "example": { "message": "当前状态不可回传位置（车辆尚未提车或已到达）" } } } }
+        }
+      }
+    },
+    "/api/mock/shiqiao/arrive": {
+      "post": {
+        "tags": ["11 外部接口·狮桥物流"],
+        "summary": "司机到达（回填运费/里程）",
+        "description": "司机确认到达，回填实际运费与里程，自动生成运费单（待对账）。actual_freight 缺省取计划运费。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["task_no"], "properties": { "task_no": { "type": "string" }, "actual_freight": { "type": "number" }, "mileage": { "type": "number", "description": "里程（公里）" } } },
+              "example": { "task_no": "FY202610190001", "actual_freight": 9800, "mileage": 468 }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "到达成功", "content": { "application/json": { "example": { "message": "到达确认成功，已生成运费单，等待客户交接完结" } } } }
+        }
+      }
+    },
+    "/api/mock/shiqiao/finish": {
+      "post": {
+        "tags": ["11 外部接口·狮桥物流"],
+        "summary": "司机完结",
+        "description": "客户交接完成，任务置为已完结",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["task_no"] },
+              "example": { "task_no": "FY202610190001" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "完结成功", "content": { "application/json": { "example": { "message": "任务已完结" } } } }
+        }
+      }
+    },
+    "/api/mock/esign/status": {
+      "post": {
+        "tags": ["11 外部接口·狮桥物流"],
+        "summary": "接口14 · 狮桥电子签状态回传",
+        "description": "回传签署完成或取消，仅待签署状态可变更",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["esign_id", "status"], "properties": { "esign_id": { "type": "string" }, "status": { "type": "string", "enum": ["SIGNED", "CANCELLED"] } } },
+              "example": { "esign_id": "ES-20261019-0001", "status": "SIGNED" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "成功", "content": { "application/json": { "example": { "message": "签署完成" } } } },
+          "400": { "description": "状态不允许", "content": { "application/json": { "example": { "message": "该电子签当前状态为【SIGNED】，不可变更" } } } }
+        }
+      }
+    },
+    "/api/mock/esign/sign-task": {
+      "post": {
+        "tags": ["11 外部接口·狮桥物流"],
+        "summary": "辅助 · 按任务号签收电子签",
+        "description": "演示辅助：签收指定任务当前待签署的最新电子签（等价于对该任务调用接口14 SIGNED）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["task_no"] },
+              "example": { "task_no": "FY202610190001" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "签收成功", "content": { "application/json": { "example": { "message": "电子签 ES-20261019-0001 签署完成" } } } },
+          "400": { "description": "无待签署电子签", "content": { "application/json": { "example": { "message": "该任务无待签署的电子签" } } } }
+        }
+      }
+    },
+    "/api/mock/driver/sync": {
+      "post": {
+        "tags": ["12 外部接口·司机端同步"],
+        "summary": "接口10 · 司机信息三方同步",
+        "description": "按身份证号幂等：不存在则新增（ENABLED），存在则更新姓名/电话/驾驶证/归属承运商",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "phone", "id_card"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "id_card": { "type": "string", "description": "身份证号（幂等键）" },
+                  "license_no": { "type": "string" },
+                  "vehicle_type": { "type": "string" },
+                  "license_valid_from": { "type": "string", "format": "date" },
+                  "license_valid_to": { "type": "string", "format": "date" },
+                  "carrier_id": { "type": "integer" }
+                }
+              },
+              "example": { "name": "赵联测", "phone": "13705519999", "id_card": "340102199001011234", "license_no": "B2-3401021990", "vehicle_type": "重型半挂牵引车", "license_valid_from": "2024-06-01", "license_valid_to": "2030-06-01", "carrier_id": 1 }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "新增", "content": { "application/json": { "example": { "message": "司机已同步新增", "id": 9 } } } },
+          "200": { "description": "更新（幂等命中）", "content": { "application/json": { "example": { "message": "司机信息已更新", "id": 2 } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BizError": {
+        "type": "object",
+        "properties": { "message": { "type": "string" } },
+        "description": "统一业务错误"
+      }
+    }
+  }
+}

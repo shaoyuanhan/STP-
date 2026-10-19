@@ -1,0 +1,16 @@
+{
+  "name": "tms-vehicle-shipping-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "智能运输管理平台 (Smart Transport Management Platform, STP) - 后端 API (Node.js + Express + MySQL)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "mysql2": "^3.11.5"
+  }
+}
