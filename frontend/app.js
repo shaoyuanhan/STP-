@@ -110,7 +110,7 @@ function confirmModal(text) {
 
 // 电话校验（与后端 helpers.assertPhone 规则一致）
 const MOBILE_RE = /^1[3-9]\d{9}$/;
-const PHONE_RE = /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8}(-\d{1,4})?|400-?\d{3,4}-?\d{3,4})$/;
+const PHONE_RE = /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8}(-\d{1,4})?|[48]00-?\d{3,4}-?\d{3,4}|\d{7,8})$/;
 const INTL_RE = /^\+\d{1,3}\s[0-9\-() ]{4,18}$/;
 function checkPhone(value, label, mobileOnly = false) {
   const v = String(value || '').trim();
@@ -122,7 +122,7 @@ function checkPhone(value, label, mobileOnly = false) {
   const ok = mobileOnly ? MOBILE_RE.test(v) : PHONE_RE.test(v);
   return ok ? null : (mobileOnly
     ? `${label}格式不正确，请输入 11 位大陆手机号（1[3-9] 开头）；国外号码请先选择国家/地区`
-    : `${label}格式不正确，国内支持 11 位手机号、座机（如 0551-1234567）或 400 号码；国外号码请先选择国家/地区`);
+    : `${label}格式不正确，国内支持 11 位手机号、座机（含区号如 0551-1234567 或 7-8 位直拨号）或 400/800 号码；国外号码请先选择国家/地区`);
 }
 
 // 国家/地区区号表（支持拼音/英文/区号搜索）
@@ -184,7 +184,7 @@ function phoneVal(ccId, numId) {
   return cc === '+86' ? num : `${cc} ${num}`;
 }
 
-/** 国家选择器交互：搜索过滤 + 占位符联动 */
+/** 国家选择器交互：搜索过滤 + 占位符联动（输入后按 Enter 自动选中第一个匹配项） */
 function bindCountrySelect(ccId, numId) {
   const btn = $('#' + ccId);
   const panel = $('#' + ccId + '-panel');
@@ -195,13 +195,16 @@ function bindCountrySelect(ccId, numId) {
     const c = countryByCc(btn.dataset.cc);
     btn.innerHTML = `<span class="cc-inner">${c.flag} ${esc(c.name)} <b>${c.cc}</b></span><span class="cc-caret">▾</span>`;
   };
-  const renderList = () => {
+  const visibleCountries = () => {
     const kw = search.value.trim().toLowerCase();
-    const arr = PHONE_COUNTRIES.filter((c) => !kw
+    return PHONE_COUNTRIES.filter((c) => !kw
       || c.name.includes(search.value.trim())
       || c.py.includes(kw)
       || c.en.includes(kw)
       || c.cc.replace('+', '').startsWith(kw));
+  };
+  const renderList = () => {
+    const arr = visibleCountries();
     list.innerHTML = arr.map((c) => `
       <div class="cc-opt ${c.cc === btn.dataset.cc ? 'on' : ''}" data-cc="${c.cc}">
         <span>${c.flag} ${esc(c.name)}</span><b>${c.cc}</b>
@@ -211,7 +214,6 @@ function bindCountrySelect(ccId, numId) {
       renderBtn();
       hidePanel();
       search.value = '';
-      renderList();
       if (numInput) numInput.placeholder = phonePh(btn.dataset.cc);
     });
   };
@@ -233,6 +235,18 @@ function bindCountrySelect(ccId, numId) {
     }
   };
   search.oninput = renderList;
+  search.onkeydown = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = visibleCountries()[0];
+    if (first) {
+      btn.dataset.cc = first.cc;
+      renderBtn();
+      hidePanel();
+      search.value = '';
+      if (numInput) { numInput.placeholder = phonePh(btn.dataset.cc); numInput.focus(); }
+    }
+  };
   renderBtn();
   if (numInput) numInput.placeholder = phonePh(btn.dataset.cc);
 }
@@ -507,7 +521,7 @@ async function carrierForm(id) {
       ${F.select('cf-code', '承运商编码', `<option>${id ? esc(r.carrier_code) : '系统自动生成'}</option>`, { tip: '编码规则：CAR-三位序列号，系统自动生成不可修改' })}
       ${F.text('cf-contact', '联系人', { req: 1, value: r.contact_person })}
       ${F.country('cf-phone-cc', '国家/地区', { cc: ps.cc })}
-      ${F.text('cf-phone', '联系电话', { req: 1, value: ps.num, max: 20, tip: '国内支持 11 位手机号、座机（如 0551-1234567）或 400 号码；国外号码选择国家/地区后按示例输入' })}
+      ${F.text('cf-phone', '联系电话', { req: 1, value: ps.num, max: 20, tip: '国内支持 11 位手机号、座机（含区号如 0551-1234567 或 7-8 位直拨号）或 400/800 号码；国外号码选择国家/地区后按示例输入' })}
       ${F.text('cf-routes', '合作路线', { value: r.coop_routes || '', ph: '如：合肥—华东、合肥—华南' })}
       ${F.textarea('cf-remark', '备注', { value: r.remark || '' })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button>
