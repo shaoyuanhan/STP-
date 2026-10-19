@@ -659,6 +659,7 @@ async function pageTasks(view) {
     };
   };
 
+  let currentList = [];
   const reload = async () => {
     const f = taskState.filters;
     const q = `?page=${taskState.page}&size=${taskState.size}` + Object.entries(f)
@@ -712,7 +713,9 @@ async function pageTasks(view) {
   $('#tk-dispatch', view).onclick = async () => {
     const ids = checkedIds();
     if (!ids.length) return toast('请先勾选需要派单的任务', false);
-    dispatchBatchForm(ids, carriersList);
+    const tasks = currentList.filter((t) => ids.includes(t.id));
+    if (!tasks.length) return toast('所选任务不在当前页，请重新勾选', false);
+    dispatchBatchForm(tasks, carriersList);
   };
   $('#mk-run', view).onclick = async () => {
     const op = fv('mk-op');
@@ -723,39 +726,64 @@ async function pageTasks(view) {
   await reload();
 }
 
-/** 派单 / 改派表单 */
+/** 派单 / 改派表单：展示线路参考价（CRM计划运费，只读）+ 派单备注 */
 async function dispatchForm(taskId, isReassign = false) {
-  const carriers = (await api('/carriers?status=COOPERATING&size=100')).list;
+  const [carriers, detail] = await Promise.all([
+    api('/carriers?status=COOPERATING&size=100'),
+    api(`/ship-tasks/${taskId}`),
+  ]);
+  const t = detail.task;
   const m = openModal({
-    title: isReassign ? '改派承运商' : '派单',
+    title: `${isReassign ? '改派' : '派单'} · ${t.task_no}`,
     body: `
       <div class="form-tip" style="margin:0 0 12px">派单后同步至三方物流系统（狮桥发运系统），由承运商确认接单并分配司机</div>
-      ${F.select('dp-carrier', '承运商', carriers.map((c) => `<option value="${c.id}">${esc(c.carrier_name)}（${esc(c.coop_routes || '不限线路')}）</option>`).join(''), { req: 1, tip: '仅可选择合作中的承运商；已停用的承运商不可被派单' })}`,
+      ${F.text('dp-price', '线路参考价（元）', { value: money(t.plan_freight), dis: 1, tip: '取自 CRM 同步的计划运费，不可修改' })}
+      ${F.select('dp-carrier', '承运商', carriers.list.filter((c) => !(isReassign && t.carrier_id === c.id)).map((c) => `<option value="${c.id}">${esc(c.carrier_name)}（${esc(c.coop_routes || '不限线路')}）</option>`).join(''), { req: 1, tip: '仅可选择合作中的承运商；已停用的承运商不可被派单' })}
+      ${F.textarea('dp-remark', '派单备注', { ph: '选填，调度派单说明（如：加急发运、限高架车辆注意）', value: t.dispatch_remark || '' })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button>
            <button class="btn btn-primary" id="dp-ok">确认${isReassign ? '改派' : '派单'}</button>`,
   });
   $('#dp-ok', m.el).onclick = async () => {
     try {
       const carrier_id = Number(fv('dp-carrier'));
+      const body = { carrier_id, remark: fv('dp-remark') };
       const d = isReassign
-        ? await api(`/ship-tasks/${taskId}/reassign`, { method: 'POST', body: { carrier_id } })
-        : await api(`/ship-tasks/${taskId}/dispatch`, { method: 'POST', body: { carrier_id } });
+        ? await api(`/ship-tasks/${taskId}/reassign`, { method: 'POST', body })
+        : await api(`/ship-tasks/${taskId}/dispatch`, { method: 'POST', body });
       m.close(); toast(d.message); pageTasks($('#view'));
     } catch (e) { toast(e.message, false); }
   };
 }
 
-/** 批量派单 */
-function dispatchBatchForm(ids, carriersList) {
+/** 批量派单：任务清单 + 参考价合计 + 批量备注 */
+function dispatchBatchForm(tasks, carriersList) {
+  const total = tasks.reduce((s, t) => s + (Number(t.plan_freight) || 0), 0);
   const m = openModal({
-    title: `批量派单（${ids.length} 单）`,
-    body: F.select('bp-carrier', '承运商', carriersList.map((c) => `<option value="${c.id}">${esc(c.carrier_name)}</option>`).join(''), { req: 1 }),
+    title: `批量派单（${tasks.length} 单）`,
+    wide: true,
+    body: `
+      <div class="table-scroll" style="margin:0 0 12px"><table>
+        <thead><tr><th>任务单号</th><th>客户名称</th><th>VIN</th><th style="text-align:right">线路参考价</th></tr></thead>
+        <tbody>${tasks.map((t) => `<tr>
+          <td>${esc(t.task_no)}</td>
+          <td><span class="ellipsis" title="${esc(t.customer_name)}">${esc(t.customer_name)}</span></td>
+          <td>${esc(t.vin)}</td>
+          <td style="text-align:right">¥${money(t.plan_freight)}</td>
+        </tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="3" style="text-align:right;font-weight:600">参考价合计（${tasks.length} 单）</td>
+          <td style="text-align:right;font-weight:700;color:var(--primary)">¥${money(total)}</td></tr></tfoot>
+      </table></div>
+      ${F.select('bp-carrier', '承运商', carriersList.map((c) => `<option value="${c.id}">${esc(c.carrier_name)}</option>`).join(''), { req: 1, tip: '批量派单仅对待派单任务生效，非待派单自动跳过' })}
+      ${F.textarea('bp-remark', '批量派单备注', { ph: '选填，将写入所选任务的派单备注（如：同线路拼载发运）' })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button>
            <button class="btn btn-primary" id="bp-ok">确认派单</button>`,
   });
   $('#bp-ok', m.el).onclick = async () => {
     try {
-      const d = await api('/ship-tasks/dispatch-batch', { method: 'POST', body: { task_ids: ids, carrier_id: Number(fv('bp-carrier')) } });
+      const d = await api('/ship-tasks/dispatch-batch', {
+        method: 'POST',
+        body: { task_ids: tasks.map((t) => t.id), carrier_id: Number(fv('bp-carrier')), remark: fv('bp-remark') },
+      });
       m.close(); toast(d.message); pageTasks($('#view'));
     } catch (e) { toast(e.message, false); }
   };
@@ -816,6 +844,7 @@ async function openTaskDetail(id) {
         ['承运商', t.carrier_name ? `${esc(t.carrier_name)}（${esc(t.carrier_code)}）` : '<span class="muted">待派单</span>'],
         ['司机', t.driver_name ? esc(t.driver_name) : '<span class="muted">承运商接单后分配</span>'],
         ['司机电话', empty(t.driver_phone)], ['预计提车日期', fmtD(t.plan_pickup_date)],
+        ['派单备注', empty(t.dispatch_remark), 1],
       ])}
       <div class="sec-title">运输执行（时间轴）</div>
       <div class="timeline" style="padding:6px 2px 0">
@@ -904,13 +933,13 @@ async function execMockBatch(op, ids, ext) {
   const opDef = {
   crm_cancel: ['crm/cancel', (t, e) => ({ apply_no: t.apply_no, cancel_reason: 'CRM发起取消' })],
   esign_init: ['esign/init', (t, e) => ({ esign_id: e.esign_id, vin: t.vin, apply_no: t.apply_no })],
-  esign_sign: ['esign/sign-task', (t) => ({ task_no: t.task_no })],
-  accept: ['shiqiao/accept', (t, e) => ({ task_no: t.task_no, driver_id: e.driver_id, plan_pickup_date: e.plan_pickup_date })],
-  outbound: ['wms/outbound', (t) => ({ task_no: t.task_no })],
-  pickup: ['shiqiao/pickup', (t) => ({ task_no: t.task_no })],
-  track: ['shiqiao/track', (t, e) => ({ task_no: t.task_no, position_desc: e.position_desc, speed: e.speed })],
-  arrive: ['shiqiao/arrive', (t, e) => ({ task_no: t.task_no, actual_freight: e.actual_freight, mileage: e.mileage })],
-  finish: ['shiqiao/finish', (t) => ({ task_no: t.task_no })],
+  esign_sign: ['esign/sign-task', (t) => ({ apply_no: t.apply_no, task_no: t.task_no })],
+  accept: ['shiqiao/accept', (t, e) => ({ apply_no: t.apply_no, task_no: t.task_no, driver_id: e.driver_id, plan_pickup_date: e.plan_pickup_date })],
+  outbound: ['wms/outbound', (t) => ({ apply_no: t.apply_no, task_no: t.task_no })],
+  pickup: ['shiqiao/pickup', (t) => ({ apply_no: t.apply_no, task_no: t.task_no })],
+  track: ['shiqiao/track', (t, e) => ({ apply_no: t.apply_no, task_no: t.task_no, position_desc: e.position_desc, speed: e.speed })],
+  arrive: ['shiqiao/arrive', (t, e) => ({ apply_no: t.apply_no, task_no: t.task_no, actual_freight: e.actual_freight, mileage: e.mileage })],
+  finish: ['shiqiao/finish', (t) => ({ apply_no: t.apply_no, task_no: t.task_no })],
 }[op];
   if (!opDef) return toast('操作类型未实现: ' + op, false);
 

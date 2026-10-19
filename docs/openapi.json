@@ -316,14 +316,14 @@
       "post": {
         "tags": ["05 发运任务"],
         "summary": "派单",
-        "description": "仅 PENDING 可派单；承运商须为合作中（COOPERATING）",
+        "description": "仅 PENDING 可派单；承运商须为合作中（COOPERATING）。线路参考价取自 CRM 计划运费，派单时不可修改；remark 为调度派单备注，随任务保存并在时间轴留痕",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" }, "description": "任务ID" }],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "required": ["carrier_id"] },
-              "example": { "carrier_id": 1 }
+              "schema": { "type": "object", "required": ["carrier_id"], "properties": { "carrier_id": { "type": "integer" }, "remark": { "type": "string", "maxLength": 500, "description": "派单备注（调度说明，选填）" } } },
+              "example": { "carrier_id": 1, "remark": "加急发运，优先安排" }
             }
           }
         },
@@ -376,14 +376,14 @@
       "post": {
         "tags": ["05 发运任务"],
         "summary": "改派",
-        "description": "仅 DISPATCHED 可改派，新承运商须与原承运商不同",
+        "description": "仅 DISPATCHED 可改派，新承运商须与原承运商不同；remark 传入则覆盖原派单备注，不传则保留",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "required": ["carrier_id"] },
-              "example": { "carrier_id": 2 }
+              "schema": { "type": "object", "required": ["carrier_id"], "properties": { "carrier_id": { "type": "integer" }, "remark": { "type": "string", "maxLength": 500, "description": "改派后的派单备注（选填）" } } },
+              "example": { "carrier_id": 2, "remark": "原承运商运力不足，改派" }
             }
           }
         },
@@ -702,13 +702,13 @@
       "post": {
         "tags": ["11 外部接口·狮桥物流"],
         "summary": "接口12 · 狮桥接单（分配司机）",
-        "description": "承运商确认接单并分配司机，任务状态：已派单 → 已接单。司机须启用中且归属当前承运商；plan_pickup_date 缺省为明天。",
+        "description": "承运商确认接单并分配司机，任务状态：已派单 → 已接单。按发运申请号 apply_no 定位任务（推荐），兼容传任务单号 task_no。司机须启用中且归属当前承运商；plan_pickup_date 缺省为明天。",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "required": ["task_no", "driver_id"], "properties": { "task_no": { "type": "string" }, "driver_id": { "type": "integer" }, "plan_pickup_date": { "type": "string", "format": "date" } } },
-              "example": { "task_no": "FY202610190001", "driver_id": 2, "plan_pickup_date": "2026-10-20" }
+              "schema": { "type": "object", "required": ["apply_no", "driver_id"], "properties": { "apply_no": { "type": "string", "description": "CRM 发运申请号（推荐定位键）" }, "task_no": { "type": "string", "description": "任务单号（兼容参数，apply_no 未传时生效）" }, "driver_id": { "type": "integer" }, "plan_pickup_date": { "type": "string", "format": "date" } } },
+              "example": { "apply_no": "CRM-20261019-0001", "task_no": "FY202610190001", "driver_id": 2, "plan_pickup_date": "2026-10-20" }
             }
           }
         },
@@ -722,13 +722,13 @@
       "post": {
         "tags": ["11 外部接口·狮桥物流"],
         "summary": "接口12 · 司机提车发运",
-        "description": "司机确认提车并发运（同步提车照片），已接单/已出库状态可提车",
+        "description": "司机确认提车并发运（同步提车照片），已接单/已出库状态可提车。按发运申请号 apply_no 定位任务（推荐），兼容传任务单号 task_no",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "required": ["task_no"] },
-              "example": { "task_no": "FY202610190001" }
+              "schema": { "type": "object", "required": ["apply_no"], "properties": { "apply_no": { "type": "string", "description": "CRM 发运申请号（推荐定位键）" }, "task_no": { "type": "string", "description": "任务单号（兼容参数，apply_no 未传时生效）" } } },
+              "example": { "apply_no": "CRM-20261019-0001", "task_no": "FY202610190001" }
             }
           }
         },
@@ -741,17 +741,17 @@
       "post": {
         "tags": ["11 外部接口·狮桥物流"],
         "summary": "接口15 · 狮桥位置回传（每小时）",
-        "description": "运输中每小时回传位置；首次回传后任务自动置为在途。运输单号规则 SQ+YYYYMMDD+任务ID。",
+        "description": "运输中每小时回传位置；首次回传后任务自动置为在途。按发运申请号 apply_no 定位任务（推荐），兼容传任务单号 task_no。运输单号规则 SQ+YYYYMMDD+任务ID。",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["task_no"],
-                "properties": { "task_no": { "type": "string" }, "position_desc": { "type": "string", "description": "位置描述，如：南京市 G42沪蓉高速" }, "lng": { "type": "number" }, "lat": { "type": "number" }, "speed": { "type": "number", "description": "时速 km/h" } }
+                "required": ["apply_no"],
+                "properties": { "apply_no": { "type": "string", "description": "CRM 发运申请号（推荐定位键）" }, "task_no": { "type": "string", "description": "任务单号（兼容参数，apply_no 未传时生效）" }, "position_desc": { "type": "string", "description": "位置描述，如：南京市 G42沪蓉高速" }, "lng": { "type": "number" }, "lat": { "type": "number" }, "speed": { "type": "number", "description": "时速 km/h" } }
               },
-              "example": { "task_no": "FY202610190001", "position_desc": "南京市 G42沪蓉高速", "lng": 118.80, "lat": 32.06, "speed": 71 }
+              "example": { "apply_no": "CRM-20261019-0001", "task_no": "FY202610190001", "position_desc": "南京市 G42沪蓉高速", "lng": 118.80, "lat": 32.06, "speed": 71 }
             }
           }
         },
@@ -784,13 +784,13 @@
       "post": {
         "tags": ["11 外部接口·狮桥物流"],
         "summary": "司机完结",
-        "description": "客户交接完成，任务置为已完结",
+        "description": "客户交接完成，任务置为已完结。按发运申请号 apply_no 定位任务（推荐），兼容传任务单号 task_no",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "required": ["task_no"] },
-              "example": { "task_no": "FY202610190001" }
+              "schema": { "type": "object", "required": ["apply_no"], "properties": { "apply_no": { "type": "string", "description": "CRM 发运申请号（推荐定位键）" }, "task_no": { "type": "string", "description": "任务单号（兼容参数，apply_no 未传时生效）" } } },
+              "example": { "apply_no": "CRM-20261019-0001", "task_no": "FY202610190001" }
             }
           }
         },
@@ -822,14 +822,14 @@
     "/api/mock/esign/sign-task": {
       "post": {
         "tags": ["11 外部接口·狮桥物流"],
-        "summary": "辅助 · 按任务号签收电子签",
-        "description": "演示辅助：签收指定任务当前待签署的最新电子签（等价于对该任务调用接口14 SIGNED）",
+        "summary": "辅助 · 按发运申请号签收电子签",
+        "description": "演示辅助：签收指定任务当前待签署的最新电子签（等价于对该任务调用接口14 SIGNED）。按发运申请号 apply_no 定位任务（推荐），兼容传任务单号 task_no",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "required": ["task_no"] },
-              "example": { "task_no": "FY202610190001" }
+              "schema": { "type": "object", "required": ["apply_no"], "properties": { "apply_no": { "type": "string", "description": "CRM 发运申请号（推荐定位键）" }, "task_no": { "type": "string", "description": "任务单号（兼容参数，apply_no 未传时生效）" } } },
+              "example": { "apply_no": "CRM-20261019-0001", "task_no": "FY202610190001" }
             }
           }
         },

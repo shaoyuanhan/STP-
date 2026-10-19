@@ -19,10 +19,19 @@ const { BizError, wrap, localDateStr, assertPhone } = require('../helpers');
 
 const router = Router();
 
-async function getTaskByNo(taskNo) {
-  const [task] = await query('SELECT * FROM ship_tasks WHERE task_no = ?', [taskNo]);
-  if (!task) throw new BizError(`任务 ${taskNo} 不存在`, 404);
-  return task;
+/** 外部系统回调统一定位任务：优先发运申请号 apply_no（CRM 业务主键），兼容任务单号 task_no */
+async function getTaskByRef({ apply_no, task_no }) {
+  if (apply_no?.trim()) {
+    const [task] = await query('SELECT * FROM ship_tasks WHERE apply_no = ?', [apply_no.trim()]);
+    if (!task) throw new BizError(`发运申请号 ${apply_no} 对应的任务不存在`, 404);
+    return task;
+  }
+  if (task_no?.trim()) {
+    const [task] = await query('SELECT * FROM ship_tasks WHERE task_no = ?', [task_no.trim()]);
+    if (!task) throw new BizError(`任务单号 ${task_no} 对应的任务不存在`, 404);
+    return task;
+  }
+  throw new BizError('请提供发运申请号 apply_no（推荐）或任务单号 task_no');
 }
 
 async function addEvent(taskId, node, nodeName, detail, operator, conn) {
@@ -160,9 +169,8 @@ router.post('/esign/status', wrap(async (req, res) => {
 
 // ============ 电子签按任务签收（演示辅助：签收任务当前待签署的电子签） ============
 router.post('/esign/sign-task', wrap(async (req, res) => {
-  const { task_no } = req.body;
-  const [task] = await query('SELECT * FROM ship_tasks WHERE task_no = ?', [task_no]);
-  if (!task) throw new BizError('任务不存在', 404);
+  const { apply_no, task_no } = req.body;
+  const task = await getTaskByRef({ apply_no, task_no });
   const [rec] = await query(
     "SELECT * FROM esign_records WHERE task_id = ? AND status = 'PENDING' ORDER BY id DESC LIMIT 1",
     [task.id]
@@ -195,8 +203,8 @@ router.post('/driver/sync', wrap(async (req, res) => {
 
 // ============ 接口12: 狮桥接单（分配司机 + 预计提车日期） ============
 router.post('/shiqiao/accept', wrap(async (req, res) => {
-  const { task_no, driver_id, plan_pickup_date } = req.body;
-  const task = await getTaskByNo(task_no);
+  const { apply_no, task_no, driver_id, plan_pickup_date } = req.body;
+  const task = await getTaskByRef({ apply_no, task_no });
   assertStatus(task, ['DISPATCHED'], '仅"已派单"状态可接单，当前状态不可接单');
   if (!driver_id) throw new BizError('请分配司机');
 
@@ -220,8 +228,8 @@ router.post('/shiqiao/accept', wrap(async (req, res) => {
 
 // ============ 接口13: WMS出库回传 ============
 router.post('/wms/outbound', wrap(async (req, res) => {
-  const { task_no } = req.body;
-  const task = await getTaskByNo(task_no);
+  const { apply_no, task_no } = req.body;
+  const task = await getTaskByRef({ apply_no, task_no });
   assertStatus(task, ['ACCEPTED', 'PICKED_UP'], '当前状态不可出库（需承运商已接单且未在途）');
 
   await query("UPDATE ship_tasks SET status = 'OUT_BOUND', out_bound_at = NOW() WHERE id = ?", [task.id]);
@@ -231,8 +239,8 @@ router.post('/wms/outbound', wrap(async (req, res) => {
 
 // ============ 接口12: 司机提车发运 ============
 router.post('/shiqiao/pickup', wrap(async (req, res) => {
-  const { task_no } = req.body;
-  const task = await getTaskByNo(task_no);
+  const { apply_no, task_no } = req.body;
+  const task = await getTaskByRef({ apply_no, task_no });
   assertStatus(task, ['ACCEPTED', 'OUT_BOUND'], '当前状态不可提车（需已接单/已出库）');
 
   const [driver] = await query('SELECT * FROM drivers WHERE id = ?', [task.driver_id]);
@@ -244,8 +252,8 @@ router.post('/shiqiao/pickup', wrap(async (req, res) => {
 
 // ============ 接口15: 狮桥位置回传（首次回传自动置为在途） ============
 router.post('/shiqiao/track', wrap(async (req, res) => {
-  const { task_no, position_desc, lng, lat, speed } = req.body;
-  const task = await getTaskByNo(task_no);
+  const { apply_no, task_no, position_desc, lng, lat, speed } = req.body;
+  const task = await getTaskByRef({ apply_no, task_no });
   assertStatus(task, ['OUT_BOUND', 'PICKED_UP', 'IN_TRANSIT'], '当前状态不可回传位置（车辆尚未提车或已到达）');
 
   const transport_no = `SQ${localDateStr().replace(/-/g, '')}${String(task.id).padStart(4, '0')}`;
@@ -262,8 +270,8 @@ router.post('/shiqiao/track', wrap(async (req, res) => {
 
 // ============ 司机到达（回填实际运费/里程，生成运费单） ============
 router.post('/shiqiao/arrive', wrap(async (req, res) => {
-  const { task_no, actual_freight, mileage } = req.body;
-  const task = await getTaskByNo(task_no);
+  const { apply_no, task_no, actual_freight, mileage } = req.body;
+  const task = await getTaskByRef({ apply_no, task_no });
   assertStatus(task, ['IN_TRANSIT', 'PICKED_UP', 'OUT_BOUND'], '当前状态不可到达（车辆尚未发运）');
 
   const amt = actual_freight === undefined || actual_freight === null || actual_freight === ''
@@ -295,8 +303,8 @@ router.post('/shiqiao/arrive', wrap(async (req, res) => {
 
 // ============ 司机完结 ============
 router.post('/shiqiao/finish', wrap(async (req, res) => {
-  const { task_no } = req.body;
-  const task = await getTaskByNo(task_no);
+  const { apply_no, task_no } = req.body;
+  const task = await getTaskByRef({ apply_no, task_no });
   assertStatus(task, ['ARRIVED'], '仅"已到达"状态可完结');
 
   await query("UPDATE ship_tasks SET status = 'FINISHED', finish_at = NOW() WHERE id = ?", [task.id]);

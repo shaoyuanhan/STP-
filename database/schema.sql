@@ -81,6 +81,7 @@ CREATE TABLE ship_tasks (
   mileage       DECIMAL(10,1) DEFAULT NULL COMMENT '运输里程(公里)',
   carrier_id    BIGINT       DEFAULT NULL COMMENT '承运商(派单后)',
   driver_id     BIGINT       DEFAULT NULL COMMENT '司机(承运商接单后返回)',
+  dispatch_remark VARCHAR(500) DEFAULT NULL COMMENT '派单备注(调度派单时填写)',
   status        VARCHAR(20)  NOT NULL DEFAULT 'PENDING' COMMENT '任务状态',
   plan_pickup_date DATE      DEFAULT NULL COMMENT '计划提车日期(接单后返回)',
   out_bound_at  DATETIME     DEFAULT NULL COMMENT '出库日期(WMS出库回传)',
