@@ -197,7 +197,7 @@ python3 -m http.server 8000
 - **校验升级**：正则 → libphonenumber 规则（isValidNumber），自动识别号码类型（手机 MOBILE / 座机 FIXED_LINE / 400 SHARED_COST / 800 TOLL_FREE）；司机手机号字段强制手机类型
 - **存储统一 E.164**（如 +8613812345678）：无 + 前缀的入参按中国号码归一化，兼容旧接口调用；存量 46 条数据已迁移（脚本 `backend/scripts/migrate-phones.js`），seed.sql 同步
 - **展示格式化**：表格/详情中 +8613xxxxxxxxx 显示为 138 0013 8000
-- **规则变化**：座机需含区号（无区号的 7-8 位直拨号在 E.164 体系下无法定位归属地，不再接受）
+- **规则变化**：座机为「区号+8 位号码」（如 0551-63612345；无区号直拨号在 E.164 体系下无法定位归属地，不再接受）；前端校验使用 isValidNumberPrecise 严格模式（v29 的 isValidNumber 为宽松位数校验，会放行 7 位座机等无效号，已弃用）
 - 前端依赖本地化到 `frontend/vendor/intl-tel-input/`（无 CDN、无构建工具）
 
 ### V1.1.2（2026-10-19）电话字段升级为「国家/地区 + 号码」两段式

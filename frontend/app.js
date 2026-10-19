@@ -129,17 +129,23 @@ function initPhoneInput(id, value = '') {
   return { iti, input };
 }
 
-/** 提交前校验：返回错误消息或 null；mobileOnly 要求手机号 */
+/** 提交前校验：返回错误消息或 null；mobileOnly 要求手机号。
+ *  注意用 isValidNumberPrecise（libphonenumber 严格规则，与后端一致），
+ *  isValidNumber 是宽松校验（仅查位数），会放行 7 位座机这类无效号 */
 function phoneCheck(w, label, { required = true, mobileOnly = false } = {}) {
   const raw = w.input.value.trim();
   if (!raw) return required ? `${label}必填` : null;
   const num = w.iti.getNumber();
-  if (!num || !w.iti.isValidNumber()) {
-    return `${label}格式不正确，请检查国家/地区与号码`;
+  if (!num || !w.iti.isValidNumberPrecise()) {
+    const err = w.iti.getValidationError();
+    if (err === 'TOO_SHORT' || err === 'TOO_LONG' || err === 'INVALID_LENGTH') {
+      return `${label}位数不正确，请核对（国内手机 11 位；座机为区号+8 位号码，如 0551-63612345）`;
+    }
+    return `${label}格式不正确：国内支持手机（11 位）、座机（区号+8 位，如 0551-63612345）、400/800 号码；国外号码点击国旗切换国家后输入`;
   }
   if (mobileOnly) {
     const t = w.iti.getNumberType();
-    if (t !== 'MOBILE' && t !== 'FIXED_LINE_OR_MOBILE') return '座机/热线号码不可用，请填写手机号';
+    if (t && t !== 'MOBILE' && t !== 'FIXED_LINE_OR_MOBILE') return '座机/热线号码不可用，请填写手机号';
   }
   return null;
 }
@@ -417,7 +423,7 @@ async function carrierForm(id) {
       ${F.text('cf-name', '承运商名称', { req: 1, value: r.carrier_name })}
       ${F.select('cf-code', '承运商编码', `<option>${id ? esc(r.carrier_code) : '系统自动生成'}</option>`, { tip: '编码规则：CAR-三位序列号，系统自动生成不可修改' })}
       ${F.text('cf-contact', '联系人', { req: 1, value: r.contact_person })}
-      ${F.intlPhone('cf-phone', '联系电话', { req: 1, tip: '默认中国 +86，支持手机/座机/400；点击国旗可切换国家并按当地格式输入' })}
+      ${F.intlPhone('cf-phone', '联系电话', { req: 1, tip: '默认中国 +86：手机 11 位；座机为区号+8 位号码（如 0551-63612345）；400/800 十位。点击国旗可切换国家' })}
       ${F.text('cf-routes', '合作路线', { value: r.coop_routes || '', ph: '如：合肥—华东、合肥—华南' })}
       ${F.textarea('cf-remark', '备注', { value: r.remark || '' })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button>

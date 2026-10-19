@@ -51,7 +51,7 @@ function assertPhone(value, { label = '联系电话', mobileOnly = false, requir
   if (v.length > 25) throw new BizError(`${label}长度不正确`);
   const p = v.startsWith('+') ? parsePhone(v) : parsePhone(v, 'CN');
   if (!p || !p.isValid()) {
-    throw new BizError(`${label}格式不正确：国内支持手机号、座机（需含区号，如 0551-1234567）、400/800 号码；国外号码需带国家区号（如 +1 202-555-0123）`);
+    throw new BizError(`${label}格式不正确：国内支持手机号（11 位）、座机（区号+8 位号码，如 0551-63612345）、400/800 号码（10 位）；国外号码需带国家区号（如 +1 202-555-0123）`);
   }
   if (mobileOnly) {
     const t = p.getType();
