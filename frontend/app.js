@@ -671,7 +671,9 @@ async function pageTasks(view) {
         <thead><tr>
           <th style="width:34px"><input type="checkbox" class="ck" id="tk-all"></th>
           <th>任务单号</th><th>发运申请号</th><th>客户名称</th><th>VIN</th><th>车型</th>
-          <th>线路</th><th>计划运费</th><th>承运商</th><th>司机</th><th>状态</th><th>创建日期</th><th style="width:150px">操作</th>
+          <th>发运地点</th><th>交付地址</th><th>承运商/司机</th>
+          <th>计划提车日期</th><th>出库日期</th><th>发运时间</th><th>到达日期</th>
+          <th>状态</th><th>创建日期</th><th style="width:150px">操作</th>
         </tr></thead>
         <tbody>${d.list.map((r) => `
           <tr data-id="${r.id}">
@@ -681,10 +683,15 @@ async function pageTasks(view) {
             <td><span class="ellipsis" title="${esc(r.customer_name)}">${esc(r.customer_name)}</span></td>
             <td>${esc(r.vin)}</td>
             <td>${empty(r.vehicle_model)}</td>
-            <td><span class="ellipsis" title="${esc(r.origin)}→${esc(r.dest_address)}">${esc((r.dest_region || '').slice(0, 3) || '-')}线</span></td>
-            <td>¥${money(r.plan_freight)}</td>
-            <td>${r.carrier_name ? `<span class="ellipsis" title="${esc(r.carrier_name)}">${esc(r.carrier_name)}</span>` : '<span class="muted">-</span>'}</td>
-            <td>${r.driver_name ? esc(r.driver_name) : '<span class="muted">-</span>'}</td>
+            <td><span class="ellipsis" title="${esc(r.origin)}">${esc(r.origin)}</span></td>
+            <td><span class="ellipsis" title="${esc(r.dest_address)}">${esc(r.dest_address)}</span></td>
+            <td>${r.carrier_name
+              ? `<span class="ellipsis" title="${esc(r.carrier_name)}${r.driver_name ? ' / ' + esc(r.driver_name) : ''}">${esc(r.carrier_name)}${r.driver_name ? ' / ' + esc(r.driver_name) : ''}</span>`
+              : '<span class="muted">-</span>'}</td>
+            <td>${fmtD(r.plan_pickup_date) === '—' ? '<span class="muted">-</span>' : fmtD(r.plan_pickup_date)}</td>
+            <td>${r.out_bound_at ? fmtDT(r.out_bound_at) : '<span class="muted">-</span>'}</td>
+            <td>${r.ship_at ? fmtDT(r.ship_at) : '<span class="muted">-</span>'}</td>
+            <td>${r.arrive_at ? fmtDT(r.arrive_at) : '<span class="muted">-</span>'}</td>
             <td>${taskTag(r.status)}</td>
             <td>${fmtDT(r.created_at)}</td>
             <td class="actions">
@@ -692,7 +699,7 @@ async function pageTasks(view) {
               ${r.status === 'DISPATCHED' ? `<a class="link" onclick="cancelDispatchForm(${r.id})">取消派单</a><a class="link" onclick="dispatchForm(${r.id}, true)">改派</a>` : ''}
               <a class="link" onclick="openTaskDetail(${r.id})">详情</a>
             </td>
-          </tr>`).join('') || `<tr><td colspan="13" class="empty-row">暂无数据</td></tr>`}</tbody>
+          </tr>`).join('') || `<tr><td colspan="16" class="empty-row">暂无数据</td></tr>`}</tbody>
       </table>`;
     $('#tk-pager', view).innerHTML = pagerHtml(d.total, taskState.page, taskState.size);
     bindPager($('#tk-pager', view), taskState, reload);
@@ -823,27 +830,33 @@ async function openTaskDetail(id) {
         ['任务单号', esc(t.task_no)], ['任务状态', taskTag(t.status)], ['发运申请号', esc(t.apply_no)],
         ['客户名称', esc(t.customer_name)], ['大区', empty(t.region)], ['销售人员', empty(t.sales_name)],
         ['销售电话', empty(t.sales_phone) === '—' ? '—' : esc(fmtPhone(t.sales_phone))], ['创建人', esc(t.created_by)], ['创建日期', fmtDT(t.created_at)],
+        ['备注', empty(t.remark), 1],
       ])}
       <div class="sec-title">车辆信息</div>
       ${desc([
-        ['VIN', esc(t.vin)], ['车型', empty(t.vehicle_model)], ['发动机配置', empty(t.engine_config)],
-        ['驾驶室类型', empty(t.cab_type)], ['订单号', empty(t.order_no)], ['报单号', empty(t.report_no)],
-        ['生产工厂', empty(t.factory)], ['存放地点', empty(t.storage_location)],
+        ['VIN', esc(t.vin)], ['订单号', empty(t.order_no)], ['报单号', empty(t.report_no)],
+        ['车型', empty(t.vehicle_model)], ['发动机配置', empty(t.engine_config)], ['驾驶室类型', empty(t.cab_type)],
+        ['计划运费', '¥' + money(t.plan_freight)],
+        ['实际运费', t.actual_freight !== null ? '¥' + money(t.actual_freight) : '<span class="muted">到达后回填</span>'],
+        ['生产工厂', empty(t.factory)], ['存放地点', empty(t.storage_location)], ['发运地点', esc(t.origin)],
       ])}
       <div class="sec-title">发运信息</div>
       ${desc([
-        ['发运方式', esc(t.ship_mode)], ['计划运费', '¥' + money(t.plan_freight)],
-        ['实际运费', t.actual_freight !== null ? '¥' + money(t.actual_freight) : '<span class="muted">到达后回填</span>'],
-        ['运输里程', t.mileage ? t.mileage + ' 公里' : '<span class="muted">-</span>'],
-        ['发运地点', esc(t.origin)], ['交付地区', empty(t.dest_region)],
+        ['发运方式', esc(t.ship_mode)],
+        ['交付地区', empty(t.dest_region)],
         ['交付地址', esc(t.dest_address), 1], ['接车人电话', empty(t.receiver_phone) === '—' ? '—' : esc(fmtPhone(t.receiver_phone))],
+        ['计划提车日期', fmtD(t.plan_pickup_date)],
+        ['出库日期', t.out_bound_at ? fmtDT(t.out_bound_at) : '<span class="muted">WMS出库后返回</span>'],
+        ['发运时间', t.ship_at ? fmtDT(t.ship_at) : '<span class="muted">司机提车后返回</span>'],
+        ['到达时间', t.arrive_at ? fmtDT(t.arrive_at) : '<span class="muted">司机到达后返回</span>'],
+        ['运输里程', t.mileage ? t.mileage + ' 公里' : '<span class="muted">-</span>'],
       ])}
       ${t.cancel_reason ? `<div class="sec-title">取消信息</div>${desc([['取消原因', esc(t.cancel_reason), 1]])}` : ''}
       <div class="sec-title">承运信息</div>
       ${desc([
         ['承运商', t.carrier_name ? `${esc(t.carrier_name)}（${esc(t.carrier_code)}）` : '<span class="muted">待派单</span>'],
         ['司机', t.driver_name ? esc(t.driver_name) : '<span class="muted">承运商接单后分配</span>'],
-        ['司机电话', empty(t.driver_phone)], ['预计提车日期', fmtD(t.plan_pickup_date)],
+        ['司机电话', empty(t.driver_phone)],
         ['派单备注', empty(t.dispatch_remark), 1],
       ])}
       <div class="sec-title">运输执行（时间轴）</div>
@@ -979,7 +992,8 @@ function crmApplyForm() {
       ${F.text('ca-dest', '交付地址', { req: 1, ph: '省市区详细地址' })}
       ${F.text('ca-freight', '计划运费(元)', { req: 1, ph: '线路参考价', value: '9800' })}
       ${F.text('ca-sales', '销售人员', { ph: '销售姓名' })}
-      ${F.intlPhone('ca-phone', '销售电话', { tip: '选填；默认中国 +86，点击国旗可切换国家' })}`,
+      ${F.intlPhone('ca-phone', '销售电话', { tip: '选填；默认中国 +86，点击国旗可切换国家' })}
+      ${F.textarea('ca-remark', '备注', { ph: '选填，随发运申请同步至任务详情' })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" id="ca-ok">下发</button>`,
   });
   const ph = initPhoneInput('ca-phone', '');
@@ -991,6 +1005,7 @@ function crmApplyForm() {
         apply_no: fv('ca-apply'), customer_name: fv('ca-cust'), vin: fv('ca-vin'),
         vehicle_model: fv('ca-model') || null, dest_address: fv('ca-dest'),
         plan_freight: Number(fv('ca-freight')), sales_name: fv('ca-sales') || null, sales_phone: phoneVal(ph) || null,
+        remark: fv('ca-remark') || null,
       };
       if (!body.apply_no || !body.customer_name || !body.vin || !body.dest_address || !body.plan_freight) throw new Error('请填写完整必填项');
       const d = await api('/mock/crm/apply', { method: 'POST', body });

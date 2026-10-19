@@ -56,13 +56,14 @@ const STATUS_CN = {
 router.post('/crm/apply', wrap(async (req, res) => {
   const { apply_no, customer_name, region, sales_name, sales_phone, vin, vehicle_model,
     engine_config, cab_type, order_no, report_no, factory, storage_location, origin,
-    dest_region, dest_address, receiver_phone, ship_mode = '送车', plan_freight } = req.body;
+    dest_region, dest_address, receiver_phone, ship_mode = '送车', plan_freight, remark } = req.body;
 
   if (!apply_no?.trim()) throw new BizError('发运申请号必填');
   if (!customer_name?.trim()) throw new BizError('客户名称必填');
   if (!vin?.trim()) throw new BizError('VIN必填');
   if (!dest_address?.trim()) throw new BizError('交付地址必填');
   if (plan_freight === undefined || Number(plan_freight) < 0) throw new BizError('计划运费必填且不小于0');
+  if (remark && remark.length > 500) throw new BizError('备注不能超过500字');
   const salesPhoneV = assertPhone(sales_phone, { label: '销售电话', required: false });
   const receiverPhoneV = assertPhone(receiver_phone, { label: '接车人电话', required: false });
 
@@ -75,12 +76,12 @@ router.post('/crm/apply', wrap(async (req, res) => {
       `INSERT INTO ship_tasks
         (task_no, apply_no, customer_name, region, sales_name, sales_phone, vin, vehicle_model, engine_config, cab_type,
          order_no, report_no, factory, storage_location, origin, dest_region, dest_address, receiver_phone, ship_mode,
-         plan_freight, status, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'PENDING', 'CRM系统')`,
+         plan_freight, remark, status, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'PENDING', 'CRM系统')`,
       [task_no, apply_no.trim(), customer_name.trim(), region || null, sales_name || null, salesPhoneV,
         vin.trim(), vehicle_model || null, engine_config || null, cab_type || null, order_no || null, report_no || null,
         factory || null, storage_location || null, origin?.trim() || '合肥市包河区上海路88号', dest_region || null,
-        dest_address.trim(), receiverPhoneV, ship_mode, Number(plan_freight)]
+        dest_address.trim(), receiverPhoneV, ship_mode, Number(plan_freight), remark?.trim() || null]
     );
     await addEvent(r.insertId, 'APPLY', 'CRM下发发运申请',
       `接收CRM发运申请 ${apply_no}，计划运费 ${Number(plan_freight).toFixed(2)} 元`, 'CRM系统', conn);

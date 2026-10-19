@@ -578,7 +578,8 @@
                   "dest_address": { "type": "string", "description": "交付地址" },
                   "receiver_phone": { "type": "string", "description": "收车人电话" },
                   "ship_mode": { "type": "string", "enum": ["送车", "自提"], "default": "送车" },
-                  "plan_freight": { "type": "number", "description": "计划运费（元）" }
+                  "plan_freight": { "type": "number", "description": "计划运费（元）" },
+                  "remark": { "type": "string", "maxLength": 500, "description": "备注（选填）" }
                 }
               },
               "example": {
