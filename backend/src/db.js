@@ -1,6 +1,6 @@
 /**
  * 数据库连接与单据序列号引擎
- * 智能运输管理平台 (STP)
+ * STP 智能运输管理平台
  */
 const fs = require('fs');
 const path = require('path');
@@ -28,7 +28,7 @@ const pool = mysql.createPool({
   dateStrings: true, // 日期以字符串返回，避免时区偏移
 });
 
-/** 执行查询（带参数） */
+/** 执行查询（带参数），返回行数组 */
 async function query(sql, params = []) {
   const [rows] = await pool.query(sql, params);
   return rows;
@@ -51,19 +51,23 @@ async function withTransaction(fn) {
 }
 
 /**
- * 单据序列号（编码规则引擎）
- * CAR -> CAR-001         承运商编码：CAR-三位序列号（全局递增）
- * FY  -> FY202610160001  任务单号：FY+年月日+四位序列号（按日重置）
- * YF  -> YF202610160001  运费单号：YF+年月日+四位序列号（按日重置）
+ * 单据序列号（编码规则引擎，契约第 3.2 节）
+ * CAR -> CAR-001           承运商编码：CAR-三位序列号（全局递增，不按日重置）
+ * FY  -> FY202610190001    任务单号：FY+年月日+四位序列号（按日重置）
+ * YF  -> YF202610190001    运费单号：YF+年月日+四位序列号（按日重置）
+ * PD  -> PD202610190001    批量派单批次号：PD+年月日+四位序列号（按日重置）
  *
  * 原子性：UPDATE ... SET seq_val = LAST_INSERT_ID(seq_val + 1) 后，
  * 同一连接内 SELECT LAST_INSERT_ID() 可取到自增后的值（MySQL 官方机制）。
+ * 可传入事务连接 conn，保证单号生成与业务写入同事务。
  */
 async function nextSeq(kind, conn) {
   const today = localDateStr().replace(/-/g, '');
   const key = kind === 'CAR' ? 'CAR' : `${kind}:${today}`;
   const width = kind === 'CAR' ? 3 : 4;
-  const code = (v) => (kind === 'CAR' ? `CAR-${String(v).padStart(3, '0')}` : `${kind}${today}${String(v).padStart(width, '0')}`);
+  const code = (v) => (kind === 'CAR'
+    ? `CAR-${String(v).padStart(3, '0')}`
+    : `${kind}${today}${String(v).padStart(width, '0')}`);
 
   const c = conn || (await pool.getConnection());
   const mustRelease = !conn;

@@ -1,68 +1,69 @@
 /**
- * 运输调度 - 在途监控
- * PRD: 默认列表优先展示在途运单，按创建日期降序；查看运单展示整体运输节点与位置信息
+ * 运输调度 - 在途监控（契约 5.5）
+ * 列表：未终态任务（不含 FINISHED/CANCELLED），IN_TRANSIT 最优先，含最近一条位置信息
+ * 详情：task + statusLogs + tracks（时间升序）
  */
 const { Router } = require('express');
 const { query } = require('../db');
-const { BizError, wrap, pageOf } = require('../helpers');
+const { wrap, ok, errNotFound, pageOf, pageData } = require('../helpers');
 
 const router = Router();
 
-/** 在途任务列表（在途优先，其余状态靠后） */
-router.get('/', wrap(async (req, res) => {
+// 在途列表包含的未终态状态；排序：在途最优先，其余按创建时间倒序
+const ACTIVE_STATUSES = ['WAIT_DISPATCH', 'DISPATCHED', 'CARRIER_ACCEPTED', 'PICKED', 'OUTBOUND', 'IN_TRANSIT', 'ARRIVED'];
+const STATUS_ORDER = ['IN_TRANSIT', 'PICKED', 'OUTBOUND', 'ARRIVED', 'CARRIER_ACCEPTED', 'DISPATCHED', 'WAIT_DISPATCH'];
+
+/** 在途任务列表 */
+router.get('/tasks', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
   const { task_no = '', transport_no = '' } = req.query;
-  const where = ["t.status IN ('PENDING','DISPATCHED','ACCEPTED','OUT_BOUND','PICKED_UP','IN_TRANSIT','ARRIVED')"];
-  const params = [];
+  const where = [`t.deleted = 0`, `t.status IN (${ACTIVE_STATUSES.map(() => '?').join(',')})`];
+  const params = [...ACTIVE_STATUSES];
   if (task_no) where.push('t.task_no LIKE ?'), params.push(`%${task_no}%`);
   if (transport_no) {
-    where.push('t.id IN (SELECT task_id FROM tracking_records WHERE transport_no LIKE ?)');
+    where.push('EXISTS (SELECT 1 FROM transport_track tr WHERE tr.task_id = t.id AND tr.deleted = 0 AND tr.transport_no LIKE ?)');
     params.push(`%${transport_no}%`);
   }
+  const whereSql = `WHERE ${where.join(' AND ')}`;
 
+  const totalRows = await query(`SELECT COUNT(*) AS n FROM shipping_task t ${whereSql}`, params);
   const list = await query(
-    `SELECT t.id, t.task_no, t.status, t.vin, t.vehicle_model, t.origin, t.dest_region, t.dest_address,
-            t.ship_at, t.arrive_at, t.created_at,
-            c.carrier_name,
-            d.name AS driver_name, d.phone AS driver_phone,
-            tr.transport_no, tr.position_desc, tr.speed, tr.reported_at
-     FROM ship_tasks t
-     LEFT JOIN carriers c ON c.id = t.carrier_id
-     LEFT JOIN drivers d ON d.id = t.driver_id
-     LEFT JOIN (SELECT task_id, MAX(id) AS max_id FROM tracking_records GROUP BY task_id) lm
+    `SELECT t.id, t.task_no, t.apply_no, t.customer_name, t.status, t.ship_location, t.delivery_address,
+            t.plan_pickup_date, t.ship_time, t.arrive_time, t.create_time, t.version,
+            c.carrier_name, d.driver_name, d.phone AS driver_phone,
+            tr.transport_no, tr.location_desc, tr.longitude, tr.latitude, tr.speed, tr.report_time
+     FROM shipping_task t
+     LEFT JOIN carrier c ON c.id = t.carrier_id
+     LEFT JOIN driver d ON d.id = t.driver_id
+     LEFT JOIN (SELECT task_id, MAX(id) AS max_id FROM transport_track WHERE deleted = 0 GROUP BY task_id) lm
             ON lm.task_id = t.id
-     LEFT JOIN tracking_records tr ON tr.id = lm.max_id
-     WHERE ${where.join(' AND ')}
-     ORDER BY FIELD(t.status,'IN_TRANSIT','PICKED_UP','OUT_BOUND','ARRIVED','ACCEPTED','DISPATCHED','PENDING'),
-              t.created_at DESC
+     LEFT JOIN transport_track tr ON tr.id = lm.max_id
+     ${whereSql}
+     ORDER BY FIELD(t.status, ${STATUS_ORDER.map(() => '?').join(',')}), t.create_time DESC, t.id DESC
      LIMIT ? OFFSET ?`,
-    [...params, size, offset]
+    [...params, ...STATUS_ORDER, size, offset]
   );
-  const [totalRows] = await query(
-    `SELECT COUNT(*) AS n FROM ship_tasks t WHERE ${where.join(' AND ')}`,
-    params
-  );
-  res.json({ list, total: totalRows.n, page, size });
+  ok(res, pageData(list, Number(totalRows[0].n), page, size));
 }));
 
-/** 运单在途详情：运单信息 + 运输节点 + 位置轨迹 */
-router.get('/:taskId', wrap(async (req, res) => {
-  const { taskId } = req.params;
+/** 在途运单详情：运单信息 + 运输节点 + 位置轨迹（时间升序） */
+router.get('/tasks/:id', wrap(async (req, res) => {
+  const id = Number(req.params.id);
   const [task] = await query(
-    `SELECT t.*, c.carrier_name, d.name AS driver_name, d.phone AS driver_phone
-     FROM ship_tasks t
-     LEFT JOIN carriers c ON c.id = t.carrier_id
-     LEFT JOIN drivers d ON d.id = t.driver_id
-     WHERE t.id = ?`,
-    [Number(taskId)]
+    `SELECT t.*, c.carrier_name, d.driver_name, d.phone AS driver_phone
+     FROM shipping_task t
+     LEFT JOIN carrier c ON c.id = t.carrier_id
+     LEFT JOIN driver d ON d.id = t.driver_id
+     WHERE t.id = ? AND t.deleted = 0`,
+    [id]
   );
-  if (!task) throw new BizError('运单不存在', 404);
+  if (!task) throw errNotFound('运单不存在');
 
-  const [events, trackings] = await Promise.all([
-    query('SELECT * FROM task_events WHERE task_id = ? ORDER BY created_at ASC, id ASC', [Number(taskId)]),
-    query('SELECT * FROM tracking_records WHERE task_id = ? ORDER BY reported_at ASC, id ASC', [Number(taskId)]),
+  const [statusLogs, tracks] = await Promise.all([
+    query('SELECT * FROM task_status_log WHERE task_id = ? AND deleted = 0 ORDER BY create_time, id', [id]),
+    query('SELECT * FROM transport_track WHERE task_id = ? AND deleted = 0 ORDER BY report_time, id', [id]),
   ]);
-  res.json({ task, events, trackings });
+  ok(res, { task, statusLogs, tracks });
 }));
 
 module.exports = router;

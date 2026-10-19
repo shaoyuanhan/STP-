@@ -1,20 +1,22 @@
 /**
  * 应用入口
- * 智能运输管理平台 (Smart Transport Management Platform, STP) · 后端 API
+ * STP 智能运输管理平台 (Smart Transport Management Platform, STP) · 后端 API
+ * Node.js + Express + MySQL(库名 tms_vehicle)，端口 3000
  */
 require('./db'); // 先加载 .env 配置
 const express = require('express');
 const cors = require('cors');
 
-const { errorHandler, wrap } = require('./helpers');
+const { errorHandler, wrap, ok } = require('./helpers');
 const { query } = require('./db');
 const statsRoutes = require('./routes/stats');
 const carrierRoutes = require('./routes/carriers');
 const driverRoutes = require('./routes/drivers');
-const shipTaskRoutes = require('./routes/shipTasks');
+const shippingTaskRoutes = require('./routes/shippingTasks');
 const trackingRoutes = require('./routes/tracking');
-const freightRoutes = require('./routes/freight');
+const freightBillRoutes = require('./routes/freightBills');
 const esignRoutes = require('./routes/esigns');
+const externalRoutes = require('./routes/external');
 const mockRoutes = require('./routes/mock');
 
 const app = express();
@@ -27,23 +29,63 @@ app.use(express.json());
 // 健康检查（真实探测数据库，MySQL 未启动时返回 500）
 app.get('/api/health', wrap(async (req, res) => {
   await query('SELECT 1 AS ok');
-  res.json({ ok: true, service: 'stp-backend', db: 'up', time: new Date().toISOString() });
+  ok(res, { ok: true, service: 'stp-backend', db: 'up', time: new Date().toISOString() });
 }));
 
-// 业务路由
+// 数据字典（契约 5.1：任务状态/承运商状态/司机状态/司机来源/对账状态/电子签状态/取消派单原因）
+app.get('/api/dictionaries', wrap(async (req, res) => {
+  ok(res, {
+    taskStatus: [
+      { value: 'WAIT_DISPATCH', label: '待派单' },
+      { value: 'DISPATCHED', label: '已派单' },
+      { value: 'CARRIER_ACCEPTED', label: '承运商已接单' },
+      { value: 'PICKED', label: '已提车' },
+      { value: 'OUTBOUND', label: '已出库' },
+      { value: 'IN_TRANSIT', label: '在途' },
+      { value: 'ARRIVED', label: '已到达' },
+      { value: 'FINISHED', label: '已完结' },
+      { value: 'CANCELLED', label: '已取消' },
+    ],
+    carrierStatus: [
+      { value: 1, label: '合作中' },
+      { value: 0, label: '已停用' },
+    ],
+    driverStatus: [
+      { value: 1, label: '启用' },
+      { value: 0, label: '停用' },
+    ],
+    driverSource: [
+      { value: 1, label: '自建' },
+      { value: 2, label: '狮桥同步' },
+    ],
+    reconcileStatus: [
+      { value: 0, label: '待对账' },
+      { value: 1, label: '已对账' },
+    ],
+    esignStatus: [
+      { value: 'WAIT_SIGN', label: '待签署' },
+      { value: 'SIGNED', label: '已签署' },
+      { value: 'CANCELLED', label: '已取消' },
+    ],
+    cancelReasons: ['承运商无法履约', '调度调整', '其他'],
+  });
+}));
+
+// 业务路由（契约第 5/6/7 节）
 app.use('/api/stats', statsRoutes);
 app.use('/api/carriers', carrierRoutes);
 app.use('/api/drivers', driverRoutes);
-app.use('/api/ship-tasks', shipTaskRoutes);
+app.use('/api/shipping-tasks', shippingTaskRoutes);
 app.use('/api/tracking', trackingRoutes);
-app.use('/api/freight-orders', freightRoutes);
-app.use('/api/esigns', esignRoutes);
+app.use('/api/freight-bills', freightBillRoutes);
+app.use('/api/esign-records', esignRoutes);
+app.use('/api/external', externalRoutes);
 app.use('/api/mock', mockRoutes);
 
-// 404
-app.use((req, res) => res.status(404).json({ message: '接口不存在' }));
+// 404：未匹配到任何接口
+app.use((req, res) => res.status(404).json({ code: 'D0002', message: '接口不存在', data: null }));
 
-// 统一错误处理
+// 统一错误处理（{code, message, data} 信封 + 错误码 HTTP 映射）
 app.use(errorHandler);
 
 app.listen(PORT, () => {
