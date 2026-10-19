@@ -39,20 +39,32 @@ function localDateStr(d = new Date()) {
 const MOBILE_RE = /^1[3-9]\d{9}$/;
 /** 联系电话：手机号 / 座机（区号2-3位+7-8位，可带1-4位分机）/ 400 热线 */
 const PHONE_RE = /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8}(-\d{1,4})?|400-?\d{3,4}-?\d{3,4})$/;
+/** 国际号码：+区号(1-3位) + 号码（数字/空格/连字符/括号，4-18位） */
+const INTL_RE = /^\+\d{1,3}\s[0-9\-() ]{4,18}$/;
 
-/** 校验并返回清洗后的电话；不合法抛 BizError。mobileOnly=true 时仅接受手机号 */
+/**
+ * 校验并返回清洗后的电话；不合法抛 BizError。
+ * 存储约定：国内号码存裸号（如 13800138000），国外号码带区号前缀（如 +1 202-555-0123）。
+ * mobileOnly=true 时仅国内要求 11 位手机号，国际号码按通用规则校验。
+ */
 function assertPhone(value, { label = '联系电话', mobileOnly = false, required = true } = {}) {
   const v = String(value ?? '').trim();
   if (!v) {
     if (required) throw new BizError(`${label}必填`);
     return null;
   }
-  if (v.length > 20) throw new BizError(`${label}长度不能超过 20 位`);
+  if (v.length > 24) throw new BizError(`${label}长度不能超过 24 位`);
+  if (v.startsWith('+')) {
+    if (!INTL_RE.test(v)) {
+      throw new BizError(`${label}国际号码格式不正确，应为「+区号 号码」，如 +1 202-555-0123`);
+    }
+    return v;
+  }
   const ok = mobileOnly ? MOBILE_RE.test(v) : PHONE_RE.test(v);
   if (!ok) {
     throw new BizError(mobileOnly
-      ? `${label}格式不正确，请输入 11 位大陆手机号（1[3-9] 开头）`
-      : `${label}格式不正确，支持 11 位手机号、座机（如 0551-1234567）或 400 号码`);
+      ? `${label}格式不正确，请输入 11 位大陆手机号（1[3-9] 开头）；国外号码请加区号前缀，如 +1 202-555-0123`
+      : `${label}格式不正确，国内支持 11 位手机号、座机（如 0551-1234567）或 400 号码；国外号码请加区号前缀，如 +1 202-555-0123`);
   }
   return v;
 }

@@ -229,6 +229,21 @@ td .actions{display:flex;gap:8px}
 .form-item .ctrl .input.short{flex:0 0 160px}
 .form-tip{color:var(--text-3);font-size:12px;line-height:1.6;margin-top:4px;width:100%}
 .form-item input[disabled]{background:#f5f5f5;color:#8c8c8c;cursor:not-allowed}
+/* 国家/地区选择器 */
+.cc-ctl{flex:1;position:relative;min-width:0}
+.cc-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;cursor:pointer;text-align:left;background:#fff}
+.cc-btn .cc-inner{display:flex;align-items:center;gap:6px;font-size:13px;min-width:0;overflow:hidden;white-space:nowrap}
+.cc-btn .cc-inner b{color:var(--text-3);font-weight:500}
+.cc-btn .cc-caret{color:var(--text-3);font-size:11px;flex-shrink:0}
+.cc-panel{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--input-border);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:30;padding:8px}
+.cc-search{width:100%}
+.cc-list{max-height:220px;overflow-y:auto;margin-top:6px}
+.cc-opt{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;border-radius:4px;cursor:pointer;font-size:13px}
+.cc-opt:hover{background:rgba(22,119,255,.06)}
+.cc-opt.on{background:rgba(22,119,255,.1);color:var(--primary)}
+.cc-opt b{font-weight:500;color:var(--text-3)}
+.cc-opt.on b{color:var(--primary)}
+.cc-empty{padding:14px;text-align:center;color:var(--text-3);font-size:12px}
 .pair{display:flex;gap:8px;align-items:center}
 .err-tip{color:var(--danger);font-size:12px;margin-top:2px;width:100%}
 
@@ -390,6 +405,6 @@ td .actions{display:flex;gap:8px}
 </div>
 
 <script src="china-map.js?v=2026101902"></script>
-<script src="app.js?v=2026101903"></script>
+<script src="app.js?v=2026101904"></script>
 </body>
 </html>
