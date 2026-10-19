@@ -108,154 +108,57 @@ function confirmModal(text) {
   });
 }
 
-// 电话校验（与后端 helpers.assertPhone 规则一致）
-const MOBILE_RE = /^1[3-9]\d{9}$/;
-const PHONE_RE = /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8}(-\d{1,4})?|[48]00-?\d{3,4}-?\d{3,4}|\d{7,8})$/;
-const INTL_RE = /^\+\d{1,3}\s[0-9\-() ]{4,18}$/;
-function checkPhone(value, label, mobileOnly = false) {
-  const v = String(value || '').trim();
-  if (!v) return null;
-  if (v.length > 24) return `${label}长度不能超过 24 位`;
-  if (v.startsWith('+')) {
-    return INTL_RE.test(v) ? null : `${label}国际号码格式不正确，应为「+区号 号码」，如 +1 202-555-0123`;
+// ===== 电话输入（intl-tel-input，基于 Google libphonenumber）=====
+// 控件：国旗下拉(可搜索) + 区号 + 号码，自动格式化、按国家校验、自动识别手机/座机
+// 提交输出统一 E.164（如 +8613812345678），与后端 assertPhone 一致
+
+/** 初始化电话输入控件；value 支持 E.164 或国内裸号 */
+function initPhoneInput(id, value = '') {
+  const input = $('#' + id);
+  const iti = window.intlTelInput(input, {
+    initialCountry: 'cn',
+    preferredCountries: ['cn', 'hk', 'mo', 'tw', 'us', 'jp', 'sg', 'gb'],
+    separateDialCode: true,
+    countryNameLocale: 'zh-CN',
+    uiTranslations: window.itiZh || {},
+    countrySearch: true,
+    formatAsYouType: true,
+    autoPlaceholder: 'aggressive',
+  });
+  if (value) iti.setNumber(value);
+  return { iti, input };
+}
+
+/** 提交前校验：返回错误消息或 null；mobileOnly 要求手机号 */
+function phoneCheck(w, label, { required = true, mobileOnly = false } = {}) {
+  const raw = w.input.value.trim();
+  if (!raw) return required ? `${label}必填` : null;
+  const num = w.iti.getNumber();
+  if (!num || !w.iti.isValidNumber()) {
+    return `${label}格式不正确，请检查国家/地区与号码`;
   }
-  const ok = mobileOnly ? MOBILE_RE.test(v) : PHONE_RE.test(v);
-  return ok ? null : (mobileOnly
-    ? `${label}格式不正确，请输入 11 位大陆手机号（1[3-9] 开头）；国外号码请先选择国家/地区`
-    : `${label}格式不正确，国内支持 11 位手机号、座机（含区号如 0551-1234567 或 7-8 位直拨号）或 400/800 号码；国外号码请先选择国家/地区`);
+  if (mobileOnly) {
+    const t = w.iti.getNumberType();
+    if (t !== 'MOBILE' && t !== 'FIXED_LINE_OR_MOBILE') return '座机/热线号码不可用，请填写手机号';
+  }
+  return null;
 }
 
-// 国家/地区区号表（支持拼音/英文/区号搜索）
-const PHONE_COUNTRIES = [
-  { cc: '+86',  flag: '🇨🇳', name: '中国',        py: 'zhongguo',        en: 'china' },
-  { cc: '+852', flag: '🇭🇰', name: '中国香港',    py: 'xianggang',       en: 'hongkong hong kong' },
-  { cc: '+853', flag: '🇲🇴', name: '中国澳门',    py: 'aomen',           en: 'macau' },
-  { cc: '+886', flag: '🇹🇼', name: '中国台湾',    py: 'taiwan',          en: 'taiwan' },
-  { cc: '+1',   flag: '🇺🇸', name: '美国',        py: 'meiguo',          en: 'united states usa america' },
-  { cc: '+1',   flag: '🇨🇦', name: '加拿大',      py: 'jianada',         en: 'canada' },
-  { cc: '+44',  flag: '🇬🇧', name: '英国',        py: 'yingguo',         en: 'united kingdom uk britain' },
-  { cc: '+49',  flag: '🇩🇪', name: '德国',        py: 'deguo',           en: 'germany' },
-  { cc: '+33',  flag: '🇫🇷', name: '法国',        py: 'faguo',           en: 'france' },
-  { cc: '+39',  flag: '🇮🇹', name: '意大利',      py: 'yidali',          en: 'italy' },
-  { cc: '+34',  flag: '🇪🇸', name: '西班牙',      py: 'xibanya',         en: 'spain' },
-  { cc: '+31',  flag: '🇳🇱', name: '荷兰',        py: 'helan',           en: 'netherlands' },
-  { cc: '+41',  flag: '🇨🇭', name: '瑞士',        py: 'ruishi',          en: 'switzerland' },
-  { cc: '+46',  flag: '🇸🇪', name: '瑞典',        py: 'ruidian',         en: 'sweden' },
-  { cc: '+7',   flag: '🇷🇺', name: '俄罗斯',      py: 'eluosi',          en: 'russia' },
-  { cc: '+61',  flag: '🇦🇺', name: '澳大利亚',    py: 'aodaliya',        en: 'australia' },
-  { cc: '+64',  flag: '🇳🇿', name: '新西兰',      py: 'xinxilan',        en: 'new zealand' },
-  { cc: '+81',  flag: '🇯🇵', name: '日本',        py: 'riben',           en: 'japan' },
-  { cc: '+82',  flag: '🇰🇷', name: '韩国',        py: 'hanguo',          en: 'korea south korea' },
-  { cc: '+65',  flag: '🇸🇬', name: '新加坡',      py: 'xinjiapo',        en: 'singapore' },
-  { cc: '+60',  flag: '🇲🇾', name: '马来西亚',    py: 'malaixiya',       en: 'malaysia' },
-  { cc: '+66',  flag: '🇹🇭', name: '泰国',        py: 'taiguo',          en: 'thailand' },
-  { cc: '+84',  flag: '🇻🇳', name: '越南',        py: 'yuenan',          en: 'vietnam' },
-  { cc: '+62',  flag: '🇮🇩', name: '印度尼西亚',  py: 'yindunixiya',     en: 'indonesia' },
-  { cc: '+63',  flag: '🇵🇭', name: '菲律宾',      py: 'feilvbin',        en: 'philippines' },
-  { cc: '+91',  flag: '🇮🇳', name: '印度',        py: 'yindu',           en: 'india' },
-  { cc: '+971', flag: '🇦🇪', name: '阿联酋',      py: 'alianqiu',        en: 'united arab emirates uae dubai' },
-  { cc: '+966', flag: '🇸🇦', name: '沙特阿拉伯',  py: 'shate',           en: 'saudi arabia' },
-  { cc: '+55',  flag: '🇧🇷', name: '巴西',        py: 'baxi',            en: 'brazil' },
-  { cc: '+52',  flag: '🇲🇽', name: '墨西哥',      py: 'moxige',          en: 'mexico' },
-];
-const PHONE_EXAMPLES = {
-  '+86': '如 13800138000', '+1': '如 202-555-0123', '+44': '如 7400 123456',
-  '+852': '如 5123 4567', '+853': '如 1234 5678', '+886': '如 912 345 678',
-  '+81': '如 90 1234 5678', '+82': '如 10 1234 5678', '+65': '如 8123 4567',
-  '+60': '如 12-345 6789', '+61': '如 412 345 678', '+64': '如 21 123 4567',
-  '+49': '如 1512 3456789', '+33': '如 6 12 34 56 78', '+7': '如 912 345 67 89',
-};
-const phonePh = (cc) => PHONE_EXAMPLES[cc] || '请输入当地号码';
-const countryByCc = (cc) => PHONE_COUNTRIES.find((c) => c.cc === cc) || PHONE_COUNTRIES[0];
+/** 读取提交值（E.164）；空返回 '' */
+const phoneVal = (w) => w.iti.getNumber() || '';
 
-/** 拆解已存电话：+区号 前缀 -> { cc, num }；无前缀 -> 中国 +86 */
-function phoneFieldState(value) {
-  const v = String(value || '').trim();
-  const m = v.match(/^(\+\d{1,3})\s+(.+)$/);
-  if (m) return { cc: m[1], num: m[2] };
-  return { cc: '+86', num: v };
-}
-
-/** 组合提交值：中国存裸号，国外存「+区号 号码」 */
-function phoneVal(ccId, numId) {
-  const num = fv(numId);
-  if (!num) return '';
-  const cc = $('#' + ccId)?.dataset.cc || '+86';
-  return cc === '+86' ? num : `${cc} ${num}`;
-}
-
-/** 国家选择器交互：搜索过滤 + 占位符联动（输入后按 Enter 自动选中第一个匹配项） */
-function bindCountrySelect(ccId, numId) {
-  const btn = $('#' + ccId);
-  const panel = $('#' + ccId + '-panel');
-  const search = $('#' + ccId + '-search');
-  const list = $('#' + ccId + '-list');
-  const numInput = $('#' + numId);
-  const renderBtn = () => {
-    const c = countryByCc(btn.dataset.cc);
-    btn.innerHTML = `<span class="cc-inner">${c.flag} ${esc(c.name)} <b>${c.cc}</b></span><span class="cc-caret">▾</span>`;
-  };
-  const visibleCountries = () => {
-    const kw = search.value.trim().toLowerCase();
-    return PHONE_COUNTRIES.filter((c) => !kw
-      || c.name.includes(search.value.trim())
-      || c.py.includes(kw)
-      || c.en.includes(kw)
-      || c.cc.replace('+', '').startsWith(kw));
-  };
-  const renderList = () => {
-    const arr = visibleCountries();
-    list.innerHTML = arr.map((c) => `
-      <div class="cc-opt ${c.cc === btn.dataset.cc ? 'on' : ''}" data-cc="${c.cc}">
-        <span>${c.flag} ${esc(c.name)}</span><b>${c.cc}</b>
-      </div>`).join('') || '<div class="cc-empty">未找到国家/地区</div>';
-    list.querySelectorAll('.cc-opt').forEach((el) => el.onclick = () => {
-      btn.dataset.cc = el.dataset.cc;
-      renderBtn();
-      hidePanel();
-      search.value = '';
-      if (numInput) numInput.placeholder = phonePh(btn.dataset.cc);
-    });
-  };
-  let outsideHandler = null;
-  const hidePanel = () => {
-    panel.style.display = 'none';
-    if (outsideHandler) { document.removeEventListener('mousedown', outsideHandler); outsideHandler = null; }
-  };
-  btn.onclick = () => {
-    const show = panel.style.display === 'none';
-    hidePanel();
-    if (show) {
-      panel.style.display = 'block';
-      search.value = '';
-      renderList();
-      search.focus();
-      outsideHandler = (e) => { if (!panel.contains(e.target) && !btn.contains(e.target)) hidePanel(); };
-      setTimeout(() => document.addEventListener('mousedown', outsideHandler), 0);
-    }
-  };
-  search.oninput = renderList;
-  search.onkeydown = (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const first = visibleCountries()[0];
-    if (first) {
-      btn.dataset.cc = first.cc;
-      renderBtn();
-      hidePanel();
-      search.value = '';
-      if (numInput) { numInput.placeholder = phonePh(btn.dataset.cc); numInput.focus(); }
-    }
-  };
-  renderBtn();
-  if (numInput) numInput.placeholder = phonePh(btn.dataset.cc);
+/** 表格展示格式化：+8613812345678 -> 138 0013 8000；其余原样 */
+function fmtPhone(s) {
+  const v = String(s || '').trim();
+  if (/^\+86\d{11}$/.test(v)) return v.slice(3).replace(/(\d{3})(\d{4})(\d{4})/, '$1 $2 $3');
+  return v;
 }
 
 // 表单字段构造
 const F = {
   text: (id, label, opt = {}) => `
     <div class="form-item"><label class="${opt.req ? 'req' : ''}">${label}</label>
-      <div class="ctrl"><input class="input" id="${id}" placeholder="${opt.ph || '请输入'}" value="${esc(opt.value ?? '')}" ${opt.dis ? 'disabled' : ''} ${opt.max ? `maxlength="${opt.max}"` : ''}>
+      <div class="ctrl"><input class="input" id="${id}" placeholder="${opt.ph || '请输入'}" value="${esc(opt.value ?? '')}" ${opt.dis ? 'disabled' : ''} ${opt.max ? `maxlength="${opt.max}"` : ''} autocomplete="off">
       ${opt.tip ? `<div class="form-tip">${opt.tip}</div>` : ''}</div></div>`,
   select: (id, label, options, opt = {}) => `
     <div class="form-item"><label class="${opt.req ? 'req' : ''}">${label}</label>
@@ -271,15 +174,10 @@ const F = {
         <span class="muted">~</span>
         <input class="input" type="date" id="${toId}" value="${vt || ''}" style="flex:1">
       </div></div></div>`,
-  country: (id, label, opt = {}) => `
-    <div class="form-item"><label>${label}</label>
-      <div class="ctrl"><div class="cc-ctl">
-        <button type="button" class="input cc-btn" id="${id}" data-cc="${opt.cc || '+86'}"></button>
-        <div class="cc-panel" id="${id}-panel" style="display:none">
-          <input class="input cc-search" id="${id}-search" placeholder="搜索：国家 / 拼音 / 英文 / 区号">
-          <div class="cc-list" id="${id}-list"></div>
-        </div>
-      </div></div></div>`,
+  intlPhone: (id, label, opt = {}) => `
+    <div class="form-item"><label class="${opt.req ? 'req' : ''}">${label}</label>
+      <div class="ctrl"><input class="input iti-src" id="${id}" type="tel" autocomplete="off">
+      ${opt.tip ? `<div class="form-tip">${opt.tip}</div>` : ''}</div></div>`,
 };
 const fv = (id) => { const el = $('#' + id); return el ? el.value.trim() : ''; };
 
@@ -480,7 +378,7 @@ async function pageCarriers(view) {
             <td>${esc(r.carrier_code)}</td>
             <td><span class="ellipsis" title="${esc(r.carrier_name)}">${esc(r.carrier_name)}</span></td>
             <td>${esc(r.contact_person)}</td>
-            <td>${esc(r.contact_phone)}</td>
+            <td>${esc(fmtPhone(r.contact_phone))}</td>
             <td>${empty(r.coop_routes)}</td>
             <td>${r.driver_count}</td>
             <td>${carrierTag(r.status)}</td>
@@ -513,31 +411,29 @@ async function carrierForm(id) {
     const d = await api(`/carriers?keyword=&size=100`);
     r = d.list.find((x) => x.id === id) || r;
   }
-  const ps = phoneFieldState(r.contact_phone);
   const m = openModal({
     title: id ? '编辑承运商' : '新增承运商',
     body: `
       ${F.text('cf-name', '承运商名称', { req: 1, value: r.carrier_name })}
       ${F.select('cf-code', '承运商编码', `<option>${id ? esc(r.carrier_code) : '系统自动生成'}</option>`, { tip: '编码规则：CAR-三位序列号，系统自动生成不可修改' })}
       ${F.text('cf-contact', '联系人', { req: 1, value: r.contact_person })}
-      ${F.country('cf-phone-cc', '国家/地区', { cc: ps.cc })}
-      ${F.text('cf-phone', '联系电话', { req: 1, value: ps.num, max: 20, tip: '国内支持 11 位手机号、座机（含区号如 0551-1234567 或 7-8 位直拨号）或 400/800 号码；国外号码选择国家/地区后按示例输入' })}
+      ${F.intlPhone('cf-phone', '联系电话', { req: 1, tip: '默认中国 +86，支持手机/座机/400；点击国旗可切换国家并按当地格式输入' })}
       ${F.text('cf-routes', '合作路线', { value: r.coop_routes || '', ph: '如：合肥—华东、合肥—华南' })}
       ${F.textarea('cf-remark', '备注', { value: r.remark || '' })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button>
            <button class="btn btn-primary" id="cf-ok">${id ? '保存' : '新增'}</button>`,
   });
   if (id) $('#cf-code', m.el).disabled = true;
-  bindCountrySelect('cf-phone-cc', 'cf-phone');
+  const ph = initPhoneInput('cf-phone', r.contact_phone || '');
   $('#cf-ok', m.el).onclick = async () => {
     try {
+      const e1 = phoneCheck(ph, '联系电话');
+      if (e1) throw new Error(e1);
       const body = {
-        carrier_name: fv('cf-name'), contact_person: fv('cf-contact'), contact_phone: phoneVal('cf-phone-cc', 'cf-phone'),
+        carrier_name: fv('cf-name'), contact_person: fv('cf-contact'), contact_phone: phoneVal(ph),
         coop_routes: fv('cf-routes') || null, remark: fv('cf-remark') || null,
       };
-      if (!body.carrier_name || !body.contact_person || !body.contact_phone) throw new Error('请填写完整必填项');
-      const e1 = checkPhone(body.contact_phone, '联系电话');
-      if (e1) throw new Error(e1);
+      if (!body.carrier_name || !body.contact_person) throw new Error('请填写完整必填项');
       const d = id ? await api(`/carriers/${id}`, { method: 'PUT', body }) : await api('/carriers', { method: 'POST', body });
       m.close(); toast(d.message); pageCarriers($('#view'));
     } catch (e) { toast(e.message, false); }
@@ -589,7 +485,7 @@ async function pageDrivers(view) {
         <thead><tr><th>姓名</th><th>手机号</th><th>身份证号</th><th>准驾车型</th><th>驾驶证有效期</th><th>所属承运商</th><th>状态</th><th>创建日期</th><th>操作</th></tr></thead>
         <tbody>${d.list.map((r) => `
           <tr>
-            <td>${esc(r.name)}</td><td>${esc(r.phone)}</td><td>${esc(r.id_card)}</td>
+            <td>${esc(r.name)}</td><td>${esc(fmtPhone(r.phone))}</td><td>${esc(r.id_card)}</td>
             <td>${empty(r.vehicle_type)}</td><td>${fmtD(r.license_valid_from)} ~ ${fmtD(r.license_valid_to)}</td>
             <td>${r.carrier_name ? esc(r.carrier_name) : '<span class="muted">散单</span>'}</td>
             <td>${driverTag(r.status)}</td><td>${fmtD(r.created_at)}</td>
@@ -621,15 +517,13 @@ async function driverForm(id, carriersArg) {
   let r = null;
   if (id) r = (await api('/drivers?size=100')).list.find((x) => x.id === id);
   const v = r || { name: '', phone: '', id_card: '', license_no: '', vehicle_type: '', carrier_id: '' };
-  const ps = phoneFieldState(v.phone);
   const m = openModal({
     title: id ? '编辑司机' : '新增司机',
     body: `
       ${F.text('df-name', '姓名', { req: 1, value: v.name, dis: !!id })}
       ${F.text('df-idcard', '身份证号', { req: 1, value: v.id_card, dis: !!id })}
       ${id ? `<div class="form-tip" style="margin:-8px 0 8px 108px">姓名与身份证号创建后不可修改</div>` : ''}
-      ${F.country('df-phone-cc', '国家/地区', { cc: ps.cc })}
-      ${F.text('df-phone', '手机号', { req: 1, value: ps.num, max: 20, tip: '国内需为 11 位手机号（1[3-9] 开头）；国外号码选择国家/地区后输入当地号码' })}
+      ${F.intlPhone('df-phone', '手机号', { req: 1, tip: '司机需留手机号，座机/400 号码无法通过校验' })}
       ${F.text('df-license', '驾驶证号', { value: v.license_no || '' })}
       ${F.select('df-vtype', '准驾车型', ['A2', 'B2', 'C1', 'A1', 'B1'].map((x) => `<option ${v.vehicle_type === x ? 'selected' : ''}>${x}</option>`).join(''))}
       ${F.datePair('df-from', 'df-to', '驾驶证有效期', v.license_valid_from, v.license_valid_to)}
@@ -638,18 +532,18 @@ async function driverForm(id, carriersArg) {
     foot: `<button class="btn btn-ghost" data-close>取消</button>
            <button class="btn btn-primary" id="df-ok">${id ? '保存' : '新增'}</button>`,
   });
-  bindCountrySelect('df-phone-cc', 'df-phone');
+  const ph = initPhoneInput('df-phone', v.phone || '');
   $('#df-ok', m.el).onclick = async () => {
     try {
+      const e2 = phoneCheck(ph, '手机号', { mobileOnly: true });
+      if (e2) throw new Error(e2);
       const body = {
-        phone: phoneVal('df-phone-cc', 'df-phone'), license_no: fv('df-license') || null, vehicle_type: fv('df-vtype'),
+        phone: phoneVal(ph), license_no: fv('df-license') || null, vehicle_type: fv('df-vtype'),
         license_valid_from: fv('df-from'), license_valid_to: fv('df-to'),
         carrier_id: fv('df-carrier') || null, remark: fv('df-remark') || null,
       };
       if (!id) { body.name = fv('df-name'); body.id_card = fv('df-idcard'); }
       if (!body.phone || !body.license_valid_from || !body.license_valid_to) throw new Error('请填写完整必填项');
-      const e2 = checkPhone(body.phone, '手机号', true);
-      if (e2) throw new Error(e2);
       const d = id ? await api(`/drivers/${id}`, { method: 'PUT', body }) : await api('/drivers', { method: 'POST', body });
       m.close(); toast(d.message); pageDrivers($('#view'));
     } catch (e) { toast(e.message, false); }
@@ -873,7 +767,7 @@ async function openTaskDetail(id) {
       ${desc([
         ['任务单号', esc(t.task_no)], ['任务状态', taskTag(t.status)], ['发运申请号', esc(t.apply_no)],
         ['客户名称', esc(t.customer_name)], ['大区', empty(t.region)], ['销售人员', empty(t.sales_name)],
-        ['销售电话', empty(t.sales_phone)], ['创建人', esc(t.created_by)], ['创建日期', fmtDT(t.created_at)],
+        ['销售电话', empty(t.sales_phone) === '—' ? '—' : esc(fmtPhone(t.sales_phone))], ['创建人', esc(t.created_by)], ['创建日期', fmtDT(t.created_at)],
       ])}
       <div class="sec-title">车辆信息</div>
       ${desc([
@@ -887,7 +781,7 @@ async function openTaskDetail(id) {
         ['实际运费', t.actual_freight !== null ? '¥' + money(t.actual_freight) : '<span class="muted">到达后回填</span>'],
         ['运输里程', t.mileage ? t.mileage + ' 公里' : '<span class="muted">-</span>'],
         ['发运地点', esc(t.origin)], ['交付地区', empty(t.dest_region)],
-        ['交付地址', esc(t.dest_address), 1], ['接车人电话', empty(t.receiver_phone)],
+        ['交付地址', esc(t.dest_address), 1], ['接车人电话', empty(t.receiver_phone) === '—' ? '—' : esc(fmtPhone(t.receiver_phone))],
       ])}
       ${t.cancel_reason ? `<div class="sec-title">取消信息</div>${desc([['取消原因', esc(t.cancel_reason), 1]])}` : ''}
       <div class="sec-title">承运信息</div>
@@ -927,7 +821,7 @@ async function runMock(op, ids, ctx) {
     const m = openModal({
       title: `狮桥接单 · 分配司机（${ids.length} 单）`,
       body: `
-        ${F.select('mk-driver', '分配司机', drivers.map((x) => `<option value="${x.id}">${esc(x.name)} · ${esc(x.phone)} · ${esc(x.carrier_name || '散单')}</option>`).join(''), { req: 1 })}
+        ${F.select('mk-driver', '分配司机', drivers.map((x) => `<option value="${x.id}">${esc(x.name)} · ${esc(fmtPhone(x.phone))} · ${esc(x.carrier_name || '散单')}</option>`).join(''), { req: 1 })}
         ${F.text('mk-date', '预计提车日期', { value: new Date(Date.now() + 86400000).toISOString().slice(0, 10) })}`,
       foot: `<button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" id="mk-ok">执行</button>`,
     });
@@ -1029,21 +923,20 @@ function crmApplyForm() {
       ${F.text('ca-dest', '交付地址', { req: 1, ph: '省市区详细地址' })}
       ${F.text('ca-freight', '计划运费(元)', { req: 1, ph: '线路参考价', value: '9800' })}
       ${F.text('ca-sales', '销售人员', { ph: '销售姓名' })}
-      ${F.country('ca-phone-cc', '国家/地区', { cc: '+86' })}
-      ${F.text('ca-phone', '销售电话', { max: 20 })}`,
+      ${F.intlPhone('ca-phone', '销售电话', { tip: '选填；默认中国 +86，点击国旗可切换国家' })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" id="ca-ok">下发</button>`,
   });
-  bindCountrySelect('ca-phone-cc', 'ca-phone');
+  const ph = initPhoneInput('ca-phone', '');
   $('#ca-ok', m.el).onclick = async () => {
     try {
+      const e3 = phoneCheck(ph, '销售电话', { required: false });
+      if (e3) throw new Error(e3);
       const body = {
         apply_no: fv('ca-apply'), customer_name: fv('ca-cust'), vin: fv('ca-vin'),
         vehicle_model: fv('ca-model') || null, dest_address: fv('ca-dest'),
-        plan_freight: Number(fv('ca-freight')), sales_name: fv('ca-sales') || null, sales_phone: phoneVal('ca-phone-cc', 'ca-phone') || null,
+        plan_freight: Number(fv('ca-freight')), sales_name: fv('ca-sales') || null, sales_phone: phoneVal(ph) || null,
       };
       if (!body.apply_no || !body.customer_name || !body.vin || !body.dest_address || !body.plan_freight) throw new Error('请填写完整必填项');
-      const e3 = checkPhone(body.sales_phone, '销售电话');
-      if (e3) throw new Error(e3);
       const d = await api('/mock/crm/apply', { method: 'POST', body });
       m.close(); toast(`${d.message} · 任务单号 ${d.data.task_no}`); route();
     } catch (e) { toast(e.message, false); }

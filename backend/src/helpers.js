@@ -28,6 +28,8 @@ function pageOf(query) {
   return { page, size, offset: (page - 1) * size };
 }
 
+const { parsePhoneNumberFromString: parsePhone } = require('libphonenumber-js/max');
+
 /** 本地日期串 YYYY-MM-DD（toISOString 为 UTC，东八区 0-8 点生成的单号/日期会错一天） */
 function localDateStr(d = new Date()) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
@@ -35,17 +37,10 @@ function localDateStr(d = new Date()) {
     .slice(0, 10);
 }
 
-/** 大陆手机号：1[3-9] 开头共 11 位 */
-const MOBILE_RE = /^1[3-9]\d{9}$/;
-/** 联系电话：手机号11位 / 座机含区号 / 座机不含区号7-8位 / 400/800 热线 */
-const PHONE_RE = /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8}(-\d{1,4})?|[48]00-?\d{3,4}-?\d{3,4}|\d{7,8})$/;
-/** 国际号码：+区号(1-3位) + 号码（数字/空格/连字符/括号，4-18位） */
-const INTL_RE = /^\+\d{1,3}\s[0-9\-() ]{4,18}$/;
-
 /**
- * 校验并返回清洗后的电话；不合法抛 BizError。
- * 存储约定：国内号码存裸号（如 13800138000），国外号码带区号前缀（如 +1 202-555-0123）。
- * mobileOnly=true 时仅国内要求 11 位手机号，国际号码按通用规则校验。
+ * 电话校验与归一化（基于 Google libphonenumber）。
+ * 存储统一 E.164（如 +8613812345678）；无 + 前缀按中国号码解析。
+ * mobileOnly=true 时要求号码类型为手机。
  */
 function assertPhone(value, { label = '联系电话', mobileOnly = false, required = true } = {}) {
   const v = String(value ?? '').trim();
@@ -53,20 +48,18 @@ function assertPhone(value, { label = '联系电话', mobileOnly = false, requir
     if (required) throw new BizError(`${label}必填`);
     return null;
   }
-  if (v.length > 24) throw new BizError(`${label}长度不能超过 24 位`);
-  if (v.startsWith('+')) {
-    if (!INTL_RE.test(v)) {
-      throw new BizError(`${label}国际号码格式不正确，应为「+区号 号码」，如 +1 202-555-0123`);
+  if (v.length > 25) throw new BizError(`${label}长度不正确`);
+  const p = v.startsWith('+') ? parsePhone(v) : parsePhone(v, 'CN');
+  if (!p || !p.isValid()) {
+    throw new BizError(`${label}格式不正确：国内支持手机号、座机（需含区号，如 0551-1234567）、400/800 号码；国外号码需带国家区号（如 +1 202-555-0123）`);
+  }
+  if (mobileOnly) {
+    const t = p.getType();
+    if (t !== 'MOBILE' && t !== 'FIXED_LINE_OR_MOBILE') {
+      throw new BizError('座机/热线号码不可用，请填写手机号');
     }
-    return v;
   }
-  const ok = mobileOnly ? MOBILE_RE.test(v) : PHONE_RE.test(v);
-  if (!ok) {
-    throw new BizError(mobileOnly
-      ? `${label}格式不正确，请输入 11 位大陆手机号（1[3-9] 开头）；国外号码请加区号前缀，如 +1 202-555-0123`
-      : `${label}格式不正确，国内支持 11 位手机号、座机（含区号如 0551-1234567 或 7-8 位直拨号）或 400/800 号码；国外号码请加区号前缀，如 +1 202-555-0123`);
-  }
-  return v;
+  return p.number;
 }
 
-module.exports = { BizError, wrap, errorHandler, pageOf, localDateStr, assertPhone, MOBILE_RE, PHONE_RE };
+module.exports = { BizError, wrap, errorHandler, pageOf, localDateStr, assertPhone };

@@ -78,7 +78,7 @@
             "content": {
               "application/json": {
                 "example": {
-                  "list": [{ "id": 1, "carrier_code": "CAR-001", "carrier_name": "狮桥物流股份有限公司", "contact_person": "李强", "contact_phone": "13812340001", "coop_routes": "合肥-华东 / 合肥-华中", "status": "COOPERATING", "driver_count": 3 }],
+                  "list": [{ "id": 1, "carrier_code": "CAR-001", "carrier_name": "狮桥物流股份有限公司", "contact_person": "李强", "contact_phone": "+8613812340001", "coop_routes": "合肥-华东 / 合肥-华中", "status": "COOPERATING", "driver_count": 3 }],
                   "total": 4, "page": 1, "size": 10
                 }
               }
@@ -105,7 +105,7 @@
                   "remark": { "type": "string" }
                 }
               },
-              "example": { "carrier_name": "中储智运物流有限公司", "contact_person": "周敏", "contact_phone": "13955100011", "coop_routes": "合肥-华北 / 合肥-华东", "remark": "干线运力补充" }
+              "example": { "carrier_name": "中储智运物流有限公司", "contact_person": "周敏", "contact_phone": "+8613955100011", "coop_routes": "合肥-华北 / 合肥-华东", "remark": "干线运力补充" }
             }
           }
         },
@@ -128,7 +128,7 @@
           "content": {
             "application/json": {
               "schema": { "type": "object", "required": ["carrier_name", "contact_person", "contact_phone"] },
-              "example": { "carrier_name": "狮桥物流股份有限公司", "contact_person": "李强", "contact_phone": "13812340001", "coop_routes": "合肥-华东 / 合肥-华南", "remark": "" }
+              "example": { "carrier_name": "狮桥物流股份有限公司", "contact_person": "李强", "contact_phone": "+8613812340001", "coop_routes": "合肥-华东 / 合肥-华南", "remark": "" }
             }
           }
         },
@@ -175,7 +175,7 @@
             "content": {
               "application/json": {
                 "example": {
-                  "list": [{ "id": 2, "name": "刘志强", "phone": "13712340002", "id_card": "340102198503150023", "vehicle_type": "重型半挂牵引车", "carrier_id": 1, "carrier_name": "狮桥物流股份有限公司", "status": "ENABLED" }],
+                  "list": [{ "id": 2, "name": "刘志强", "phone": "+8613712340002", "id_card": "340102198503150023", "vehicle_type": "重型半挂牵引车", "carrier_id": 1, "carrier_name": "狮桥物流股份有限公司", "status": "ENABLED" }],
                   "total": 8, "page": 1, "size": 10
                 }
               }
@@ -206,7 +206,7 @@
                   "remark": { "type": "string" }
                 }
               },
-              "example": { "name": "孙卫东", "phone": "13655100009", "id_card": "340103199208120011", "license_no": "B2-340103199208", "vehicle_type": "重型半挂牵引车", "license_valid_from": "2024-06-01", "license_valid_to": "2030-06-01", "carrier_id": 1, "remark": "" }
+              "example": { "name": "孙卫东", "phone": "+8613655100009", "id_card": "340103199208120011", "license_no": "B2-340103199208", "vehicle_type": "重型半挂牵引车", "license_valid_from": "2024-06-01", "license_valid_to": "2030-06-01", "carrier_id": 1, "remark": "" }
             }
           }
         },
@@ -223,7 +223,7 @@
         "description": "承运商接单时分配司机用，可按承运商过滤",
         "parameters": [{ "name": "carrier_id", "in": "query", "schema": { "type": "integer" } }],
         "responses": {
-          "200": { "description": "启用中司机", "content": { "application/json": { "example": { "list": [{ "id": 2, "name": "刘志强", "phone": "13712340002", "vehicle_type": "重型半挂牵引车", "carrier_id": 1, "carrier_name": "狮桥物流股份有限公司" }] } } } }
+          "200": { "description": "启用中司机", "content": { "application/json": { "example": { "list": [{ "id": 2, "name": "刘志强", "phone": "+8613712340002", "vehicle_type": "重型半挂牵引车", "carrier_id": 1, "carrier_name": "狮桥物流股份有限公司" }] } } } }
         }
       }
     },
@@ -238,7 +238,7 @@
           "content": {
             "application/json": {
               "schema": { "type": "object", "required": ["phone", "license_valid_from", "license_valid_to"] },
-              "example": { "phone": "13712340002", "license_no": "B2-340102198503", "vehicle_type": "重型半挂牵引车", "license_valid_from": "2024-06-01", "license_valid_to": "2030-06-01", "carrier_id": 1, "remark": "" }
+              "example": { "phone": "+8613712340002", "license_no": "B2-340102198503", "vehicle_type": "重型半挂牵引车", "license_valid_from": "2024-06-01", "license_valid_to": "2030-06-01", "carrier_id": 1, "remark": "" }
             }
           }
         },
@@ -409,7 +409,7 @@
             "content": {
               "application/json": {
                 "example": {
-                  "list": [{ "id": 17, "task_no": "FY202610190001", "status": "IN_TRANSIT", "vin": "LZXBCGH49P1D10099", "vehicle_model": "星辰重卡 H9-460", "carrier_name": "狮桥物流股份有限公司", "driver_name": "刘志强", "driver_phone": "13712340002", "transport_no": "SQ202610190017", "position_desc": "南京市 G42沪蓉高速", "speed": 71, "reported_at": "2026-10-19 09:19:20" }],
+                  "list": [{ "id": 17, "task_no": "FY202610190001", "status": "IN_TRANSIT", "vin": "LZXBCGH49P1D10099", "vehicle_model": "星辰重卡 H9-460", "carrier_name": "狮桥物流股份有限公司", "driver_name": "刘志强", "driver_phone": "+8613712340002", "transport_no": "SQ202610190017", "position_desc": "南京市 G42沪蓉高速", "speed": 71, "reported_at": "2026-10-19 09:19:20" }],
                   "total": 13, "page": 1, "size": 10
                 }
               }
@@ -586,7 +586,7 @@
                 "customer_name": "联测物流科技（上海）有限公司",
                 "region": "华东大区",
                 "sales_name": "王建国",
-                "sales_phone": "13801380000",
+                "sales_phone": "+8613801380000",
                 "vin": "LZXBCGH49P1D10099",
                 "vehicle_model": "星辰重卡 H9-460",
                 "engine_config": "WP13.460E50",
@@ -598,7 +598,7 @@
                 "origin": "合肥市包河区上海路88号",
                 "dest_region": "上海市",
                 "dest_address": "上海市青浦区华新镇嘉松中路4588号",
-                "receiver_phone": "13916012345",
+                "receiver_phone": "+8613916012345",
                 "ship_mode": "送车",
                 "plan_freight": 9800
               }
@@ -862,7 +862,7 @@
                   "carrier_id": { "type": "integer" }
                 }
               },
-              "example": { "name": "赵联测", "phone": "13705519999", "id_card": "340102199001011234", "license_no": "B2-3401021990", "vehicle_type": "重型半挂牵引车", "license_valid_from": "2024-06-01", "license_valid_to": "2030-06-01", "carrier_id": 1 }
+              "example": { "name": "赵联测", "phone": "+8613705519999", "id_card": "340102199001011234", "license_no": "B2-3401021990", "vehicle_type": "重型半挂牵引车", "license_valid_from": "2024-06-01", "license_valid_to": "2030-06-01", "carrier_id": 1 }
             }
           }
         },
