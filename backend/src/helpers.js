@@ -35,4 +35,26 @@ function localDateStr(d = new Date()) {
     .slice(0, 10);
 }
 
-module.exports = { BizError, wrap, errorHandler, pageOf, localDateStr };
+/** 大陆手机号：1[3-9] 开头共 11 位 */
+const MOBILE_RE = /^1[3-9]\d{9}$/;
+/** 联系电话：手机号 / 座机（区号2-3位+7-8位，可带1-4位分机）/ 400 热线 */
+const PHONE_RE = /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8}(-\d{1,4})?|400-?\d{3,4}-?\d{3,4})$/;
+
+/** 校验并返回清洗后的电话；不合法抛 BizError。mobileOnly=true 时仅接受手机号 */
+function assertPhone(value, { label = '联系电话', mobileOnly = false, required = true } = {}) {
+  const v = String(value ?? '').trim();
+  if (!v) {
+    if (required) throw new BizError(`${label}必填`);
+    return null;
+  }
+  if (v.length > 20) throw new BizError(`${label}长度不能超过 20 位`);
+  const ok = mobileOnly ? MOBILE_RE.test(v) : PHONE_RE.test(v);
+  if (!ok) {
+    throw new BizError(mobileOnly
+      ? `${label}格式不正确，请输入 11 位大陆手机号（1[3-9] 开头）`
+      : `${label}格式不正确，支持 11 位手机号、座机（如 0551-1234567）或 400 号码`);
+  }
+  return v;
+}
+
+module.exports = { BizError, wrap, errorHandler, pageOf, localDateStr, assertPhone, MOBILE_RE, PHONE_RE };

@@ -4,7 +4,7 @@
  */
 const { Router } = require('express');
 const { query } = require('../db');
-const { BizError, wrap, pageOf } = require('../helpers');
+const { BizError, wrap, pageOf, assertPhone } = require('../helpers');
 
 const router = Router();
 
@@ -52,7 +52,7 @@ router.post('/', wrap(async (req, res) => {
   const { name, phone, id_card, license_no = null, vehicle_type = null,
     license_valid_from, license_valid_to, carrier_id = null, remark = null } = req.body;
   if (!name?.trim()) throw new BizError('司机姓名必填');
-  if (!phone?.trim()) throw new BizError('手机号必填');
+  const phoneV = assertPhone(phone, { label: '手机号', mobileOnly: true });
   if (!id_card?.trim()) throw new BizError('身份证号必填');
   if (!license_valid_from) throw new BizError('驾驶证有效期自必填');
   if (!license_valid_to) throw new BizError('驾驶证有效期至必填');
@@ -63,7 +63,7 @@ router.post('/', wrap(async (req, res) => {
   const r = await query(
     `INSERT INTO drivers (name, phone, id_card, license_no, vehicle_type, license_valid_from, license_valid_to, carrier_id, status, remark)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ENABLED', ?)`,
-    [name.trim(), phone.trim(), id_card.trim(), license_no, vehicle_type, license_valid_from, license_valid_to,
+    [name.trim(), phoneV, id_card.trim(), license_no, vehicle_type, license_valid_from, license_valid_to,
       carrier_id ? Number(carrier_id) : null, remark]
   );
   const [created] = await query(
@@ -80,12 +80,12 @@ router.put('/:id', wrap(async (req, res) => {
     license_valid_from, license_valid_to, carrier_id = null, remark = null } = req.body;
   const [exist] = await query('SELECT * FROM drivers WHERE id = ?', [Number(id)]);
   if (!exist) throw new BizError('司机不存在', 404);
-  if (!phone?.trim()) throw new BizError('手机号必填');
+  const phoneV = assertPhone(phone, { label: '手机号', mobileOnly: true });
   if (!license_valid_from || !license_valid_to) throw new BizError('驾驶证有效期必填');
 
   await query(
     `UPDATE drivers SET phone = ?, license_no = ?, vehicle_type = ?, license_valid_from = ?, license_valid_to = ?, carrier_id = ?, remark = ? WHERE id = ?`,
-    [phone.trim(), license_no, vehicle_type, license_valid_from, license_valid_to,
+    [phoneV, license_no, vehicle_type, license_valid_from, license_valid_to,
       carrier_id ? Number(carrier_id) : null, remark, Number(id)]
   );
   const [updated] = await query(

@@ -15,7 +15,7 @@
  */
 const { Router } = require('express');
 const { query, withTransaction, nextSeq } = require('../db');
-const { BizError, wrap, localDateStr } = require('../helpers');
+const { BizError, wrap, localDateStr, assertPhone } = require('../helpers');
 
 const router = Router();
 
@@ -54,6 +54,8 @@ router.post('/crm/apply', wrap(async (req, res) => {
   if (!vin?.trim()) throw new BizError('VIN必填');
   if (!dest_address?.trim()) throw new BizError('交付地址必填');
   if (plan_freight === undefined || Number(plan_freight) < 0) throw new BizError('计划运费必填且不小于0');
+  const salesPhoneV = assertPhone(sales_phone, { label: '销售电话', required: false });
+  const receiverPhoneV = assertPhone(receiver_phone, { label: '接车人电话', required: false });
 
   const dup = await query('SELECT id FROM ship_tasks WHERE apply_no = ?', [apply_no.trim()]);
   if (dup.length) throw new BizError(`发运申请号 ${apply_no} 已同步过，请勿重复下发`, 409);
@@ -66,10 +68,10 @@ router.post('/crm/apply', wrap(async (req, res) => {
          order_no, report_no, factory, storage_location, origin, dest_region, dest_address, receiver_phone, ship_mode,
          plan_freight, status, created_by)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'PENDING', 'CRM系统')`,
-      [task_no, apply_no.trim(), customer_name.trim(), region || null, sales_name || null, sales_phone || null,
+      [task_no, apply_no.trim(), customer_name.trim(), region || null, sales_name || null, salesPhoneV,
         vin.trim(), vehicle_model || null, engine_config || null, cab_type || null, order_no || null, report_no || null,
         factory || null, storage_location || null, origin?.trim() || '合肥市包河区上海路88号', dest_region || null,
-        dest_address.trim(), receiver_phone || null, ship_mode, Number(plan_freight)]
+        dest_address.trim(), receiverPhoneV, ship_mode, Number(plan_freight)]
     );
     await addEvent(r.insertId, 'APPLY', 'CRM下发发运申请',
       `接收CRM发运申请 ${apply_no}，计划运费 ${Number(plan_freight).toFixed(2)} 元`, 'CRM系统', conn);
@@ -173,19 +175,20 @@ router.post('/esign/sign-task', wrap(async (req, res) => {
 // ============ 接口10: 司机信息三方同步（幂等） ============
 router.post('/driver/sync', wrap(async (req, res) => {
   const { name, phone, id_card, license_no, vehicle_type, license_valid_from, license_valid_to, carrier_id } = req.body;
-  if (!name || !phone || !id_card) throw new BizError('姓名、手机号、身份证号必填');
+  if (!name || !id_card) throw new BizError('姓名、身份证号必填');
+  const phoneV = assertPhone(phone, { label: '手机号', mobileOnly: true });
 
   const [exist] = await query('SELECT * FROM drivers WHERE id_card = ?', [id_card]);
   if (exist) {
     await query('UPDATE drivers SET name = ?, phone = ?, license_no = ?, vehicle_type = ?, license_valid_from = ?, license_valid_to = ?, carrier_id = ? WHERE id = ?',
-      [name, phone, license_no || null, vehicle_type || null, license_valid_from || exist.license_valid_from,
+      [name, phoneV, license_no || null, vehicle_type || null, license_valid_from || exist.license_valid_from,
         license_valid_to || exist.license_valid_to, carrier_id || exist.carrier_id, exist.id]);
     return res.json({ message: '司机信息已更新', id: exist.id });
   }
   const r = await query(
     `INSERT INTO drivers (name, phone, id_card, license_no, vehicle_type, license_valid_from, license_valid_to, carrier_id, status)
      VALUES (?,?,?,?,?,?,?,?, 'ENABLED')`,
-    [name, phone, id_card, license_no || null, vehicle_type || null, license_valid_from || null, license_valid_to || null, carrier_id || null]
+    [name, phoneV, id_card, license_no || null, vehicle_type || null, license_valid_from || null, license_valid_to || null, carrier_id || null]
   );
   res.status(201).json({ message: '司机已同步新增', id: r.insertId });
 }));

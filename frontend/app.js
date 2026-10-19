@@ -108,11 +108,24 @@ function confirmModal(text) {
   });
 }
 
+// 电话校验（与后端 helpers.assertPhone 规则一致）
+const MOBILE_RE = /^1[3-9]\d{9}$/;
+const PHONE_RE = /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8}(-\d{1,4})?|400-?\d{3,4}-?\d{3,4})$/;
+function checkPhone(value, label, mobileOnly = false) {
+  const v = String(value || '').trim();
+  if (!v) return null;
+  if (v.length > 20) return `${label}长度不能超过 20 位`;
+  const ok = mobileOnly ? MOBILE_RE.test(v) : PHONE_RE.test(v);
+  return ok ? null : (mobileOnly
+    ? `${label}格式不正确，请输入 11 位大陆手机号（1[3-9] 开头）`
+    : `${label}格式不正确，支持 11 位手机号、座机（如 0551-1234567）或 400 号码`);
+}
+
 // 表单字段构造
 const F = {
   text: (id, label, opt = {}) => `
     <div class="form-item"><label class="${opt.req ? 'req' : ''}">${label}</label>
-      <div class="ctrl"><input class="input" id="${id}" placeholder="${opt.ph || '请输入'}" value="${esc(opt.value ?? '')}" ${opt.dis ? 'disabled' : ''}>
+      <div class="ctrl"><input class="input" id="${id}" placeholder="${opt.ph || '请输入'}" value="${esc(opt.value ?? '')}" ${opt.dis ? 'disabled' : ''} ${opt.max ? `maxlength="${opt.max}"` : ''}>
       ${opt.tip ? `<div class="form-tip">${opt.tip}</div>` : ''}</div></div>`,
   select: (id, label, options, opt = {}) => `
     <div class="form-item"><label class="${opt.req ? 'req' : ''}">${label}</label>
@@ -367,7 +380,7 @@ async function carrierForm(id) {
       ${F.text('cf-name', '承运商名称', { req: 1, value: r.carrier_name })}
       ${F.select('cf-code', '承运商编码', `<option>${id ? esc(r.carrier_code) : '系统自动生成'}</option>`, { tip: '编码规则：CAR-三位序列号，系统自动生成不可修改' })}
       ${F.text('cf-contact', '联系人', { req: 1, value: r.contact_person })}
-      ${F.text('cf-phone', '联系电话', { req: 1, value: r.contact_phone })}
+      ${F.text('cf-phone', '联系电话', { req: 1, value: r.contact_phone, max: 20, ph: '11位手机号 / 座机 / 400号码', tip: '支持 11 位手机号、座机（如 0551-1234567）或 400 号码' })}
       ${F.text('cf-routes', '合作路线', { value: r.coop_routes || '', ph: '如：合肥—华东、合肥—华南' })}
       ${F.textarea('cf-remark', '备注', { value: r.remark || '' })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button>
@@ -381,6 +394,8 @@ async function carrierForm(id) {
         coop_routes: fv('cf-routes') || null, remark: fv('cf-remark') || null,
       };
       if (!body.carrier_name || !body.contact_person || !body.contact_phone) throw new Error('请填写完整必填项');
+      const e1 = checkPhone(body.contact_phone, '联系电话');
+      if (e1) throw new Error(e1);
       const d = id ? await api(`/carriers/${id}`, { method: 'PUT', body }) : await api('/carriers', { method: 'POST', body });
       m.close(); toast(d.message); pageCarriers($('#view'));
     } catch (e) { toast(e.message, false); }
@@ -468,7 +483,7 @@ async function driverForm(id, carriersArg) {
     title: id ? '编辑司机' : '新增司机',
     body: `
       ${F.text('df-name', '姓名', { req: 1, value: v.name, dis: !!id })}
-      ${F.text('df-phone', '手机号', { req: 1, value: v.phone })}
+      ${F.text('df-phone', '手机号', { req: 1, value: v.phone, max: 11, ph: '11位大陆手机号' })}
       ${F.text('df-idcard', '身份证号', { req: 1, value: v.id_card, dis: !!id })}
       ${id ? `<div class="form-tip" style="margin:-8px 0 8px 108px">姓名与身份证号创建后不可修改</div>` : ''}
       ${F.text('df-license', '驾驶证号', { value: v.license_no || '' })}
@@ -488,6 +503,8 @@ async function driverForm(id, carriersArg) {
       };
       if (!id) { body.name = fv('df-name'); body.id_card = fv('df-idcard'); }
       if (!body.phone || !body.license_valid_from || !body.license_valid_to) throw new Error('请填写完整必填项');
+      const e2 = checkPhone(body.phone, '手机号', true);
+      if (e2) throw new Error(e2);
       const d = id ? await api(`/drivers/${id}`, { method: 'PUT', body }) : await api('/drivers', { method: 'POST', body });
       m.close(); toast(d.message); pageDrivers($('#view'));
     } catch (e) { toast(e.message, false); }
@@ -867,7 +884,7 @@ function crmApplyForm() {
       ${F.text('ca-dest', '交付地址', { req: 1, ph: '省市区详细地址' })}
       ${F.text('ca-freight', '计划运费(元)', { req: 1, ph: '线路参考价', value: '9800' })}
       ${F.text('ca-sales', '销售人员', { ph: '销售姓名' })}
-      ${F.text('ca-phone', '销售电话', { ph: '销售人员联系方式' })}`,
+      ${F.text('ca-phone', '销售电话', { ph: '11位手机号 / 座机 / 400号码', max: 20 })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button><button class="btn btn-primary" id="ca-ok">下发</button>`,
   });
   $('#ca-ok', m.el).onclick = async () => {
@@ -878,6 +895,8 @@ function crmApplyForm() {
         plan_freight: Number(fv('ca-freight')), sales_name: fv('ca-sales') || null, sales_phone: fv('ca-phone') || null,
       };
       if (!body.apply_no || !body.customer_name || !body.vin || !body.dest_address || !body.plan_freight) throw new Error('请填写完整必填项');
+      const e3 = checkPhone(body.sales_phone, '销售电话');
+      if (e3) throw new Error(e3);
       const d = await api('/mock/crm/apply', { method: 'POST', body });
       m.close(); toast(`${d.message} · 任务单号 ${d.data.task_no}`); route();
     } catch (e) { toast(e.message, false); }

@@ -4,7 +4,7 @@
  */
 const { Router } = require('express');
 const { query, nextSeq } = require('../db');
-const { BizError, wrap, pageOf } = require('../helpers');
+const { BizError, wrap, pageOf, assertPhone } = require('../helpers');
 
 const router = Router();
 
@@ -39,7 +39,7 @@ router.post('/', wrap(async (req, res) => {
   const { carrier_name, contact_person, contact_phone, coop_routes = null, remark = null } = req.body;
   if (!carrier_name?.trim()) throw new BizError('承运商名称必填');
   if (!contact_person?.trim()) throw new BizError('联系人必填');
-  if (!contact_phone?.trim()) throw new BizError('联系电话必填');
+  const phone = assertPhone(contact_phone, { label: '联系电话' });
 
   const dup = await query('SELECT id FROM carriers WHERE carrier_name = ?', [carrier_name.trim()]);
   if (dup.length) throw new BizError('承运商名称已存在，请勿重复添加', 409);
@@ -48,7 +48,7 @@ router.post('/', wrap(async (req, res) => {
   const r = await query(
     `INSERT INTO carriers (carrier_code, carrier_name, contact_person, contact_phone, coop_routes, status, remark)
      VALUES (?, ?, ?, ?, ?, 'COOPERATING', ?)`,
-    [carrier_code, carrier_name.trim(), contact_person.trim(), contact_phone.trim(), coop_routes, remark]
+    [carrier_code, carrier_name.trim(), contact_person.trim(), phone, coop_routes, remark]
   );
   const [created] = await query('SELECT * FROM carriers WHERE id = ?', [r.insertId]);
   res.status(201).json({ message: '新增成功', data: created });
@@ -60,15 +60,16 @@ router.put('/:id', wrap(async (req, res) => {
   const { carrier_name, contact_person, contact_phone, coop_routes = null, remark = null } = req.body;
   const [exist] = await query('SELECT * FROM carriers WHERE id = ?', [id]);
   if (!exist) throw new BizError('承运商不存在', 404);
-  if (!carrier_name?.trim() || !contact_person?.trim() || !contact_phone?.trim()) {
-    throw new BizError('名称、联系人、联系电话必填');
+  if (!carrier_name?.trim() || !contact_person?.trim()) {
+    throw new BizError('名称、联系人必填');
   }
+  const phone = assertPhone(contact_phone, { label: '联系电话' });
   const dup = await query('SELECT id FROM carriers WHERE carrier_name = ? AND id != ?', [carrier_name.trim(), Number(id)]);
   if (dup.length) throw new BizError('承运商名称已存在', 409);
 
   await query(
     `UPDATE carriers SET carrier_name = ?, contact_person = ?, contact_phone = ?, coop_routes = ?, remark = ? WHERE id = ?`,
-    [carrier_name.trim(), contact_person.trim(), contact_phone.trim(), coop_routes, remark, Number(id)]
+    [carrier_name.trim(), contact_person.trim(), phone, coop_routes, remark, Number(id)]
   );
   const [updated] = await query('SELECT * FROM carriers WHERE id = ?', [Number(id)]);
   res.json({ message: '修改成功', data: updated });
