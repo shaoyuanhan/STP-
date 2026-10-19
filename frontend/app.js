@@ -689,11 +689,11 @@ async function pageTasks(view) {
               ? `<span class="ellipsis" title="${esc(r.carrier_name)}${r.driver_name ? ' / ' + esc(r.driver_name) : ''}">${esc(r.carrier_name)}${r.driver_name ? ' / ' + esc(r.driver_name) : ''}</span>`
               : '<span class="muted">-</span>'}</td>
             <td>${fmtD(r.plan_pickup_date) === '—' ? '<span class="muted">-</span>' : fmtD(r.plan_pickup_date)}</td>
-            <td>${r.out_bound_at ? fmtDT(r.out_bound_at) : '<span class="muted">-</span>'}</td>
-            <td>${r.ship_at ? fmtDT(r.ship_at) : '<span class="muted">-</span>'}</td>
-            <td>${r.arrive_at ? fmtDT(r.arrive_at) : '<span class="muted">-</span>'}</td>
+            <td>${r.out_bound_at ? fmtDTs(r.out_bound_at) : '<span class="muted">-</span>'}</td>
+            <td>${r.ship_at ? fmtDTs(r.ship_at) : '<span class="muted">-</span>'}</td>
+            <td>${r.arrive_at ? fmtDTs(r.arrive_at) : '<span class="muted">-</span>'}</td>
             <td>${taskTag(r.status)}</td>
-            <td>${fmtDT(r.created_at)}</td>
+            <td>${fmtDTs(r.created_at)}</td>
             <td class="actions">
               ${r.status === 'PENDING' ? `<a class="link" onclick="dispatchForm(${r.id})">派单</a>` : ''}
               ${r.status === 'DISPATCHED' ? `<a class="link" onclick="cancelDispatchForm(${r.id})">取消派单</a><a class="link" onclick="dispatchForm(${r.id}, true)">改派</a>` : ''}
