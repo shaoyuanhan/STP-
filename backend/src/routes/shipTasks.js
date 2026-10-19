@@ -73,7 +73,7 @@ router.post('/:id/dispatch', wrap(async (req, res) => {
   if (carrier.status !== 'COOPERATING') throw new BizError('该承运商已停用，不可被派单');
 
   const remarkV = remark?.trim() || null;
-  await query('UPDATE ship_tasks SET carrier_id = ?, dispatch_remark = ?, status = ? WHERE id = ?',
+  await query('UPDATE ship_tasks SET carrier_id = ?, dispatch_remark = ?, cancel_reason = NULL, status = ? WHERE id = ?',
     [Number(carrier_id), remarkV, 'DISPATCHED', Number(id)]);
   await addEvent(id, 'DISPATCH', '调度派单', `派单至承运商：${carrier.carrier_name}，线路参考价 ${Number(task.plan_freight).toFixed(2)} 元${remarkV ? `，备注：${remarkV}` : ''}`);
   res.json({ message: `派单成功，已同步狮桥发运系统`, carrier_name: carrier.carrier_name });
@@ -97,7 +97,7 @@ router.post('/dispatch-batch', wrap(async (req, res) => {
   for (const tid of task_ids) {
     const [task] = await query('SELECT * FROM ship_tasks WHERE id = ?', [Number(tid)]);
     if (!task || task.status !== 'PENDING') { skipped.push(task ? task.task_no : `ID:${tid}`); continue; }
-    await query('UPDATE ship_tasks SET carrier_id = ?, dispatch_remark = ?, status = ? WHERE id = ?',
+    await query('UPDATE ship_tasks SET carrier_id = ?, dispatch_remark = ?, cancel_reason = NULL, status = ? WHERE id = ?',
       [Number(carrier_id), remarkV, 'DISPATCHED', Number(tid)]);
     await addEvent(tid, 'DISPATCH', '调度派单', `批量派单至承运商：${carrier.carrier_name}，线路参考价 ${Number(task.plan_freight).toFixed(2)} 元${remarkV ? `，备注：${remarkV}` : ''}`);
     ok += 1;
@@ -109,20 +109,22 @@ router.post('/dispatch-batch', wrap(async (req, res) => {
   });
 }));
 
-/** 取消派单：仅"已派单" -> 回到待派单，取消原因枚举：承运商无法履约/调度调整/其他 */
+/** 取消派单：仅"已派单"(司机未接单) -> 回到待派单；reason 枚举 + remark 补充说明 */
 router.post('/:id/cancel-dispatch', wrap(async (req, res) => {
   const { id } = req.params;
-  const { reason } = req.body;
+  const { reason, remark } = req.body;
   const REASONS = ['承运商无法履约', '调度调整', '其他'];
   const finalReason = REASONS.includes(reason) ? reason : (reason?.trim() || '其他');
+  const remarkV = remark?.trim() || null;
+  const reasonText = remarkV ? `${finalReason}：${remarkV}` : finalReason;
 
   const [task] = await query(`${TASK_SELECT} WHERE t.id = ?`, [Number(id)]);
   if (!task) throw new BizError('任务不存在', 404);
   if (task.status !== 'DISPATCHED') throw new BizError('仅"已派单"状态的任务可以取消派单');
 
-  await query('UPDATE ship_tasks SET carrier_id = NULL, driver_id = NULL, status = ?, plan_pickup_date = NULL, dispatch_remark = NULL WHERE id = ?',
-    ['PENDING', Number(id)]);
-  await addEvent(id, 'CANCEL', '取消派单', `取消派单（${task.carrier_name}），原因：${finalReason}，已同步三方物流系统`);
+  await query('UPDATE ship_tasks SET carrier_id = NULL, driver_id = NULL, status = ?, plan_pickup_date = NULL, dispatch_remark = NULL, cancel_reason = ? WHERE id = ?',
+    ['PENDING', reasonText, Number(id)]);
+  await addEvent(id, 'CANCEL', '取消派单', `取消派单（${task.carrier_name}），原因：${reasonText}，司机未接单，已同步通知承运商/三方物流系统`);
   res.json({ message: '已取消派单，任务回到待派单，并同步三方物流系统' });
 }));
 

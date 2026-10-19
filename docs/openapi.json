@@ -356,14 +356,14 @@
       "post": {
         "tags": ["05 发运任务"],
         "summary": "取消派单",
-        "description": "仅 DISPATCHED 可取消，任务回到待派单；取消原因枚举：承运商无法履约/调度调整/其他",
+        "description": "仅已派单且司机未接单可取消，任务回到待派单；取消原因枚举：承运商无法履约/调度调整/其他，remark 为补充说明，与原因一并留痕",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "properties": { "reason": { "type": "string", "enum": ["承运商无法履约", "调度调整", "其他"] } } },
-              "example": { "reason": "调度调整" }
+              "schema": { "type": "object", "properties": { "reason": { "type": "string", "enum": ["承运商无法履约", "调度调整", "其他"] }, "remark": { "type": "string", "maxLength": 500, "description": "补充说明（选填）" } } },
+              "example": { "reason": "承运商无法履约", "remark": "车辆临时检修无法执行本趟运输" }
             }
           }
         },

@@ -796,19 +796,28 @@ function dispatchBatchForm(tasks, carriersList) {
   };
 }
 
-/** 取消派单 */
-function cancelDispatchForm(taskId) {
+/** 取消派单：PRD 弹窗（状态快照 + 校验结果 + 原因 + 补充说明 + 规则提示） */
+async function cancelDispatchForm(taskId) {
+  const d = await api(`/ship-tasks/${taskId}`);
+  const t = d.task;
+  const cancellable = t.status === 'DISPATCHED';
   const m = openModal({
-    title: '取消派单',
+    title: `取消派单 · ${t.task_no}`,
     body: `
-      <div class="form-tip" style="margin:0 0 12px">取消后任务回到"待派单"，并同步取消三方物流系统的派单信息</div>
-      ${F.select('cd-reason', '取消原因', ['承运商无法履约', '调度调整', '其他'].map((x) => `<option>${x}</option>`).join(''), { req: 1 })}`,
-    foot: `<button class="btn btn-ghost" data-close>取消</button>
-           <button class="btn btn-primary" id="cd-ok">确认取消派单</button>`,
+      <div class="desc-grid" style="margin-bottom:14px">
+        <div class="desc"><label>当前状态</label><span>${taskTag(t.status)}（${esc(t.carrier_name || '-')}、司机未接单）</span></div>
+        <div class="desc"><label>校验结果</label><span style="color:${cancellable ? 'var(--success)' : 'var(--danger)'}">${cancellable ? '✓ 司机未接单，允许取消派单' : '✕ 当前状态不可取消派单（需已派单且司机未接单）'}</span></div>
+      </div>
+      ${F.select('cd-reason', '取消原因', ['承运商无法履约', '调度调整', '其他'].map((x) => `<option>${x}</option>`).join(''), { req: 1 })}
+      ${F.textarea('cd-remark', '说明', { ph: '补充说明' })}
+      <div class="form-tip" style="color:var(--danger);margin-top:10px">规则：仅"已派单且司机未接单"可取消；司机已接单需线下协调承运商后处理；取消后任务回到待派单，并同步通知承运商/三方物流系统。</div>`,
+    foot: `<button class="btn btn-ghost" data-close>返回</button>
+           <button class="btn btn-danger" id="cd-ok" ${cancellable ? '' : 'disabled'}>确认取消派单</button>`,
   });
+  if (!cancellable) return;
   $('#cd-ok', m.el).onclick = async () => {
     try {
-      const d = await api(`/ship-tasks/${taskId}/cancel-dispatch`, { method: 'POST', body: { reason: fv('cd-reason') } });
+      const d = await api(`/ship-tasks/${taskId}/cancel-dispatch`, { method: 'POST', body: { reason: fv('cd-reason'), remark: fv('cd-remark') } });
       m.close(); toast(d.message); pageTasks($('#view'));
     } catch (e) { toast(e.message, false); }
   };
