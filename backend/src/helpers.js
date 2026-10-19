@@ -28,4 +28,11 @@ function pageOf(query) {
   return { page, size, offset: (page - 1) * size };
 }
 
-module.exports = { BizError, wrap, errorHandler, pageOf };
+/** 本地日期串 YYYY-MM-DD（toISOString 为 UTC，东八区 0-8 点生成的单号/日期会错一天） */
+function localDateStr(d = new Date()) {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+module.exports = { BizError, wrap, errorHandler, pageOf, localDateStr };

@@ -14,8 +14,8 @@
  * 接口15 POST /api/mock/shiqiao/track     狮桥位置回传（每小时）
  */
 const { Router } = require('express');
-const { query, nextSeq } = require('../db');
-const { BizError, wrap } = require('../helpers');
+const { query, withTransaction, nextSeq } = require('../db');
+const { BizError, wrap, localDateStr } = require('../helpers');
 
 const router = Router();
 
@@ -25,9 +25,11 @@ async function getTaskByNo(taskNo) {
   return task;
 }
 
-async function addEvent(taskId, node, nodeName, detail, operator) {
-  await query('INSERT INTO task_events (task_id, node, node_name, detail, operator) VALUES (?, ?, ?, ?, ?)',
-    [Number(taskId), node, nodeName, detail, operator || '系统']);
+async function addEvent(taskId, node, nodeName, detail, operator, conn) {
+  const sql = 'INSERT INTO task_events (task_id, node, node_name, detail, operator) VALUES (?, ?, ?, ?, ?)';
+  const params = [Number(taskId), node, nodeName, detail, operator || '系统'];
+  if (conn) await conn.query(sql, params);
+  else await query(sql, params);
 }
 
 function assertStatus(task, allow, msg) {
@@ -56,21 +58,24 @@ router.post('/crm/apply', wrap(async (req, res) => {
   const dup = await query('SELECT id FROM ship_tasks WHERE apply_no = ?', [apply_no.trim()]);
   if (dup.length) throw new BizError(`发运申请号 ${apply_no} 已同步过，请勿重复下发`, 409);
 
-  const task_no = await nextSeq('FY');
-  const r = await query(
-    `INSERT INTO ship_tasks
-      (task_no, apply_no, customer_name, region, sales_name, sales_phone, vin, vehicle_model, engine_config, cab_type,
-       order_no, report_no, factory, storage_location, origin, dest_region, dest_address, receiver_phone, ship_mode,
-       plan_freight, status, created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'PENDING', 'CRM系统')`,
-    [task_no, apply_no.trim(), customer_name.trim(), region || null, sales_name || null, sales_phone || null,
-      vin.trim(), vehicle_model || null, engine_config || null, cab_type || null, order_no || null, report_no || null,
-      factory || null, storage_location || null, origin?.trim() || '合肥市包河区上海路88号', dest_region || null,
-      dest_address.trim(), receiver_phone || null, ship_mode, Number(plan_freight)]
-  );
-  await addEvent(r.insertId, 'APPLY', 'CRM下发发运申请',
-    `接收CRM发运申请 ${apply_no}，计划运费 ${Number(plan_freight).toFixed(2)} 元`, 'CRM系统');
-  const [task] = await query('SELECT * FROM ship_tasks WHERE id = ?', [r.insertId]);
+  const task = await withTransaction(async (conn) => {
+    const task_no = await nextSeq('FY', conn);
+    const [r] = await conn.query(
+      `INSERT INTO ship_tasks
+        (task_no, apply_no, customer_name, region, sales_name, sales_phone, vin, vehicle_model, engine_config, cab_type,
+         order_no, report_no, factory, storage_location, origin, dest_region, dest_address, receiver_phone, ship_mode,
+         plan_freight, status, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'PENDING', 'CRM系统')`,
+      [task_no, apply_no.trim(), customer_name.trim(), region || null, sales_name || null, sales_phone || null,
+        vin.trim(), vehicle_model || null, engine_config || null, cab_type || null, order_no || null, report_no || null,
+        factory || null, storage_location || null, origin?.trim() || '合肥市包河区上海路88号', dest_region || null,
+        dest_address.trim(), receiver_phone || null, ship_mode, Number(plan_freight)]
+    );
+    await addEvent(r.insertId, 'APPLY', 'CRM下发发运申请',
+      `接收CRM发运申请 ${apply_no}，计划运费 ${Number(plan_freight).toFixed(2)} 元`, 'CRM系统', conn);
+    const [[row]] = await conn.query('SELECT * FROM ship_tasks WHERE id = ?', [r.insertId]);
+    return row;
+  });
   res.status(201).json({ message: '发运申请同步成功，已生成待派单任务', data: task });
 }));
 
@@ -202,7 +207,7 @@ router.post('/shiqiao/accept', wrap(async (req, res) => {
     throw new BizError('该司机不属于当前承运商');
   }
 
-  const pickup = plan_pickup_date || new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const pickup = plan_pickup_date || localDateStr(new Date(Date.now() + 86400000));
   await query("UPDATE ship_tasks SET status = 'ACCEPTED', driver_id = ?, plan_pickup_date = ? WHERE id = ?",
     [Number(driver_id), pickup, task.id]);
   await addEvent(task.id, 'ACCEPT', '承运商接单/分配司机',
@@ -240,7 +245,7 @@ router.post('/shiqiao/track', wrap(async (req, res) => {
   const task = await getTaskByNo(task_no);
   assertStatus(task, ['OUT_BOUND', 'PICKED_UP', 'IN_TRANSIT'], '当前状态不可回传位置（车辆尚未提车或已到达）');
 
-  const transport_no = `SQ${new Date().toISOString().slice(0, 10).replace(/-/g, '')}${String(task.id).padStart(4, '0')}`;
+  const transport_no = `SQ${localDateStr().replace(/-/g, '')}${String(task.id).padStart(4, '0')}`;
   await query(
     'INSERT INTO tracking_records (task_id, transport_no, position_desc, lng, lat, speed, reported_at) VALUES (?,?,?,?,?,?,NOW())',
     [task.id, transport_no, position_desc || '位置更新', lng || null, lat || null, speed || null]
@@ -262,24 +267,26 @@ router.post('/shiqiao/arrive', wrap(async (req, res) => {
     ? Number(task.plan_freight) : Number(actual_freight);
   if (!Number.isFinite(amt) || amt < 0) throw new BizError('实际运费金额无效');
 
-  const [driver] = await query('SELECT * FROM drivers WHERE id = ?', [task.driver_id]);
-  await query("UPDATE ship_tasks SET status = 'ARRIVED', arrive_at = NOW(), actual_freight = ?, mileage = ? WHERE id = ?",
-    [amt, mileage || null, task.id]);
-  await addEvent(task.id, 'ARRIVE', '司机到达',
-    `司机${driver ? driver.name : ''}确认到达，实际运费 ${amt.toFixed(2)} 元${mileage ? `，里程 ${mileage} 公里` : ''}`,
-    driver ? driver.name : '司机');
+  await withTransaction(async (conn) => {
+    const [[driver]] = await conn.query('SELECT * FROM drivers WHERE id = ?', [task.driver_id]);
+    await conn.query("UPDATE ship_tasks SET status = 'ARRIVED', arrive_at = NOW(), actual_freight = ?, mileage = ? WHERE id = ?",
+      [amt, mileage || null, task.id]);
+    await addEvent(task.id, 'ARRIVE', '司机到达',
+      `司机${driver ? driver.name : ''}确认到达，实际运费 ${amt.toFixed(2)} 元${mileage ? `，里程 ${mileage} 公里` : ''}`,
+      driver ? driver.name : '司机', conn);
 
-  // 生成运费单
-  const [dupFo] = await query('SELECT id FROM freight_orders WHERE task_id = ?', [task.id]);
-  if (!dupFo) {
-    const freight_no = await nextSeq('YF');
-    await query(
-      `INSERT INTO freight_orders (freight_no, task_id, task_no, carrier_id, driver_id, origin, dest, mileage, plan_freight, actual_freight, status, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?, 'PENDING_RECON', NOW())`,
-      [freight_no, task.id, task.task_no, task.carrier_id, task.driver_id, task.origin,
-        task.dest_region || task.dest_address, mileage || null, Number(task.plan_freight), amt]
-    );
-  }
+    // 生成运费单（幂等：已存在则跳过）
+    const [[dupFo]] = await conn.query('SELECT id FROM freight_orders WHERE task_id = ? FOR UPDATE', [task.id]);
+    if (!dupFo) {
+      const freight_no = await nextSeq('YF', conn);
+      await conn.query(
+        `INSERT INTO freight_orders (freight_no, task_id, task_no, carrier_id, driver_id, origin, dest, mileage, plan_freight, actual_freight, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?, 'PENDING_RECON', NOW())`,
+        [freight_no, task.id, task.task_no, task.carrier_id, task.driver_id, task.origin,
+          task.dest_region || task.dest_address, mileage || null, Number(task.plan_freight), amt]
+      );
+    }
+  });
   res.json({ message: '到达确认成功，已生成运费单，等待客户交接完结' });
 }));
 

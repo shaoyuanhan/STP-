@@ -3,7 +3,7 @@
  * PRD: 任务完结后生成运费单；支持修改运费(需二次确认+原因)；确认对账
  */
 const { Router } = require('express');
-const { query } = require('../db');
+const { query, withTransaction } = require('../db');
 const { BizError, wrap, pageOf } = require('../helpers');
 
 const router = Router();
@@ -49,7 +49,7 @@ router.get('/:id', wrap(async (req, res) => {
   res.json({ order, adjustments });
 }));
 
-/** 修改运费：记录前后金额与原因 */
+/** 修改运费：记录前后金额与原因（事务 + 行锁，防止并发修改丢失留痕） */
 router.post('/:id/adjust', wrap(async (req, res) => {
   const { id } = req.params;
   const { amount, reason } = req.body;
@@ -57,15 +57,17 @@ router.post('/:id/adjust', wrap(async (req, res) => {
   if (!Number.isFinite(amt) || amt < 0) throw new BizError('请输入有效的运费金额');
   if (!reason?.trim()) throw new BizError('请填写修改原因');
 
-  const [order] = await query('SELECT * FROM freight_orders WHERE id = ?', [Number(id)]);
-  if (!order) throw new BizError('运费单不存在', 404);
-  if (Number(order.actual_freight) === amt) throw new BizError('新运费与当前运费一致，无需修改');
+  await withTransaction(async (conn) => {
+    const [[order]] = await conn.query('SELECT * FROM freight_orders WHERE id = ? FOR UPDATE', [Number(id)]);
+    if (!order) throw new BizError('运费单不存在', 404);
+    if (Number(order.actual_freight) === amt) throw new BizError('新运费与当前运费一致，无需修改');
 
-  await query('UPDATE freight_orders SET actual_freight = ? WHERE id = ?', [amt, Number(id)]);
-  await query(
-    'INSERT INTO freight_adjustments (freight_order_id, before_amount, after_amount, reason, operator) VALUES (?, ?, ?, ?, ?)',
-    [Number(id), Number(order.actual_freight), amt, reason.trim(), req.body.operator || '系统管理员']
-  );
+    await conn.query('UPDATE freight_orders SET actual_freight = ? WHERE id = ?', [amt, Number(id)]);
+    await conn.query(
+      'INSERT INTO freight_adjustments (freight_order_id, before_amount, after_amount, reason, operator) VALUES (?, ?, ?, ?, ?)',
+      [Number(id), Number(order.actual_freight), amt, reason.trim(), req.body.operator || '系统管理员']
+    );
+  });
   res.json({ message: '运费修改成功，已记录修改日志' });
 }));
 

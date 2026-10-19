@@ -6,7 +6,8 @@ require('./db'); // 先加载 .env 配置
 const express = require('express');
 const cors = require('cors');
 
-const { errorHandler } = require('./helpers');
+const { errorHandler, wrap } = require('./helpers');
+const { query } = require('./db');
 const statsRoutes = require('./routes/stats');
 const carrierRoutes = require('./routes/carriers');
 const driverRoutes = require('./routes/drivers');
@@ -23,8 +24,11 @@ const PORT = Number(process.env.PORT) || 3000;
 app.use(cors());
 app.use(express.json());
 
-// 健康检查
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'tms-vehicle-shipping', time: new Date().toISOString() }));
+// 健康检查（真实探测数据库，MySQL 未启动时返回 500）
+app.get('/api/health', wrap(async (req, res) => {
+  await query('SELECT 1 AS ok');
+  res.json({ ok: true, service: 'stp-backend', db: 'up', time: new Date().toISOString() });
+}));
 
 // 业务路由
 app.use('/api/stats', statsRoutes);

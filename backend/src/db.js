@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
+const { localDateStr } = require('./helpers');
 
 // ---- 轻量 .env 加载（无需额外依赖）----
 try {
@@ -33,6 +34,22 @@ async function query(sql, params = []) {
   return rows;
 }
 
+/** 事务包装：fn(conn) 内的多次写操作要么全部提交，要么全部回滚 */
+async function withTransaction(fn) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const result = await fn(conn);
+    await conn.commit();
+    return result;
+  } catch (e) {
+    try { await conn.rollback(); } catch (_) { /* 连接已断开 */ }
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
 /**
  * 单据序列号（编码规则引擎）
  * CAR -> CAR-001         承运商编码：CAR-三位序列号（全局递增）
@@ -43,7 +60,7 @@ async function query(sql, params = []) {
  * 同一连接内 SELECT LAST_INSERT_ID() 可取到自增后的值（MySQL 官方机制）。
  */
 async function nextSeq(kind, conn) {
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const today = localDateStr().replace(/-/g, '');
   const key = kind === 'CAR' ? 'CAR' : `${kind}:${today}`;
   const width = kind === 'CAR' ? 3 : 4;
   const code = (v) => (kind === 'CAR' ? `CAR-${String(v).padStart(3, '0')}` : `${kind}${today}${String(v).padStart(width, '0')}`);
@@ -80,4 +97,4 @@ async function nextSeq(kind, conn) {
   }
 }
 
-module.exports = { pool, query, nextSeq };
+module.exports = { pool, query, withTransaction, nextSeq };

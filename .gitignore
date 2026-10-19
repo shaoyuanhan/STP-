@@ -1,0 +1,14 @@
+# 环境配置（含数据库密码，切勿提交）
+backend/.env
+
+# 依赖与构建产物
+backend/node_modules/
+node_modules/
+
+# 系统文件
+.DS_Store
+*.log
+
+# 编辑器
+.idea/
+.vscode/
