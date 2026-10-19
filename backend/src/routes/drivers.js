@@ -47,6 +47,13 @@ router.get('/options', wrap(async (req, res) => {
   res.json({ list });
 }));
 
+/** 校验驾驶证有效期起止顺序，倒置抛 BizError */
+function assertLicenseRange(from, to) {
+  if (from && to && String(from) > String(to)) {
+    throw new BizError(`驾驶证有效期起（${from}）不能晚于有效期止（${to}）`);
+  }
+}
+
 /** 新增司机 */
 router.post('/', wrap(async (req, res) => {
   const { name, phone, id_card, license_no = null, vehicle_type = null,
@@ -54,8 +61,9 @@ router.post('/', wrap(async (req, res) => {
   if (!name?.trim()) throw new BizError('司机姓名必填');
   const phoneV = assertPhone(phone, { label: '手机号', mobileOnly: true });
   if (!id_card?.trim()) throw new BizError('身份证号必填');
-  if (!license_valid_from) throw new BizError('驾驶证有效期自必填');
-  if (!license_valid_to) throw new BizError('驾驶证有效期至必填');
+  if (!license_valid_from) throw new BizError('有效期起必填');
+  if (!license_valid_to) throw new BizError('有效期止必填');
+  assertLicenseRange(license_valid_from, license_valid_to);
 
   const dup = await query('SELECT id FROM drivers WHERE id_card = ?', [id_card.trim()]);
   if (dup.length) throw new BizError('该身份证号已存在，请勿重复添加', 409);
@@ -82,6 +90,7 @@ router.put('/:id', wrap(async (req, res) => {
   if (!exist) throw new BizError('司机不存在', 404);
   const phoneV = assertPhone(phone, { label: '手机号', mobileOnly: true });
   if (!license_valid_from || !license_valid_to) throw new BizError('驾驶证有效期必填');
+  assertLicenseRange(license_valid_from, license_valid_to);
 
   await query(
     `UPDATE drivers SET phone = ?, license_no = ?, vehicle_type = ?, license_valid_from = ?, license_valid_to = ?, carrier_id = ?, remark = ? WHERE id = ?`,

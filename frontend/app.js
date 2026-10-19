@@ -160,6 +160,21 @@ function fmtPhone(s) {
   return v;
 }
 
+/** 日期区间联动：起日期变更后，止日期的最小可选值跟随（阻止选到更早日期） */
+function bindDatePair(fromId, toId) {
+  const f = $('#' + fromId), t = $('#' + toId);
+  if (!f || !t) return;
+  f.onchange = () => { t.min = f.value || ''; };
+  if (f.value) t.min = f.value;
+}
+
+/** 校验日期区间先后顺序，返回错误消息或 null */
+function checkDateOrder(fromId, toId, label) {
+  const f = fv(fromId), t = fv(toId);
+  if (f && t && f > t) return `${label}的开始日期（${f}）不能晚于结束日期（${t}）`;
+  return null;
+}
+
 // 表单字段构造
 const F = {
   text: (id, label, opt = {}) => `
@@ -173,13 +188,10 @@ const F = {
   textarea: (id, label, opt = {}) => `
     <div class="form-item"><label>${label}</label>
       <div class="ctrl"><textarea class="input" id="${id}" rows="2" style="flex:1;padding:8px 9px;resize:vertical" placeholder="${opt.ph || '请输入'}">${esc(opt.value ?? '')}</textarea></div></div>`,
-  datePair: (fromId, toId, label, vf, vt) => `
-    <div class="form-item"><label class="req">${label}</label>
-      <div class="ctrl"><div class="pair" style="flex:1">
-        <input class="input" type="date" id="${fromId}" value="${vf || ''}" style="flex:1">
-        <span class="muted">~</span>
-        <input class="input" type="date" id="${toId}" value="${vt || ''}" style="flex:1">
-      </div></div></div>`,
+  date: (id, label, opt = {}) => `
+    <div class="form-item"><label class="${opt.req ? 'req' : ''}">${label}</label>
+      <div class="ctrl"><input class="input" type="date" id="${id}" value="${opt.value || ''}" ${opt.min ? `min="${opt.min}"` : ''} style="flex:1">
+      ${opt.tip ? `<div class="form-tip">${opt.tip}</div>` : ''}</div></div>`,
   intlPhone: (id, label, opt = {}) => `
     <div class="form-item"><label class="${opt.req ? 'req' : ''}">${label}</label>
       <div class="ctrl"><input class="input iti-src" id="${id}" type="tel" autocomplete="off">
@@ -488,18 +500,23 @@ async function pageDrivers(view) {
     driverState.total = d.total;
     $('#dr-body', view).innerHTML = `
       <table>
-        <thead><tr><th>姓名</th><th>手机号</th><th>身份证号</th><th>准驾车型</th><th>驾驶证有效期</th><th>所属承运商</th><th>状态</th><th>创建日期</th><th>操作</th></tr></thead>
-        <tbody>${d.list.map((r) => `
+        <thead><tr><th>姓名</th><th>手机号</th><th>身份证号</th><th>准驾车型</th><th>有效期起</th><th>有效期止</th><th>所属承运商</th><th>状态</th><th>创建日期</th><th>操作</th></tr></thead>
+        <tbody>${d.list.map((r) => {
+          const inverted = r.license_valid_from > r.license_valid_to;
+          return `
           <tr>
             <td>${esc(r.name)}</td><td>${esc(fmtPhone(r.phone))}</td><td>${esc(r.id_card)}</td>
-            <td>${empty(r.vehicle_type)}</td><td>${fmtD(r.license_valid_from)} ~ ${fmtD(r.license_valid_to)}</td>
+            <td>${empty(r.vehicle_type)}</td>
+            <td${inverted ? ' style="color:#cf1322"' : ''}>${fmtD(r.license_valid_from)}</td>
+            <td${inverted ? ' style="color:#cf1322"' : ''}>${fmtD(r.license_valid_to)}</td>
             <td>${r.carrier_name ? esc(r.carrier_name) : '<span class="muted">散单</span>'}</td>
             <td>${driverTag(r.status)}</td><td>${fmtD(r.created_at)}</td>
             <td class="actions">
               <a class="link" onclick="driverForm(${r.id})">编辑</a>
               <a class="link" onclick="toggleDriver(${r.id},'${r.status === 'ENABLED' ? 'DISABLED' : 'ENABLED'}')">${r.status === 'ENABLED' ? '停用' : '启用'}</a>
             </td>
-          </tr>`).join('') || `<tr><td colspan="9" class="empty-row">暂无数据</td></tr>`}</tbody>
+          </tr>`;
+        }).join('') || `<tr><td colspan="10" class="empty-row">暂无数据</td></tr>`}</tbody>
       </table>`;
     $('#dr-pager', view).innerHTML = pagerHtml(d.total, driverState.page, driverState.size);
     bindPager($('#dr-pager', view), driverState, reload);
@@ -532,17 +549,21 @@ async function driverForm(id, carriersArg) {
       ${F.intlPhone('df-phone', '手机号', { req: 1, tip: '司机需留手机号，座机/400 号码无法通过校验' })}
       ${F.text('df-license', '驾驶证号', { value: v.license_no || '' })}
       ${F.select('df-vtype', '准驾车型', ['A2', 'B2', 'C1', 'A1', 'B1'].map((x) => `<option ${v.vehicle_type === x ? 'selected' : ''}>${x}</option>`).join(''))}
-      ${F.datePair('df-from', 'df-to', '驾驶证有效期', v.license_valid_from, v.license_valid_to)}
+      ${F.date('df-from', '有效期起', { req: 1, value: v.license_valid_from })}
+      ${F.date('df-to', '有效期止', { req: 1, value: v.license_valid_to, min: v.license_valid_from, tip: '不能早于有效期起' })}
       ${F.select('df-carrier', '所属承运商', `<option value="">散单司机</option>` + carriers.map((c) => `<option value="${c.id}" ${String(v.carrier_id) === String(c.id) ? 'selected' : ''}>${esc(c.carrier_name)}</option>`).join(''))}
       ${F.textarea('df-remark', '备注', { value: v.remark || '' })}`,
     foot: `<button class="btn btn-ghost" data-close>取消</button>
            <button class="btn btn-primary" id="df-ok">${id ? '保存' : '新增'}</button>`,
   });
   const ph = initPhoneInput('df-phone', v.phone || '');
+  bindDatePair('df-from', 'df-to');
   $('#df-ok', m.el).onclick = async () => {
     try {
       const e2 = phoneCheck(ph, '手机号', { mobileOnly: true });
       if (e2) throw new Error(e2);
+      const eDate = checkDateOrder('df-from', 'df-to', '驾驶证有效期');
+      if (eDate) throw new Error(eDate);
       const body = {
         phone: phoneVal(ph), license_no: fv('df-license') || null, vehicle_type: fv('df-vtype'),
         license_valid_from: fv('df-from'), license_valid_to: fv('df-to'),
