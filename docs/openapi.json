@@ -2,37 +2,75 @@
   "openapi": "3.0.3",
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
-    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）、演示辅助接口（/api/mock）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，已提车在已出库之前）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
+    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）、演示辅助接口（/api/mock）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，WMS 出库在前、司机确认提车在后）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → OUTBOUND 已出库 → PICKED 已提车 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
     "version": "2.0.0"
   },
   "servers": [
-    { "url": "http://localhost:3000", "description": "本地后端（前端 /api 代理至此）" }
+    {
+      "url": "http://localhost:3000",
+      "description": "本地后端（前端 /api 代理至此）"
+    }
   ],
   "tags": [
-    { "name": "01 通用" },
-    { "name": "02 基础数据·承运商" },
-    { "name": "03 基础数据·司机" },
-    { "name": "04 运输调度·发运任务" },
-    { "name": "05 运输调度·在途监控" },
-    { "name": "06 应付运费·结算管理" },
-    { "name": "07 电子签章·台账" },
-    { "name": "08 外部接口·CRM" },
-    { "name": "09 外部接口·WMS" },
-    { "name": "10 外部接口·狮桥物流" },
-    { "name": "11 演示辅助·模拟接口" },
-    { "name": "12 外部接口·承运商通用" }
+    {
+      "name": "01 通用"
+    },
+    {
+      "name": "02 基础数据·承运商"
+    },
+    {
+      "name": "03 基础数据·司机"
+    },
+    {
+      "name": "04 运输调度·发运任务"
+    },
+    {
+      "name": "05 运输调度·在途监控"
+    },
+    {
+      "name": "06 应付运费·结算管理"
+    },
+    {
+      "name": "07 电子签章·台账"
+    },
+    {
+      "name": "08 外部接口·CRM"
+    },
+    {
+      "name": "09 外部接口·WMS"
+    },
+    {
+      "name": "10 外部接口·狮桥物流"
+    },
+    {
+      "name": "11 演示辅助·模拟接口"
+    },
+    {
+      "name": "12 外部接口·承运商通用"
+    }
   ],
   "paths": {
     "/api/health": {
       "get": {
-        "tags": ["01 通用"],
+        "tags": [
+          "01 通用"
+        ],
         "summary": "健康检查（真实探测数据库）",
         "responses": {
           "200": {
             "description": "服务与数据库状态",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "success", "data": { "ok": true, "service": "stp-backend", "db": "up", "time": "2026-10-19T09:00:00.000Z" } }
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "ok": true,
+                    "service": "stp-backend",
+                    "db": "up",
+                    "time": "2026-10-19T09:00:00.000Z"
+                  }
+                }
               }
             }
           }
@@ -41,7 +79,9 @@
     },
     "/api/stats": {
       "get": {
-        "tags": ["01 通用"],
+        "tags": [
+          "01 通用"
+        ],
         "summary": "工作台统计",
         "description": "各状态任务数、今日新增、待对账笔数/金额、在途数、电子签待签署数、合作中承运商数、启用司机数",
         "responses": {
@@ -50,12 +90,27 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000",
+                  "message": "success",
                   "data": {
-                    "task": { "WAIT_DISPATCH": 3, "DISPATCHED": 1, "CARRIER_ACCEPTED": 1, "PICKED": 1, "OUTBOUND": 1, "IN_TRANSIT": 1, "ARRIVED": 1, "FINISHED": 1, "CANCELLED": 1, "total": 11 },
+                    "task": {
+                      "WAIT_DISPATCH": 3,
+                      "DISPATCHED": 1,
+                      "CARRIER_ACCEPTED": 1,
+                      "PICKED": 1,
+                      "OUTBOUND": 1,
+                      "IN_TRANSIT": 1,
+                      "ARRIVED": 1,
+                      "FINISHED": 1,
+                      "CANCELLED": 1,
+                      "total": 11
+                    },
                     "todayNew": 3,
                     "inTransit": 1,
-                    "freightPending": { "count": 1, "amount": 9600.0 },
+                    "freightPending": {
+                      "count": 1,
+                      "amount": 9600.0
+                    },
                     "esignWaitSign": 5,
                     "cooperatingCarriers": 2,
                     "enabledDrivers": 5
@@ -69,7 +124,9 @@
     },
     "/api/dictionaries": {
       "get": {
-        "tags": ["01 通用"],
+        "tags": [
+          "01 通用"
+        ],
         "summary": "数据字典",
         "description": "任务状态 / 承运商状态 / 司机状态 / 司机来源 / 对账状态 / 电子签状态 / 取消派单原因枚举",
         "responses": {
@@ -78,15 +135,74 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000",
+                  "message": "success",
                   "data": {
-                    "taskStatus": [{ "value": "WAIT_DISPATCH", "label": "待派单" }],
-                    "carrierStatus": [{ "value": 1, "label": "合作中" }, { "value": 0, "label": "已停用" }],
-                    "driverStatus": [{ "value": 1, "label": "启用" }, { "value": 0, "label": "停用" }],
-                    "driverSource": [{ "value": 1, "label": "自建" }, { "value": 2, "label": "狮桥同步" }],
-                    "reconcileStatus": [{ "value": 0, "label": "待对账" }, { "value": 1, "label": "已对账" }],
-                    "esignStatus": [{ "value": "WAIT_SIGN", "label": "待签署" }, { "value": "SIGNED", "label": "已签署" }, { "value": "CANCELLED", "label": "已取消" }],
-                    "cancelReasons": ["承运商无法履约", "调度调整", "其他"]
+                    "taskStatus": [
+                      {
+                        "value": "WAIT_DISPATCH",
+                        "label": "待派单"
+                      }
+                    ],
+                    "carrierStatus": [
+                      {
+                        "value": 1,
+                        "label": "合作中"
+                      },
+                      {
+                        "value": 0,
+                        "label": "已停用"
+                      }
+                    ],
+                    "driverStatus": [
+                      {
+                        "value": 1,
+                        "label": "启用"
+                      },
+                      {
+                        "value": 0,
+                        "label": "停用"
+                      }
+                    ],
+                    "driverSource": [
+                      {
+                        "value": 1,
+                        "label": "自建"
+                      },
+                      {
+                        "value": 2,
+                        "label": "狮桥同步"
+                      }
+                    ],
+                    "reconcileStatus": [
+                      {
+                        "value": 0,
+                        "label": "待对账"
+                      },
+                      {
+                        "value": 1,
+                        "label": "已对账"
+                      }
+                    ],
+                    "esignStatus": [
+                      {
+                        "value": "WAIT_SIGN",
+                        "label": "待签署"
+                      },
+                      {
+                        "value": "SIGNED",
+                        "label": "已签署"
+                      },
+                      {
+                        "value": "CANCELLED",
+                        "label": "已取消"
+                      }
+                    ],
+                    "cancelReasons": [
+                      "承运商无法履约",
+                      "调度调整",
+                      "其他"
+                    ]
                   }
                 }
               }
@@ -95,16 +211,49 @@
         }
       }
     },
-
     "/api/carriers": {
       "get": {
-        "tags": ["02 基础数据·承运商"],
+        "tags": [
+          "02 基础数据·承运商"
+        ],
         "summary": "承运商分页列表",
         "parameters": [
-          { "name": "keyword", "in": "query", "schema": { "type": "string" }, "description": "关键字（名称/联系人/编码/电话）" },
-          { "name": "status", "in": "query", "schema": { "type": "integer", "enum": [0, 1] }, "description": "状态：1 合作中 / 0 已停用" },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } }
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "关键字（名称/联系人/编码/电话）"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ]
+            },
+            "description": "状态：1 合作中 / 0 已停用"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -112,14 +261,25 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000",
+                  "message": "success",
                   "data": {
-                    "list": [{
-                      "id": 1, "carrier_code": "CAR-001", "carrier_name": "狮桥物流股份有限公司", "contact_person": "张伟",
-                      "contact_phone": "+8613800000001", "cooperation_routes": "合肥—华东、合肥—华南", "status": 1, "driver_count": 3,
-                      "create_time": "2026-09-01 09:00:00"
-                    }],
-                    "total": 3, "page": 1, "size": 10
+                    "list": [
+                      {
+                        "id": 1,
+                        "carrier_code": "CAR-001",
+                        "carrier_name": "狮桥物流股份有限公司",
+                        "contact_person": "张伟",
+                        "contact_phone": "+8613800000001",
+                        "cooperation_routes": "合肥—华东、合肥—华南",
+                        "status": 1,
+                        "driver_count": 3,
+                        "create_time": "2026-09-01 09:00:00"
+                      }
+                    ],
+                    "total": 3,
+                    "page": 1,
+                    "size": 10
                   }
                 }
               }
@@ -128,14 +288,50 @@
         }
       },
       "post": {
-        "tags": ["02 基础数据·承运商"],
+        "tags": [
+          "02 基础数据·承运商"
+        ],
         "summary": "新增承运商",
         "description": "编码 CAR-XXX 系统自动生成；名称去重（重复返回 A0002）",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "carrier_name": "宏远整车运输有限公司", "contact_person": "刘军", "contact_phone": "13800009999", "cooperation_routes": "合肥—西南", "remark": "新签承运商" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "carrier_name": {
+                    "type": "string",
+                    "description": "承运商名称（必填，全局唯一）"
+                  },
+                  "contact_person": {
+                    "type": "string",
+                    "description": "联系人"
+                  },
+                  "contact_phone": {
+                    "type": "string",
+                    "description": "联系电话"
+                  },
+                  "cooperation_routes": {
+                    "type": "string",
+                    "description": "合作线路，如「合肥—西南」"
+                  },
+                  "remark": {
+                    "type": "string",
+                    "description": "备注"
+                  }
+                },
+                "required": [
+                  "carrier_name"
+                ]
+              },
+              "example": {
+                "carrier_name": "宏远整车运输有限公司",
+                "contact_person": "刘军",
+                "contact_phone": "13800009999",
+                "cooperation_routes": "合肥—西南",
+                "remark": "新签承运商"
+              }
             }
           }
         },
@@ -144,57 +340,214 @@
             "description": "创建成功，返回完整承运商（含自动生成的编码）",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "success", "data": { "id": 4, "carrier_code": "CAR-004", "carrier_name": "宏远整车运输有限公司", "status": 1 } }
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "id": 4,
+                    "carrier_code": "CAR-004",
+                    "carrier_name": "宏远整车运输有限公司",
+                    "status": 1
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0001 参数校验失败 / A0002 名称已存在" }
+          "400": {
+            "description": "A0001 参数校验失败 / A0002 名称已存在"
+          }
         }
       }
     },
     "/api/carriers/{id}": {
       "put": {
-        "tags": ["02 基础数据·承运商"],
+        "tags": [
+          "02 基础数据·承运商"
+        ],
         "summary": "编辑承运商",
         "description": "编码只读不可改；名称改名校验去重（A0002）",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "carrier_name": "狮桥物流股份有限公司", "contact_person": "张伟", "contact_phone": "13800000001", "cooperation_routes": "合肥—华东", "remark": "更新备注" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "carrier_name": {
+                    "type": "string",
+                    "description": "承运商名称（保持唯一）"
+                  },
+                  "contact_person": {
+                    "type": "string",
+                    "description": "联系人"
+                  },
+                  "contact_phone": {
+                    "type": "string",
+                    "description": "联系电话"
+                  },
+                  "cooperation_routes": {
+                    "type": "string",
+                    "description": "合作线路"
+                  },
+                  "remark": {
+                    "type": "string",
+                    "description": "备注"
+                  }
+                }
+              },
+              "example": {
+                "carrier_name": "狮桥物流股份有限公司",
+                "contact_person": "张伟",
+                "contact_phone": "13800000001",
+                "cooperation_routes": "合肥—华东",
+                "remark": "更新备注"
+              }
             }
           }
         },
         "responses": {
-          "200": { "description": "更新成功", "content": { "application/json": { "example": { "code": "00000", "message": "success", "data": { "id": 1 } } } } },
-          "404": { "description": "D0002 承运商不存在" }
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "id": 1
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "D0002 承运商不存在"
+          }
         }
       }
     },
     "/api/carriers/{id}/status": {
       "put": {
-        "tags": ["02 基础数据·承运商"],
+        "tags": [
+          "02 基础数据·承运商"
+        ],
         "summary": "承运商停用/启用",
         "description": "停用后不可被派单（新派单拦截 A0002），在途运单不受影响",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "example": { "status": 0 } } } },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "integer",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "description": "状态：1 合作中 / 0 已停用"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "example": {
+                "status": 0
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "状态更新成功", "content": { "application/json": { "example": { "code": "00000", "message": "success", "data": { "id": 3, "status": 0 } } } } }
+          "200": {
+            "description": "状态更新成功",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "id": 3,
+                    "status": 0
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
-
     "/api/drivers": {
       "get": {
-        "tags": ["03 基础数据·司机"],
+        "tags": [
+          "03 基础数据·司机"
+        ],
         "summary": "司机分页列表",
         "parameters": [
-          { "name": "keyword", "in": "query", "schema": { "type": "string" }, "description": "关键字（姓名/手机号/身份证/驾驶证号）" },
-          { "name": "carrier_id", "in": "query", "schema": { "type": "integer" }, "description": "按所属承运商过滤" },
-          { "name": "status", "in": "query", "schema": { "type": "integer", "enum": [0, 1] } },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } }
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "关键字（姓名/手机号/身份证/驾驶证号）"
+          },
+          {
+            "name": "carrier_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "按所属承运商过滤"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -202,13 +555,28 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000",
+                  "message": "success",
                   "data": {
-                    "list": [{
-                      "id": 2, "driver_name": "刘志强", "phone": "+8613911110002", "id_card": "340104199202022345",
-                      "license_type": "A2", "source": 1, "status": 1, "carriers": "狮桥物流股份有限公司,安捷整车运输有限公司", "carrier_ids": [1, 2]
-                    }],
-                    "total": 6, "page": 1, "size": 10
+                    "list": [
+                      {
+                        "id": 2,
+                        "driver_name": "刘志强",
+                        "phone": "+8613911110002",
+                        "id_card": "340104199202022345",
+                        "license_type": "A2",
+                        "source": 1,
+                        "status": 1,
+                        "carriers": "狮桥物流股份有限公司,安捷整车运输有限公司",
+                        "carrier_ids": [
+                          1,
+                          2
+                        ]
+                      }
+                    ],
+                    "total": 6,
+                    "page": 1,
+                    "size": 10
                   }
                 }
               }
@@ -217,96 +585,403 @@
         }
       },
       "post": {
-        "tags": ["03 基础数据·司机"],
+        "tags": [
+          "03 基础数据·司机"
+        ],
         "summary": "新增司机（自建 source=1）",
         "description": "身份证号唯一（重复 A0002）；carrier_ids 建立司机-承运商多对多关联",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "司机姓名（必填）"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "联系电话（必填）"
+                  },
+                  "id_card": {
+                    "type": "string",
+                    "description": "身份证号（必填，唯一，新建后不可改）"
+                  },
+                  "license_no": {
+                    "type": "string",
+                    "description": "驾驶证号"
+                  },
+                  "license_type": {
+                    "type": "string",
+                    "description": "准驾车型，如 A2"
+                  },
+                  "license_valid_from": {
+                    "type": "string",
+                    "description": "驾驶证有效期起（YYYY-MM-DD）"
+                  },
+                  "license_valid_to": {
+                    "type": "string",
+                    "description": "驾驶证有效期止（YYYY-MM-DD）"
+                  },
+                  "carrier_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "description": "关联承运商 ID 列表（多对多）"
+                  },
+                  "remark": {
+                    "type": "string",
+                    "description": "备注"
+                  }
+                },
+                "required": [
+                  "name",
+                  "phone",
+                  "id_card"
+                ]
+              },
               "example": {
-                "name": "钱国强", "phone": "13911112222", "id_card": "340104199111116666",
-                "license_no": "340100199111116666", "license_type": "A2",
-                "license_valid_from": "2023-01-01", "license_valid_to": "2029-01-01",
-                "carrier_ids": [1], "remark": "自建司机"
+                "name": "钱国强",
+                "phone": "13911112222",
+                "id_card": "340104199111116666",
+                "license_no": "340100199111116666",
+                "license_type": "A2",
+                "license_valid_from": "2023-01-01",
+                "license_valid_to": "2029-01-01",
+                "carrier_ids": [
+                  1
+                ],
+                "remark": "自建司机"
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "创建成功，返回含 carriers/carrier_ids", "content": { "application/json": { "example": { "code": "00000", "message": "success", "data": { "id": 7, "source": 1 } } } } },
-          "400": { "description": "A0001 参数校验失败 / A0002 身份证号已存在" }
+          "200": {
+            "description": "创建成功，返回含 carriers/carrier_ids",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "id": 7,
+                    "source": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A0001 参数校验失败 / A0002 身份证号已存在"
+          }
         }
       }
     },
     "/api/drivers/{id}": {
       "put": {
-        "tags": ["03 基础数据·司机"],
+        "tags": [
+          "03 基础数据·司机"
+        ],
         "summary": "编辑司机",
         "description": "姓名与身份证号不可修改（A0002）；carrier_ids 全量替换 carrier_driver 关联",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "phone": "13911113333", "license_type": "A2", "license_valid_from": "2021-03-10", "license_valid_to": "2027-03-10", "carrier_ids": [1, 2] }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "司机姓名（与身份证一致性校验，一般不改）"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "联系电话"
+                  },
+                  "id_card": {
+                    "type": "string",
+                    "description": "身份证号（不可修改，传原值校验一致性）"
+                  },
+                  "license_no": {
+                    "type": "string",
+                    "description": "驾驶证号"
+                  },
+                  "license_type": {
+                    "type": "string",
+                    "description": "准驾车型"
+                  },
+                  "license_valid_from": {
+                    "type": "string",
+                    "description": "驾驶证有效期起（YYYY-MM-DD）"
+                  },
+                  "license_valid_to": {
+                    "type": "string",
+                    "description": "驾驶证有效期止（YYYY-MM-DD）"
+                  },
+                  "carrier_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "description": "关联承运商 ID 列表"
+                  },
+                  "remark": {
+                    "type": "string",
+                    "description": "备注"
+                  }
+                }
+              },
+              "example": {
+                "phone": "13911113333",
+                "license_type": "A2",
+                "license_valid_from": "2021-03-10",
+                "license_valid_to": "2027-03-10",
+                "carrier_ids": [
+                  1,
+                  2
+                ]
+              }
             }
           }
         },
         "responses": {
-          "200": { "description": "更新成功", "content": { "application/json": { "example": { "code": "00000", "message": "success", "data": { "id": 2 } } } } },
-          "400": { "description": "A0002 姓名或身份证号不可修改" },
-          "404": { "description": "D0002 司机不存在" }
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "id": 2
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A0002 姓名或身份证号不可修改"
+          },
+          "404": {
+            "description": "D0002 司机不存在"
+          }
         }
       }
     },
     "/api/drivers/{id}/status": {
       "put": {
-        "tags": ["03 基础数据·司机"],
+        "tags": [
+          "03 基础数据·司机"
+        ],
         "summary": "司机停用/启用",
         "description": "停用后不可分派任务，不影响在途运单",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "example": { "status": 0 } } } },
-        "responses": {
-          "200": { "description": "状态更新成功", "content": { "application/json": { "example": { "code": "00000", "message": "success", "data": { "id": 6, "status": 0 } } } } }
-        }
-      }
-    },
-    "/api/drivers/options": {
-      "get": {
-        "tags": ["03 基础数据·司机"],
-        "summary": "可选司机下拉（狮桥接单模拟用）",
-        "description": "该承运商关联且启用的司机；不传 carrier_id 时返回全部启用司机",
-        "parameters": [{ "name": "carrier_id", "in": "query", "schema": { "type": "integer" } }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "integer",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "description": "状态：1 启用 / 0 已停用（停用拦截新分派）"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "example": {
+                "status": 0
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "司机选项数组",
+            "description": "状态更新成功",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "success", "data": [{ "id": 1, "name": "陈建国", "phone": "+8613911110001", "license_type": "A2" }] }
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "id": 6,
+                    "status": 0
+                  }
+                }
               }
             }
           }
         }
       }
     },
-
+    "/api/drivers/options": {
+      "get": {
+        "tags": [
+          "03 基础数据·司机"
+        ],
+        "summary": "可选司机下拉（狮桥接单模拟用）",
+        "description": "该承运商关联且启用的司机；不传 carrier_id 时返回全部启用司机",
+        "parameters": [
+          {
+            "name": "carrier_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "司机选项数组",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": [
+                    {
+                      "id": 1,
+                      "name": "陈建国",
+                      "phone": "+8613911110001",
+                      "license_type": "A2"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/shipping-tasks": {
       "get": {
-        "tags": ["04 运输调度·发运任务"],
+        "tags": [
+          "04 运输调度·发运任务"
+        ],
         "summary": "发运任务分页列表",
         "description": "VIN 筛选走车辆明细表；list 行含 vins/vehicle_models 顿号聚合、plan_freight 线路参考价、version 乐观锁版本",
         "parameters": [
-          { "name": "task_no", "in": "query", "schema": { "type": "string" }, "description": "任务单号（模糊）" },
-          { "name": "apply_no", "in": "query", "schema": { "type": "string" }, "description": "发运申请号（模糊）" },
-          { "name": "vin", "in": "query", "schema": { "type": "string" }, "description": "VIN（模糊，查车辆明细表）" },
-          { "name": "customer_name", "in": "query", "schema": { "type": "string" } },
-          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["WAIT_DISPATCH", "DISPATCHED", "CARRIER_ACCEPTED", "PICKED", "OUTBOUND", "IN_TRANSIT", "ARRIVED", "FINISHED", "CANCELLED"] } },
-          { "name": "carrier_id", "in": "query", "schema": { "type": "integer" } },
-          { "name": "start_date", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "创建日期起" },
-          { "name": "end_date", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "创建日期止" },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } }
+          {
+            "name": "task_no",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "任务单号（模糊）"
+          },
+          {
+            "name": "apply_no",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "发运申请号（模糊）"
+          },
+          {
+            "name": "vin",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "VIN（模糊，查车辆明细表）"
+          },
+          {
+            "name": "customer_name",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "WAIT_DISPATCH",
+                "DISPATCHED",
+                "CARRIER_ACCEPTED",
+                "PICKED",
+                "OUTBOUND",
+                "IN_TRANSIT",
+                "ARRIVED",
+                "FINISHED",
+                "CANCELLED"
+              ]
+            }
+          },
+          {
+            "name": "carrier_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "创建日期起"
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "创建日期止"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -314,17 +989,34 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000",
+                  "message": "success",
                   "data": {
-                    "list": [{
-                      "id": 2, "task_no": "FY202610190002", "apply_no": "APPLY-20261019-002", "customer_name": "杭州启达供应链有限公司",
-                      "vins": "LZXBCGH48P1D20002、LZXBCGH48P1D20003", "vehicle_models": "星辰重卡H7、星辰重卡E5",
-                      "ship_location": "合肥市包河区上海路88号", "delivery_address": "杭州市萧山区宁围街道鸿宁路1899号",
-                      "plan_freight": "8800.00", "carrier_name": null, "driver_name": null,
-                      "plan_pickup_date": null, "outbound_date": null, "ship_time": null, "arrive_time": null,
-                      "status": "WAIT_DISPATCH", "create_time": "2026-10-19 09:30:00", "version": 0
-                    }],
-                    "total": 11, "page": 1, "size": 10
+                    "list": [
+                      {
+                        "id": 2,
+                        "task_no": "FY202610190002",
+                        "apply_no": "APPLY-20261019-002",
+                        "customer_name": "杭州启达供应链有限公司",
+                        "vins": "LZXBCGH48P1D20002、LZXBCGH48P1D20003",
+                        "vehicle_models": "星辰重卡H7、星辰重卡E5",
+                        "ship_location": "合肥市包河区上海路88号",
+                        "delivery_address": "杭州市萧山区宁围街道鸿宁路1899号",
+                        "plan_freight": "8800.00",
+                        "carrier_name": null,
+                        "driver_name": null,
+                        "plan_pickup_date": null,
+                        "outbound_date": null,
+                        "ship_time": null,
+                        "arrive_time": null,
+                        "status": "WAIT_DISPATCH",
+                        "create_time": "2026-10-19 09:30:00",
+                        "version": 0
+                      }
+                    ],
+                    "total": 11,
+                    "page": 1,
+                    "size": 10
                   }
                 }
               }
@@ -335,44 +1027,139 @@
     },
     "/api/shipping-tasks/{id}": {
       "get": {
-        "tags": ["04 运输调度·发运任务"],
+        "tags": [
+          "04 运输调度·发运任务"
+        ],
         "summary": "任务详情",
         "description": "task（head 全字段 + carrier_name/driver_name/driver_phone）+ vehicles + dispatchRecords + statusLogs + tracks + esigns + allowedActions（按状态计算：WAIT_DISPATCH→[DISPATCH,BATCH_DISPATCH]；DISPATCHED→[CANCEL_DISPATCH,REASSIGN]；其余空）",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "任务全量详情",
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000",
+                  "message": "success",
                   "data": {
-                    "task": { "id": 8, "task_no": "FY202610150001", "apply_no": "APPLY-20261015-001", "status": "IN_TRANSIT", "carrier_name": "狮桥物流股份有限公司", "driver_name": "马晓峰", "version": 5 },
-                    "vehicles": [{ "id": 9, "task_id": 8, "vin": "LZXBCGH48P1D20009", "vehicle_model": "星辰重卡H9", "plan_freight": "8600.00" }],
-                    "dispatchRecords": [{ "id": 8, "action": "DISPATCH", "carrier_id": 1, "dispatch_person": "系统管理员", "dispatch_time": "2026-10-15 11:00:00" }],
-                    "statusLogs": [{ "id": 1, "from_status": null, "to_status": "WAIT_DISPATCH", "source": "CRM", "operator": "CRM 系统", "remark": "接收CRM发运申请，生成待派单任务" }],
-                    "tracks": [{ "transport_no": "SQ202610150008", "location_desc": "巢湖市 G5011芜合高速", "longitude": "117.870000", "latitude": "31.600000", "speed": "58.00", "report_time": "2026-10-15 16:30:00" }],
-                    "esigns": [{ "esign_id": "ES202610150001", "vin": "LZXBCGH48P1D20009", "sign_status": "WAIT_SIGN" }],
+                    "task": {
+                      "id": 8,
+                      "task_no": "FY202610150001",
+                      "apply_no": "APPLY-20261015-001",
+                      "status": "IN_TRANSIT",
+                      "carrier_name": "狮桥物流股份有限公司",
+                      "driver_name": "马晓峰",
+                      "version": 5
+                    },
+                    "vehicles": [
+                      {
+                        "id": 9,
+                        "task_id": 8,
+                        "vin": "LZXBCGH48P1D20009",
+                        "vehicle_model": "星辰重卡H9",
+                        "plan_freight": "8600.00"
+                      }
+                    ],
+                    "dispatchRecords": [
+                      {
+                        "id": 8,
+                        "action": "DISPATCH",
+                        "carrier_id": 1,
+                        "dispatch_person": "系统管理员",
+                        "dispatch_time": "2026-10-15 11:00:00"
+                      }
+                    ],
+                    "statusLogs": [
+                      {
+                        "id": 1,
+                        "from_status": null,
+                        "to_status": "WAIT_DISPATCH",
+                        "source": "CRM",
+                        "operator": "CRM 系统",
+                        "remark": "接收CRM发运申请，生成待派单任务"
+                      }
+                    ],
+                    "tracks": [
+                      {
+                        "transport_no": "SQ202610150008",
+                        "location_desc": "巢湖市 G5011芜合高速",
+                        "longitude": "117.870000",
+                        "latitude": "31.600000",
+                        "speed": "58.00",
+                        "report_time": "2026-10-15 16:30:00"
+                      }
+                    ],
+                    "esigns": [
+                      {
+                        "esign_id": "ES202610150001",
+                        "vin": "LZXBCGH48P1D20009",
+                        "sign_status": "WAIT_SIGN"
+                      }
+                    ],
                     "allowedActions": []
                   }
                 }
               }
             }
           },
-          "404": { "description": "D0002 任务不存在" }
+          "404": {
+            "description": "D0002 任务不存在"
+          }
         }
       }
     },
     "/api/shipping-tasks/dispatch": {
       "post": {
-        "tags": ["04 运输调度·发运任务"],
+        "tags": [
+          "04 运输调度·发运任务"
+        ],
         "summary": "派单",
         "description": "仅「待派单」可派单；承运商须合作中（停用拦截 A0002）；version 乐观锁（不匹配 D0001）；写 dispatch_record(DISPATCH) + 状态日志，触发狮桥同步模拟。线路参考价=计划运费只读不可改",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "task_id": 1, "carrier_id": 1, "remark": "客户急单优先安排", "version": 0 }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "task_id": {
+                    "type": "integer",
+                    "description": "任务 ID（必填，仅「待派单」可派）"
+                  },
+                  "carrier_id": {
+                    "type": "integer",
+                    "description": "承运商 ID（必填，须合作中）"
+                  },
+                  "remark": {
+                    "type": "string",
+                    "description": "派单备注（≤500 字）"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "description": "任务版本号（必填，乐观锁，不匹配返回 D0001）"
+                  }
+                },
+                "required": [
+                  "task_id",
+                  "carrier_id",
+                  "version"
+                ]
+              },
+              "example": {
+                "task_id": 1,
+                "carrier_id": 1,
+                "remark": "客户急单优先安排",
+                "version": 0
+              }
             }
           }
         },
@@ -382,26 +1169,72 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
-                  "data": { "task_id": 1, "task_no": "FY202610190001", "status": "DISPATCHED", "version": 1, "carrier_id": 1, "carrier_name": "狮桥物流股份有限公司", "plan_freight": "8500.00", "message": "派单成功，任务已同步狮桥发运系统并下发 WMS（狮桥物流股份有限公司）" }
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "task_id": 1,
+                    "task_no": "FY202610190001",
+                    "status": "DISPATCHED",
+                    "version": 1,
+                    "carrier_id": 1,
+                    "carrier_name": "狮桥物流股份有限公司",
+                    "plan_freight": "8500.00",
+                    "message": "派单成功，任务已同步狮桥发运系统并下发 WMS（狮桥物流股份有限公司）"
+                  }
                 }
               }
             }
           },
-          "409": { "description": "D0001 状态不允许 / 版本冲突「任务状态已变化，请刷新后重试」" }
+          "409": {
+            "description": "D0001 状态不允许 / 版本冲突「任务状态已变化，请刷新后重试」"
+          }
         }
       }
     },
     "/api/shipping-tasks/batch-dispatch": {
       "post": {
-        "tags": ["04 运输调度·发运任务"],
+        "tags": [
+          "04 运输调度·发运任务"
+        ],
         "summary": "批量派单",
         "description": "仅「待派单」任务会被派入，其余跳过并给出原因；每单写 dispatch_record，batch_no 同批相同（PD+yyyyMMdd+4 位）",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "task_ids": [12, 13, 4], "carrier_id": 2, "remark": "早班集中批量派单" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "task_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "description": "任务 ID 列表（必填，仅「待派单」可派，批次号 PD+日期+序号）"
+                  },
+                  "carrier_id": {
+                    "type": "integer",
+                    "description": "承运商 ID（必填，须合作中）"
+                  },
+                  "remark": {
+                    "type": "string",
+                    "description": "批量派单备注（≤500 字）"
+                  }
+                },
+                "required": [
+                  "task_ids",
+                  "carrier_id"
+                ]
+              },
+              "example": {
+                "task_ids": [
+                  12,
+                  13,
+                  4
+                ],
+                "carrier_id": 2,
+                "remark": "早班集中批量派单"
+              }
             }
           }
         },
@@ -411,11 +1244,18 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "批量派单完成：成功 2 单，跳过 1 单",
+                  "code": "00000",
+                  "message": "批量派单完成：成功 2 单，跳过 1 单",
                   "data": {
                     "dispatched": 2,
                     "total_freight": 12200.0,
-                    "skipped": [{ "task_id": 4, "task_no": "FY202610180001", "reason": "当前状态不允许派单（DISPATCHED），仅「待派单」可派单" }]
+                    "skipped": [
+                      {
+                        "task_id": 4,
+                        "task_no": "FY202610180001",
+                        "reason": "当前状态不允许派单（DISPATCHED），仅「待派单」可派单"
+                      }
+                    ]
                   }
                 }
               }
@@ -426,14 +1266,52 @@
     },
     "/api/shipping-tasks/dispatch/cancel": {
       "post": {
-        "tags": ["04 运输调度·发运任务"],
+        "tags": [
+          "04 运输调度·发运任务"
+        ],
         "summary": "取消派单",
         "description": "仅「已派单」（司机未接单）可取消，回退待派单并清空 carrier_id/driver_id，保留 CRM 下发的 plan_pickup_date；原因枚举：承运商无法履约/调度调整/其他；写 dispatch_record(CANCEL_DISPATCH) 留痕含原因与补充说明（非必填）",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "task_id": 12, "reason": "承运商无法履约", "remark": "车辆故障无法履约", "version": 1 }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "task_id": {
+                    "type": "integer",
+                    "description": "任务 ID（必填，仅「已派单」司机未接单可取消）"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "承运商无法履约",
+                      "调度调整",
+                      "其他"
+                    ],
+                    "description": "取消原因（必填，枚举）"
+                  },
+                  "remark": {
+                    "type": "string",
+                    "description": "补充说明（选填）"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "description": "任务版本号（必填，乐观锁）"
+                  }
+                },
+                "required": [
+                  "task_id",
+                  "reason",
+                  "version"
+                ]
+              },
+              "example": {
+                "task_id": 12,
+                "reason": "承运商无法履约",
+                "remark": "车辆故障无法履约",
+                "version": 1
+              }
             }
           }
         },
@@ -442,25 +1320,72 @@
             "description": "取消派单成功",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "success", "data": { "task_id": 12, "task_no": "FY202610200001", "status": "WAIT_DISPATCH", "version": 2, "message": "已取消派单，任务回退到「待派单」，并同步狮桥取消" } }
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "task_id": 12,
+                    "task_no": "FY202610200001",
+                    "status": "WAIT_DISPATCH",
+                    "version": 2,
+                    "message": "已取消派单，任务回退到「待派单」，并同步狮桥取消"
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0001 取消原因不在枚举内" },
-          "409": { "description": "D0001 非「已派单」状态 / version 不匹配" }
+          "400": {
+            "description": "A0001 取消原因不在枚举内"
+          },
+          "409": {
+            "description": "D0001 非「已派单」状态 / version 不匹配"
+          }
         }
       }
     },
     "/api/shipping-tasks/dispatch/reassign": {
       "post": {
-        "tags": ["04 运输调度·发运任务"],
+        "tags": [
+          "04 运输调度·发运任务"
+        ],
         "summary": "改派",
         "description": "仅「已派单」可改派，更换承运商（状态保持已派单）；新承运商不能与原承运商相同（A0002）；写 dispatch_record(REASSIGN) 留痕",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "task_id": 12, "carrier_id": 2, "remark": "原承运商运力不足，改派安捷整车", "version": 2 }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "task_id": {
+                    "type": "integer",
+                    "description": "任务 ID（必填，仅「已派单」可改派）"
+                  },
+                  "carrier_id": {
+                    "type": "integer",
+                    "description": "新承运商 ID（必填，须与原承运商不同且合作中）"
+                  },
+                  "remark": {
+                    "type": "string",
+                    "description": "改派备注（≤500 字）"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "description": "任务版本号（必填，乐观锁）"
+                  }
+                },
+                "required": [
+                  "task_id",
+                  "carrier_id",
+                  "version"
+                ]
+              },
+              "example": {
+                "task_id": 12,
+                "carrier_id": 2,
+                "remark": "原承运商运力不足，改派安捷整车",
+                "version": 2
+              }
             }
           }
         },
@@ -469,24 +1394,63 @@
             "description": "改派成功",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "改派成功：安捷整车运输有限公司，原派单已同步狮桥取消", "data": { "task_id": 12, "task_no": "FY202610200001", "status": "DISPATCHED", "version": 3, "carrier_id": 2, "carrier_name": "安捷整车运输有限公司" } }
+                "example": {
+                  "code": "00000",
+                  "message": "改派成功：安捷整车运输有限公司，原派单已同步狮桥取消",
+                  "data": {
+                    "task_id": 12,
+                    "task_no": "FY202610200001",
+                    "status": "DISPATCHED",
+                    "version": 3,
+                    "carrier_id": 2,
+                    "carrier_name": "安捷整车运输有限公司"
+                  }
+                }
               }
             }
           }
         }
       }
     },
-
     "/api/tracking/tasks": {
       "get": {
-        "tags": ["05 运输调度·在途监控"],
+        "tags": [
+          "05 运输调度·在途监控"
+        ],
         "summary": "在途任务列表",
         "description": "未终态任务（不含 FINISHED/CANCELLED）；IN_TRANSIT 最优先；每行含最近一条位置（transport_no/location_desc/longitude/latitude/speed/report_time）",
         "parameters": [
-          { "name": "task_no", "in": "query", "schema": { "type": "string" } },
-          { "name": "transport_no", "in": "query", "schema": { "type": "string" }, "description": "狮桥运输单号" },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } }
+          {
+            "name": "task_no",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "transport_no",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "狮桥运输单号"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -494,13 +1458,27 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000",
+                  "message": "success",
                   "data": {
-                    "list": [{
-                      "id": 8, "task_no": "FY202610150001", "status": "IN_TRANSIT", "carrier_name": "狮桥物流股份有限公司", "driver_name": "马晓峰",
-                      "transport_no": "SQ202610150008", "location_desc": "无锡市 G42沪蓉高速", "longitude": "120.300000", "latitude": "31.570000", "speed": "72.00", "report_time": "2026-10-15 19:30:00"
-                    }],
-                    "total": 7, "page": 1, "size": 10
+                    "list": [
+                      {
+                        "id": 8,
+                        "task_no": "FY202610150001",
+                        "status": "IN_TRANSIT",
+                        "carrier_name": "狮桥物流股份有限公司",
+                        "driver_name": "马晓峰",
+                        "transport_no": "SQ202610150008",
+                        "location_desc": "无锡市 G42沪蓉高速",
+                        "longitude": "120.300000",
+                        "latitude": "31.570000",
+                        "speed": "72.00",
+                        "report_time": "2026-10-15 19:30:00"
+                      }
+                    ],
+                    "total": 7,
+                    "page": 1,
+                    "size": 10
                   }
                 }
               }
@@ -511,36 +1489,105 @@
     },
     "/api/tracking/tasks/{id}": {
       "get": {
-        "tags": ["05 运输调度·在途监控"],
+        "tags": [
+          "05 运输调度·在途监控"
+        ],
         "summary": "在途运单详情",
         "description": "运单信息 + 运输节点（statusLogs）+ 地图轨迹（tracks，时间升序）",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "详情",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "success", "data": { "task": { "id": 8, "task_no": "FY202610150001", "status": "IN_TRANSIT" }, "statusLogs": [], "tracks": [] } }
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "task": {
+                      "id": 8,
+                      "task_no": "FY202610150001",
+                      "status": "IN_TRANSIT"
+                    },
+                    "statusLogs": [],
+                    "tracks": []
+                  }
+                }
               }
             }
           },
-          "404": { "description": "D0002 运单不存在" }
+          "404": {
+            "description": "D0002 运单不存在"
+          }
         }
       }
     },
-
     "/api/freight-bills": {
       "get": {
-        "tags": ["06 应付运费·结算管理"],
+        "tags": [
+          "06 应付运费·结算管理"
+        ],
         "summary": "运费单分页列表",
         "description": "返回合计金额（amount 实际运费合计 / plan_amount 计划运费合计）",
         "parameters": [
-          { "name": "freight_no", "in": "query", "schema": { "type": "string" } },
-          { "name": "task_no", "in": "query", "schema": { "type": "string" } },
-          { "name": "carrier_id", "in": "query", "schema": { "type": "integer" } },
-          { "name": "reconcile_status", "in": "query", "schema": { "type": "integer", "enum": [0, 1] }, "description": "0 待对账 / 1 已对账" },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } }
+          {
+            "name": "freight_no",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "task_no",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "carrier_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "reconcile_status",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ]
+            },
+            "description": "0 待对账 / 1 已对账"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -548,14 +1595,30 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000",
+                  "message": "success",
                   "data": {
-                    "list": [{
-                      "id": 1, "freight_no": "YF202610140001", "task_no": "FY202610140001", "carrier_name": "安捷整车运输有限公司", "driver_name": "王海涛",
-                      "start_location": "合肥市", "end_location": "济南市", "mileage": "640.00", "plan_freight": "9600.00", "actual_freight": "9600.00",
-                      "reconcile_status": 0, "create_time": "2026-10-15 18:40:00"
-                    }],
-                    "total": 2, "page": 1, "size": 10, "amount": 18800.0, "plan_amount": 19400.0
+                    "list": [
+                      {
+                        "id": 1,
+                        "freight_no": "YF202610140001",
+                        "task_no": "FY202610140001",
+                        "carrier_name": "安捷整车运输有限公司",
+                        "driver_name": "王海涛",
+                        "start_location": "合肥市",
+                        "end_location": "济南市",
+                        "mileage": "640.00",
+                        "plan_freight": "9600.00",
+                        "actual_freight": "9600.00",
+                        "reconcile_status": 0,
+                        "create_time": "2026-10-15 18:40:00"
+                      }
+                    ],
+                    "total": 2,
+                    "page": 1,
+                    "size": 10,
+                    "amount": 18800.0,
+                    "plan_amount": 19400.0
                   }
                 }
               }
@@ -566,40 +1629,100 @@
     },
     "/api/freight-bills/{id}/detail": {
       "get": {
-        "tags": ["06 应付运费·结算管理"],
+        "tags": [
+          "06 应付运费·结算管理"
+        ],
         "summary": "费用明细",
         "description": "运费单 + 调整记录（无修改则空数组）",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "明细与调整记录",
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000",
+                  "message": "success",
                   "data": {
-                    "bill": { "id": 2, "freight_no": "YF202610130001", "actual_freight": "9200.00", "reconcile_status": 1, "reconciler": "系统管理员" },
-                    "adjustLogs": [{ "freight_bill_id": 2, "freight_no": "YF202610130001", "before_freight": "9800.00", "after_freight": "9200.00", "adjust_reason": "司机少走高速路段，运费按实际路线调整", "operator": "系统管理员" }]
+                    "bill": {
+                      "id": 2,
+                      "freight_no": "YF202610130001",
+                      "actual_freight": "9200.00",
+                      "reconcile_status": 1,
+                      "reconciler": "系统管理员"
+                    },
+                    "adjustLogs": [
+                      {
+                        "freight_bill_id": 2,
+                        "freight_no": "YF202610130001",
+                        "before_freight": "9800.00",
+                        "after_freight": "9200.00",
+                        "adjust_reason": "司机少走高速路段，运费按实际路线调整",
+                        "operator": "系统管理员"
+                      }
+                    ]
                   }
                 }
               }
             }
           },
-          "404": { "description": "D0002 运费单不存在" }
+          "404": {
+            "description": "D0002 运费单不存在"
+          }
         }
       }
     },
     "/api/freight-bills/{id}/freight": {
       "put": {
-        "tags": ["06 应付运费·结算管理"],
+        "tags": [
+          "06 应付运费·结算管理"
+        ],
         "summary": "修改运费",
         "description": "仅「待对账」可修改（已对账返回 A0002）；每次修改生成一条调整记录；金额与新值一致时提示无需修改",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "actual_freight": 9200.0, "reason": "司机少走高速路段，运费按实际路线调整" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "actual_freight": {
+                    "type": "number",
+                    "description": "调整后实际运费（必填，>0，DECIMAL(12,2)）"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "修改原因（必填，≤255 字）"
+                  }
+                },
+                "required": [
+                  "actual_freight",
+                  "reason"
+                ]
+              },
+              "example": {
+                "actual_freight": 9200.0,
+                "reason": "司机少走高速路段，运费按实际路线调整"
+              }
             }
           }
         },
@@ -608,62 +1731,79 @@
             "description": "修改成功",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "success", "data": { "id": 2, "freight_no": "YF202610130001", "before_freight": 9800.0, "after_freight": 9200.0, "message": "运费修改成功，已记录调整日志" } }
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "id": 2,
+                    "freight_no": "YF202610130001",
+                    "before_freight": 9800.0,
+                    "after_freight": 9200.0,
+                    "message": "运费修改成功，已记录调整日志"
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0002 已对账不可修改" },
-          "404": { "description": "D0002 运费单不存在" }
+          "400": {
+            "description": "A0002 已对账不可修改"
+          },
+          "404": {
+            "description": "D0002 运费单不存在"
+          }
         }
       }
     },
     "/api/freight-bills/{id}/reconcile": {
       "post": {
-        "tags": ["06 应付运费·结算管理"],
+        "tags": [
+          "06 应付运费·结算管理"
+        ],
         "summary": "确认对账",
         "description": "待对账 0 → 已对账 1，对账人=系统管理员；重复对账返回 D0001",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "对账成功",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "success", "data": { "id": 1, "freight_no": "YF202610140001", "reconcile_status": 1, "reconciler": "系统管理员", "message": "确认对账成功" } }
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "id": 1,
+                    "freight_no": "YF202610140001",
+                    "reconcile_status": 1,
+                    "reconciler": "系统管理员",
+                    "message": "确认对账成功"
+                  }
+                }
               }
             }
           },
-          "409": { "description": "D0001 已对账请勿重复操作" }
-        }
-      }
-    },
-
-    "/api/esign-records": {
-      "get": {
-        "tags": ["07 电子签章·台账"],
-        "summary": "电子签台账分页列表",
-        "parameters": [
-          { "name": "esign_id", "in": "query", "schema": { "type": "string" } },
-          { "name": "task_no", "in": "query", "schema": { "type": "string" } },
-          { "name": "vin", "in": "query", "schema": { "type": "string" } },
-          { "name": "apply_no", "in": "query", "schema": { "type": "string" } },
-          { "name": "sign_status", "in": "query", "schema": { "type": "string", "enum": ["WAIT_SIGN", "SIGNED", "CANCELLED"] } },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10 } }
-        ],
-        "responses": {
-          "200": {
-            "description": "台账列表（含关联任务状态）",
-            "content": {
-              "application/json": {
-                "example": {
-                  "code": "00000", "message": "success",
-                  "data": {
-                    "list": [{
-                      "id": 1, "esign_id": "ES202610190001", "task_no": "FY202610190003", "vin": "LZXBCGH48P1D20004", "apply_no": "APPLY-20261019-003",
-                      "sign_type": "物流电子签", "trigger_node": "CRM完成发运申请审批", "sign_party": "狮桥物流股份有限公司",
-                      "initiate_time": "2026-10-19 10:10:00", "sign_status": "WAIT_SIGN", "sign_time": null, "task_status": "WAIT_DISPATCH"
-                    }],
-                    "total": 8, "page": 1, "size": 10
+          "409": {
+            "description": "D0001 已对账请勿重复操作"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "noop": {
+                    "type": "string",
+                    "description": "无请求体参数（路径 ID 定位运费单，重复对账返回 D0001）"
                   }
                 }
               }
@@ -672,16 +1812,231 @@
         }
       }
     },
-
+    "/api/esign-records": {
+      "get": {
+        "tags": [
+          "07 电子签章·台账"
+        ],
+        "summary": "电子签台账分页列表",
+        "parameters": [
+          {
+            "name": "esign_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "task_no",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vin",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apply_no",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sign_status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "WAIT_SIGN",
+                "SIGNED",
+                "CANCELLED"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "台账列表（含关联任务状态）",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "list": [
+                      {
+                        "id": 1,
+                        "esign_id": "ES202610190001",
+                        "task_no": "FY202610190003",
+                        "vin": "LZXBCGH48P1D20004",
+                        "apply_no": "APPLY-20261019-003",
+                        "sign_type": "物流电子签",
+                        "trigger_node": "CRM完成发运申请审批",
+                        "sign_party": "狮桥物流股份有限公司",
+                        "initiate_time": "2026-10-19 10:10:00",
+                        "sign_status": "WAIT_SIGN",
+                        "sign_time": null,
+                        "task_status": "WAIT_DISPATCH"
+                      }
+                    ],
+                    "total": 8,
+                    "page": 1,
+                    "size": 10
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/external/shipping-tasks/receive": {
       "post": {
-        "tags": ["08 外部接口·CRM"],
+        "tags": [
+          "08 外部接口·CRM"
+        ],
         "summary": "① 发运申请任务接收",
         "description": "CRM 多车下发：applyNo 幂等（重复 → C0001）；任务单号 STP 自动生成（FY+yyyyMMdd+4 位）；计划提车日期 planPickupDate 必填（CRM 随发运申请直接下发，承运商接单后仅可调整）；head.plan_freight=各车 planFreight 之和；交付地址必填；备注 ≤500 字落任务",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（必填，唯一，重复返回 C0001）"
+                  },
+                  "customerName": {
+                    "type": "string",
+                    "description": "客户名称（必填）"
+                  },
+                  "region": {
+                    "type": "string",
+                    "description": "大区"
+                  },
+                  "salesPerson": {
+                    "type": "string",
+                    "description": "销售人员姓名"
+                  },
+                  "salesPhone": {
+                    "type": "string",
+                    "description": "销售人员联系方式"
+                  },
+                  "deliveryArea": {
+                    "type": "string",
+                    "description": "交付地区"
+                  },
+                  "deliveryAddress": {
+                    "type": "string",
+                    "description": "交付地址（必填）"
+                  },
+                  "receiverPhone": {
+                    "type": "string",
+                    "description": "接车人联系电话"
+                  },
+                  "factory": {
+                    "type": "string",
+                    "description": "生产工厂（必填）"
+                  },
+                  "storageLocation": {
+                    "type": "string",
+                    "description": "存放地点（必填）"
+                  },
+                  "shipMethod": {
+                    "type": "string",
+                    "description": "发运方式（送车）"
+                  },
+                  "shipLocation": {
+                    "type": "string",
+                    "description": "提车地点（顶层统一提供或车辆明细单独提供）"
+                  },
+                  "planPickupDate": {
+                    "type": "string",
+                    "description": "计划提车日期（必填，YYYY-MM-DD，主来源）"
+                  },
+                  "remark": {
+                    "type": "string",
+                    "description": "备注"
+                  },
+                  "vehicles": {
+                    "type": "array",
+                    "description": "车辆明细列表（必填，≥1 台）",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "vin"
+                      ],
+                      "properties": {
+                        "vin": {
+                          "type": "string",
+                          "description": "车架号（必填，唯一）"
+                        },
+                        "orderNo": {
+                          "type": "string",
+                          "description": "订单号"
+                        },
+                        "reportNo": {
+                          "type": "string",
+                          "description": "报告号"
+                        },
+                        "planFreight": {
+                          "type": "number",
+                          "description": "计划运费（元/台）"
+                        },
+                        "shipLocation": {
+                          "type": "string",
+                          "description": "该车提车地点（不传用顶层）"
+                        },
+                        "vehicleModel": {
+                          "type": "string",
+                          "description": "车型"
+                        },
+                        "engineConfig": {
+                          "type": "string",
+                          "description": "发动机配置"
+                        },
+                        "cabinType": {
+                          "type": "string",
+                          "description": "驾驶室类型"
+                        }
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "applyNo",
+                  "customerName",
+                  "deliveryAddress",
+                  "factory",
+                  "storageLocation",
+                  "planPickupDate",
+                  "vehicles"
+                ]
+              },
               "example": {
                 "applyNo": "APPLY-20261020-001",
                 "customerName": "合肥星辉运输有限公司",
@@ -698,8 +2053,24 @@
                 "planPickupDate": "2026-10-21",
                 "remark": "客户急单，优先安排",
                 "vehicles": [
-                  { "vin": "LZXBCGH48P1D30001", "orderNo": "SO-2610-0201", "reportNo": "BD-2610-0201", "planFreight": 5000, "shipLocation": "合肥市包河区上海路88号", "vehicleModel": "星辰重卡H9", "engineConfig": "潍柴WP13H", "cabinType": "高顶双卧" },
-                  { "vin": "LZXBCGH48P1D30002", "orderNo": "SO-2610-0202", "planFreight": 6000, "vehicleModel": "星辰重卡E5", "engineConfig": "特百佳TPW", "cabinType": "豪华高顶" }
+                  {
+                    "vin": "LZXBCGH48P1D30001",
+                    "orderNo": "SO-2610-0201",
+                    "reportNo": "BD-2610-0201",
+                    "planFreight": 5000,
+                    "shipLocation": "合肥市包河区上海路88号",
+                    "vehicleModel": "星辰重卡H9",
+                    "engineConfig": "潍柴WP13H",
+                    "cabinType": "高顶双卧"
+                  },
+                  {
+                    "vin": "LZXBCGH48P1D30002",
+                    "orderNo": "SO-2610-0202",
+                    "planFreight": 6000,
+                    "vehicleModel": "星辰重卡E5",
+                    "engineConfig": "特百佳TPW",
+                    "cabinType": "豪华高顶"
+                  }
                 ]
               }
             }
@@ -710,24 +2081,70 @@
             "description": "接收成功，返回自动生成的任务单号",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "发运申请接收成功，已生成待派单任务 FY202610200001", "data": { "taskNo": "FY202610200001" } }
+                "example": {
+                  "code": "00000",
+                  "message": "发运申请接收成功，已生成待派单任务 FY202610200001",
+                  "data": {
+                    "taskNo": "FY202610200001"
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0001 参数校验失败（applyNo/customerName/deliveryAddress/vehicles/vin/planPickupDate/factory/storageLocation/shipLocation 缺失或格式错误）" },
-          "409": { "description": "C0001 applyNo 已下发过（幂等拦截）" }
+          "400": {
+            "description": "A0001 参数校验失败（applyNo/customerName/deliveryAddress/vehicles/vin/planPickupDate/factory/storageLocation/shipLocation 缺失或格式错误）"
+          },
+          "409": {
+            "description": "C0001 applyNo 已下发过（幂等拦截）"
+          }
         }
       }
     },
     "/api/external/esign/sync": {
       "post": {
-        "tags": ["08 外部接口·CRM"],
+        "tags": [
+          "08 外部接口·CRM"
+        ],
         "summary": "② 物流电子签同步",
         "description": "esignId 幂等（重复 → C0001）；按 VIN+applyNo 匹配任务（vin 查 shipping_task_vehicle 车辆明细表），未匹配 → D0002；初始状态 WAIT_SIGN",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "esignId": {
+                    "type": "string",
+                    "description": "电子签 ID（必填，唯一，重复返回 C0001）"
+                  },
+                  "vin": {
+                    "type": "string",
+                    "description": "车架号（必填，VIN+申请号匹配任务车辆明细）"
+                  },
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（必填）"
+                  },
+                  "signType": {
+                    "type": "string",
+                    "description": "签署类型（物流电子签）"
+                  },
+                  "triggerNode": {
+                    "type": "string",
+                    "description": "触发节点"
+                  },
+                  "signParty": {
+                    "type": "string",
+                    "description": "签署方"
+                  }
+                },
+                "required": [
+                  "esignId",
+                  "vin",
+                  "applyNo"
+                ]
+              },
               "example": {
                 "esignId": "ES202610200001",
                 "vin": "LZXBCGH48P1D30001",
@@ -740,46 +2157,114 @@
           }
         },
         "responses": {
-          "200": { "description": "同步成功", "content": { "application/json": { "example": { "code": "00000", "message": "电子签 ES202610200001 已同步，状态：待签署", "data": {} } } } },
-          "400": { "description": "A0001 esignId/vin/applyNo 缺失" },
-          "404": { "description": "D0002 未匹配到对应任务（VIN 与发运申请号不匹配）" },
-          "409": { "description": "C0001 esignId 已同步过" }
+          "200": {
+            "description": "同步成功",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "电子签 ES202610200001 已同步，状态：待签署",
+                  "data": {}
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A0001 esignId/vin/applyNo 缺失"
+          },
+          "404": {
+            "description": "D0002 未匹配到对应任务（VIN 与发运申请号不匹配）"
+          },
+          "409": {
+            "description": "C0001 esignId 已同步过"
+          }
         }
       }
     },
     "/api/external/shipping-tasks/cancel-check": {
       "get": {
-        "tags": ["08 外部接口·CRM"],
+        "tags": [
+          "08 外部接口·CRM"
+        ],
         "summary": "③ 送车发运申请取消前状态查询",
         "description": "取消规则：WAIT_DISPATCH 可取消；DISPATCHED 需先在 STP 取消派单；CARRIER_ACCEPTED 需承运商取消接单；OUTBOUND 及之后不可取消；CANCELLED 已取消",
         "parameters": [
-          { "name": "applyNo", "in": "query", "schema": { "type": "string" }, "description": "发运申请号（优先）" },
-          { "name": "taskNo", "in": "query", "schema": { "type": "string" }, "description": "任务单号（兼容）" }
+          {
+            "name": "applyNo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "发运申请号（优先）"
+          },
+          {
+            "name": "taskNo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "任务单号（兼容）"
+          }
         ],
         "responses": {
           "200": {
             "description": "可否取消与提示信息",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "success", "data": { "taskNo": "FY202610190001", "status": "WAIT_DISPATCH", "cancellable": true, "message": "当前为待派单状态，可以取消" } }
+                "example": {
+                  "code": "00000",
+                  "message": "success",
+                  "data": {
+                    "taskNo": "FY202610190001",
+                    "status": "WAIT_DISPATCH",
+                    "cancellable": true,
+                    "message": "当前为待派单状态，可以取消"
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0001 未提供定位参数" },
-          "404": { "description": "D0002 任务不存在" }
+          "400": {
+            "description": "A0001 未提供定位参数"
+          },
+          "404": {
+            "description": "D0002 任务不存在"
+          }
         }
       }
     },
     "/api/external/shipping-tasks/cancel": {
       "post": {
-        "tags": ["08 外部接口·CRM"],
+        "tags": [
+          "08 外部接口·CRM"
+        ],
         "summary": "⑥ 送车发运申请取消",
         "description": "按取消规则校验（不可取消返回 D0001）；可取消时任务置 CANCELLED（cancel_reason/cancel_time），关联待签署电子签同步置 CANCELLED；重复取消幂等成功",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "applyNo": "APPLY-20261012-001", "cancelReason": "发运转自提，客户改为自提" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（必填）"
+                  },
+                  "cancelReason": {
+                    "type": "string",
+                    "description": "取消原因（必填）"
+                  }
+                },
+                "required": [
+                  "applyNo",
+                  "cancelReason"
+                ]
+              },
+              "example": {
+                "applyNo": "APPLY-20261012-001",
+                "cancelReason": "发运转自提，客户改为自提"
+              }
             }
           }
         },
@@ -788,25 +2273,57 @@
             "description": "取消成功（含电子签联动数量）",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "任务已取消，关联待签署电子签已置为已取消", "data": { "taskNo": "FY202610120001", "status": "CANCELLED", "cancelledEsigens": 1, "idempotent": false } }
+                "example": {
+                  "code": "00000",
+                  "message": "任务已取消，关联待签署电子签已置为已取消",
+                  "data": {
+                    "taskNo": "FY202610120001",
+                    "status": "CANCELLED",
+                    "cancelledEsigens": 1,
+                    "idempotent": false
+                  }
+                }
               }
             }
           },
-          "409": { "description": "D0001 当前状态不可取消（请先取消派单 / 联系承运商 / 车辆已出库发运）" }
+          "409": {
+            "description": "D0001 当前状态不可取消（请先取消派单 / 联系承运商 / 车辆已出库发运）"
+          }
         }
       }
     },
-
     "/api/external/wms/outbound-status": {
       "post": {
-        "tags": ["09 外部接口·WMS"],
+        "tags": [
+          "09 外部接口·WMS"
+        ],
         "summary": "⑧ WMS 出库状态同步",
-        "description": "正常链 PICKED→OUTBOUND（回填 outbound_date）；时序兜底：出库先于提车到达（当前 CARRIER_ACCEPTED）直接置 IN_TRANSIT 并留痕，后续提车回传仅补记日志+补 ship_time 不回退；重复回传（OUTBOUND/IN_TRANSIT/ARRIVED/FINISHED）仅补记日志幂等",
+        "description": "WMS 出库状态回传（出库在前、司机确认提车在后）：CARRIER_ACCEPTED→OUTBOUND，回填 outbound_date（出库日期）；出库后任务须由司机确认提车（⑫ status-sync action=PICKUP，发运时间不得早于出库日期）方可流转至在途；重复回传（OUTBOUND/PICKED/IN_TRANSIT/ARRIVED/FINISHED）仅补记日志，幂等不回退",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "applyNo": "APPLY-20261020-001", "outboundTime": "2026-10-21 15:30:00" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（推荐，与 taskNo 二选一）"
+                  },
+                  "taskNo": {
+                    "type": "string",
+                    "description": "任务单号（兼容）"
+                  },
+                  "outboundTime": {
+                    "type": "string",
+                    "description": "出库时间（YYYY-MM-DD 或 YYYY-MM-DD HH:mm:ss，不传取当前时间）"
+                  }
+                }
+              },
+              "example": {
+                "applyNo": "APPLY-20261020-001",
+                "outboundTime": "2026-10-21 15:30:00"
+              }
             }
           }
         },
@@ -815,24 +2332,77 @@
             "description": "出库回传结果",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "出库回传成功，任务状态：已出库", "data": { "taskNo": "FY202610200001", "status": "OUTBOUND", "message": "出库回传成功，任务状态：已出库" } }
+                "example": {
+                  "code": "00000",
+                  "message": "出库回传成功，任务状态：已出库",
+                  "data": {
+                    "taskNo": "FY202610200001",
+                    "status": "OUTBOUND",
+                    "message": "出库回传成功，任务状态：已出库"
+                  }
+                }
               }
             }
           },
-          "409": { "description": "D0001 当前任务状态不允许出库回传" }
+          "409": {
+            "description": "D0001 当前任务状态不允许出库回传"
+          }
         }
       }
     },
-
     "/api/external/drivers/sync": {
       "post": {
-        "tags": ["10 外部接口·狮桥物流"],
+        "tags": [
+          "10 外部接口·狮桥物流"
+        ],
         "summary": "⑩ 司机信息同步",
         "description": "按身份证号 UPSERT（source=2 狮桥同步，更新时姓名以狮桥为准、未传字段保留原值）；carrierId 存在时维护 carrier_driver 多对多关联；第二次推送同身份证号为更新不新增",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "driverName": {
+                    "type": "string",
+                    "description": "司机姓名（必填）"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "联系电话（必填）"
+                  },
+                  "idCard": {
+                    "type": "string",
+                    "description": "身份证号（必填，UPSERT 主键，source=2 狮桥）"
+                  },
+                  "licenseNo": {
+                    "type": "string",
+                    "description": "驾驶证号"
+                  },
+                  "licenseType": {
+                    "type": "string",
+                    "description": "准驾车型，如 A2"
+                  },
+                  "licenseValidFrom": {
+                    "type": "string",
+                    "description": "驾驶证有效期起（YYYY-MM-DD）"
+                  },
+                  "licenseValidTo": {
+                    "type": "string",
+                    "description": "驾驶证有效期止（YYYY-MM-DD）"
+                  },
+                  "carrierId": {
+                    "type": "integer",
+                    "description": "关联承运商 ID（不传则不维护 carrier_driver）"
+                  }
+                },
+                "required": [
+                  "driverName",
+                  "phone",
+                  "idCard"
+                ]
+              },
               "example": {
                 "driverName": "赵铁柱",
                 "phone": "13755550001",
@@ -851,32 +2421,118 @@
             "description": "同步结果（created=true 新增 / false 更新）",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "司机同步成功，已新增", "data": { "driverId": 7, "idCard": "340104199909099012", "created": true, "carrierBound": "狮桥物流股份有限公司" } }
+                "example": {
+                  "code": "00000",
+                  "message": "司机同步成功，已新增",
+                  "data": {
+                    "driverId": 7,
+                    "idCard": "340104199909099012",
+                    "created": true,
+                    "carrierBound": "狮桥物流股份有限公司"
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0001 姓名/手机号/身份证缺失或格式错误；新增时驾驶证有效期必填" },
-          "404": { "description": "D0002 carrierId 对应承运商不存在" }
+          "400": {
+            "description": "A0001 姓名/手机号/身份证缺失或格式错误；新增时驾驶证有效期必填"
+          },
+          "404": {
+            "description": "D0002 carrierId 对应承运商不存在"
+          }
         }
       }
     },
     "/api/external/shipping-tasks/status-sync": {
       "post": {
-        "tags": ["12 外部接口·承运商通用"],
+        "tags": [
+          "12 外部接口·承运商通用"
+        ],
         "summary": "⑫ 运单状态回传（通用接口，ACCEPT=承运商接单并指派司机）",
-        "description": "承运商通用回传接口：狮桥物流及其他承运商/三方物流供应商均可调用，后续供应商接入复用本接口。可选 carrierName 标识回传承运商（须与任务当前承运商一致防串单，不传按狮桥物流留痕）。action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）；可选 planPickupDate 调整计划提车日期（主来源为 ① receive 随申请下发必填，不传保持原值）；action=PICKUP：CARRIER_ACCEPTED→PICKED 回填 ship_time，photos 数组写 status_log.remark，已出库及之后重复回传仅补记日志不回退；action=ARRIVE：→ARRIVED 回填 actual_freight（未传用计划运费）/mileage/arrive_time 并生成 YF 运费单（FOR UPDATE 幂等，车辆明细实际运费按台数均分）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
+        "description": "承运商通用回传接口：狮桥物流及其他承运商/三方物流供应商均可调用，后续供应商接入复用本接口。可选 carrierName 标识回传承运商（须与任务当前承运商一致防串单，不传按狮桥物流留痕）。action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）；可选 planPickupDate 调整计划提车日期（主来源为 ① receive 随申请下发必填，不传保持原值）；action=PICKUP：司机确认提车（=发运），仅 OUTBOUND（已出库）可确认，OUTBOUND→PICKED 回填 ship_time（发运时间）；可选 actualPickupDate 实际提车日期（YYYY-MM-DD，即发运时间，允许早于计划提车日期，但不得早于出库日期，WMS 出库后方可提车；未出库 CARRIER_ACCEPTED 拒绝）；photos 提车照片数组写 status_log.remark；已提车及之后重复回传仅补记日志不回退；action=ARRIVE：→ARRIVED 回填 actual_freight（未传用计划运费）/mileage/arrive_time 并生成 YF 运费单（FOR UPDATE 幂等，车辆明细实际运费按台数均分）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "ACCEPT",
+                      "PICKUP",
+                      "ARRIVE",
+                      "FINISH"
+                    ],
+                    "description": "动作（必填）：ACCEPT 接单 / PICKUP 确认提车（=发运）/ ARRIVE 到达 / FINISH 完结"
+                  },
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（推荐，与 taskNo 二选一）"
+                  },
+                  "taskNo": {
+                    "type": "string",
+                    "description": "任务单号（兼容）"
+                  },
+                  "carrierName": {
+                    "type": "string",
+                    "description": "回传承运商名称（选填，须与任务当前承运商一致，不传按狮桥物流留痕）"
+                  },
+                  "driverId": {
+                    "type": "integer",
+                    "description": "司机 ID（action=ACCEPT 必填，司机须启用且属于任务承运商）"
+                  },
+                  "planPickupDate": {
+                    "type": "string",
+                    "description": "计划提车日期（action=ACCEPT 可选调整，YYYY-MM-DD，不传保持 CRM 下发值）"
+                  },
+                  "actualPickupDate": {
+                    "type": "string",
+                    "description": "实际提车日期（action=PICKUP 选填，YYYY-MM-DD，即发运时间；允许早于计划提车日期，但不得早于出库日期，WMS 出库后方可提车；不传取当前时间）"
+                  },
+                  "photos": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "提车照片 URL 数组（action=PICKUP 选填，写任务状态日志留痕）"
+                  },
+                  "actualFreight": {
+                    "type": "number",
+                    "description": "实际运费（action=ARRIVE 选填，不传用计划运费）"
+                  },
+                  "mileage": {
+                    "type": "number",
+                    "description": "运输里程（公里，action=ARRIVE 选填）"
+                  }
+                },
+                "required": [
+                  "action"
+                ]
+              },
               "examples": {
                 "accept": {
                   "summary": "承运商接单并指派司机（带供应商身份，可选调整提车日期）",
-                  "value": { "action": "ACCEPT", "applyNo": "APPLY-20261020-001", "carrierName": "狮桥物流", "driverId": 3, "planPickupDate": "2026-10-22" }
+                  "value": {
+                    "action": "ACCEPT",
+                    "applyNo": "APPLY-20261020-001",
+                    "carrierName": "狮桥物流",
+                    "driverId": 3,
+                    "planPickupDate": "2026-10-22"
+                  }
                 },
                 "pickup": {
-                  "summary": "司机提车（照片留痕）",
-                  "value": { "action": "PICKUP", "applyNo": "APPLY-20261020-001", "photos": ["https://oss.example.com/pickup/30001-1.jpg", "https://oss.example.com/pickup/30001-2.jpg"] }
+                  "summary": "司机确认提车（=发运，实际提车日期即发运时间，照片留痕）",
+                  "value": {
+                    "action": "PICKUP",
+                    "applyNo": "APPLY-20261020-001",
+                    "actualPickupDate": "2026-10-21",
+                    "photos": [
+                      "https://oss.example.com/pickup/30001-1.jpg",
+                      "https://oss.example.com/pickup/30001-2.jpg"
+                    ]
+                  }
                 }
               }
             }
@@ -887,24 +2543,57 @@
             "description": "状态推进结果（ARRIVE 含生成的运费单号）",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "到达确认成功，已生成运费结算单 YF202610200001（待对账）", "data": { "taskNo": "FY202610200001", "status": "ARRIVED", "actualFreight": 11500, "mileage": 650, "freightNo": "YF202610200001", "billCreated": true } }
+                "example": {
+                  "code": "00000",
+                  "message": "到达确认成功，已生成运费结算单 YF202610200001（待对账）",
+                  "data": {
+                    "taskNo": "FY202610200001",
+                    "status": "ARRIVED",
+                    "actualFreight": 11500,
+                    "mileage": 650,
+                    "freightNo": "YF202610200001",
+                    "billCreated": true
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0001 action 缺失或不合法 / driverId 缺失 / 金额格式错误" },
-          "409": { "description": "D0001 当前状态不允许该动作（状态机校验）" }
+          "400": {
+            "description": "A0001 action 缺失或不合法 / driverId 缺失 / 金额格式错误"
+          },
+          "409": {
+            "description": "D0001 当前状态不允许该动作（状态机校验）"
+          }
         }
       }
     },
     "/api/external/esign/receipt-sync": {
       "post": {
-        "tags": ["10 外部接口·狮桥物流"],
+        "tags": [
+          "10 外部接口·狮桥物流"
+        ],
         "summary": "④ 物流电子签签收回执确认",
         "description": "狮桥确认收到电子签数据；不改变签署状态，返回当前签署状态；重复回执幂等",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "example": { "esignId": "ES202610200001" } }
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "esignId": {
+                    "type": "string",
+                    "description": "电子签 ID（必填，回执确认幂等）"
+                  }
+                },
+                "required": [
+                  "esignId"
+                ]
+              },
+              "example": {
+                "esignId": "ES202610200001"
+              }
+            }
           }
         },
         "responses": {
@@ -912,23 +2601,60 @@
             "description": "回执确认",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "电子签回执确认成功", "data": { "esignId": "ES202610200001", "signStatus": "WAIT_SIGN" } }
+                "example": {
+                  "code": "00000",
+                  "message": "电子签回执确认成功",
+                  "data": {
+                    "esignId": "ES202610200001",
+                    "signStatus": "WAIT_SIGN"
+                  }
+                }
               }
             }
           },
-          "404": { "description": "D0002 电子签不存在" }
+          "404": {
+            "description": "D0002 电子签不存在"
+          }
         }
       }
     },
     "/api/external/esign/sign-status": {
       "post": {
-        "tags": ["10 外部接口·狮桥物流"],
+        "tags": [
+          "10 外部接口·狮桥物流"
+        ],
         "summary": "⑭ 物流电子签签署状态同步",
         "description": "WAIT_SIGN→SIGNED（回填 sign_time）/ CANCELLED；已是目标状态幂等成功；非待签署状态流转返回 D0001",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "example": { "esignId": "ES202610200001", "signStatus": "SIGNED" } }
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "esignId": {
+                    "type": "string",
+                    "description": "电子签 ID（必填）"
+                  },
+                  "signStatus": {
+                    "type": "string",
+                    "enum": [
+                      "SIGNED",
+                      "CANCELLED"
+                    ],
+                    "description": "签署结果（必填）：SIGNED 已签署（回填签署时间）/ CANCELLED 已取消"
+                  }
+                },
+                "required": [
+                  "esignId",
+                  "signStatus"
+                ]
+              },
+              "example": {
+                "esignId": "ES202610200001",
+                "signStatus": "SIGNED"
+              }
+            }
           }
         },
         "responses": {
@@ -936,27 +2662,82 @@
             "description": "签署状态更新结果",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "签署完成", "data": { "esignId": "ES202610200001", "signStatus": "SIGNED", "signTime": "2026-10-21 20:00:00" } }
+                "example": {
+                  "code": "00000",
+                  "message": "签署完成",
+                  "data": {
+                    "esignId": "ES202610200001",
+                    "signStatus": "SIGNED",
+                    "signTime": "2026-10-21 20:00:00"
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0001 signStatus 仅支持 SIGNED / CANCELLED" },
-          "404": { "description": "D0002 电子签不存在" },
-          "409": { "description": "D0001 当前状态不可流转" }
+          "400": {
+            "description": "A0001 signStatus 仅支持 SIGNED / CANCELLED"
+          },
+          "404": {
+            "description": "D0002 电子签不存在"
+          },
+          "409": {
+            "description": "D0001 当前状态不可流转"
+          }
         }
       }
     },
-
     "/api/mock/track": {
       "post": {
-        "tags": ["11 演示辅助·模拟接口"],
+        "tags": [
+          "11 演示辅助·模拟接口"
+        ],
         "summary": "狮桥位置回传模拟（写轨迹）",
         "description": "写 transport_track；PICKED/OUTBOUND 首次回传置 IN_TRANSIT；transport_no=SQ+yyyyMMdd+任务id补零4位；在途任务继续记轨迹；已到达/完结/取消或未提车任务返回 D0001",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": { "applyNo": "APPLY-20261020-001", "locationDesc": "巢湖市 G5011芜合高速", "longitude": 117.87, "latitude": 31.6, "speed": 62 }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（推荐，与 taskNo 二选一）"
+                  },
+                  "taskNo": {
+                    "type": "string",
+                    "description": "任务单号（兼容）"
+                  },
+                  "locationDesc": {
+                    "type": "string",
+                    "description": "位置描述（必填）"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "description": "经度（必填）"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "纬度（必填）"
+                  },
+                  "speed": {
+                    "type": "number",
+                    "description": "时速（km/h）"
+                  }
+                },
+                "required": [
+                  "locationDesc",
+                  "longitude",
+                  "latitude"
+                ]
+              },
+              "example": {
+                "applyNo": "APPLY-20261020-001",
+                "locationDesc": "巢湖市 G5011芜合高速",
+                "longitude": 117.87,
+                "latitude": 31.6,
+                "speed": 62
+              }
             }
           }
         },
@@ -965,24 +2746,55 @@
             "description": "位置回传结果",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "位置回传成功，任务已置为在途", "data": { "transportNo": "SQ202610210001", "status": "IN_TRANSIT", "firstReport": true } }
+                "example": {
+                  "code": "00000",
+                  "message": "位置回传成功，任务已置为在途",
+                  "data": {
+                    "transportNo": "SQ202610210001",
+                    "status": "IN_TRANSIT",
+                    "firstReport": true
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0001 经纬度必填且为数字 / 未提供定位参数" },
-          "409": { "description": "D0001 车辆尚未提车或已到达/终止" }
+          "400": {
+            "description": "A0001 经纬度必填且为数字 / 未提供定位参数"
+          },
+          "409": {
+            "description": "D0001 车辆尚未提车或已到达/终止"
+          }
         }
       }
     },
     "/api/mock/esign/sign-task": {
       "post": {
-        "tags": ["11 演示辅助·模拟接口"],
+        "tags": [
+          "11 演示辅助·模拟接口"
+        ],
         "summary": "签署任务最新待签署电子签（演示辅助）",
         "description": "定位任务（applyNo 优先 taskNo 兼容）后签署其最新一条待签署电子签（置 SIGNED 并回填 sign_time）；无待签署电子签返回 A0002",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": { "example": { "applyNo": "APPLY-20261020-001" } }
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（推荐，与 taskNo 二选一）"
+                  },
+                  "taskNo": {
+                    "type": "string",
+                    "description": "任务单号（兼容）"
+                  }
+                }
+              },
+              "example": {
+                "applyNo": "APPLY-20261020-001"
+              }
+            }
           }
         },
         "responses": {
@@ -990,13 +2802,24 @@
             "description": "签署结果",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "电子签 ES202610200001 签署完成", "data": { "esignId": "ES202610200001", "vin": "LZXBCGH48P1D30001", "signStatus": "SIGNED" } }
+                "example": {
+                  "code": "00000",
+                  "message": "电子签 ES202610200001 签署完成",
+                  "data": {
+                    "esignId": "ES202610200001",
+                    "vin": "LZXBCGH48P1D30001",
+                    "signStatus": "SIGNED"
+                  }
+                }
               }
             }
           },
-          "400": { "description": "A0001 未提供定位参数" },
-          "400": { "description": "A0002 该任务无待签署的电子签" },
-          "404": { "description": "D0002 任务不存在" }
+          "400": {
+            "description": "A0002 该任务无待签署的电子签"
+          },
+          "404": {
+            "description": "D0002 任务不存在"
+          }
         }
       }
     }

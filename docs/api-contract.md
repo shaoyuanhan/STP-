@@ -152,14 +152,14 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | 3 | GET /shipping-tasks/cancel-check?applyNo= | CRM | - | `{taskNo, status, cancellable, message}` |
 | 4 | POST /esign/receipt-sync | 狮桥 | esignId* | `{esignId, signStatus}`（回执确认，幂等） |
 | 6 | POST /shipping-tasks/cancel | CRM | applyNo*, cancelReason | 按取消规则校验；关联待签署电子签置 CANCELLED |
-| 8 | POST /wms/outbound-status | WMS | applyNo/taskNo, outboundTime? | PICKED→OUTBOUND；CARRIER_ACCEPTED（乱序）→IN_TRANSIT 兜底 |
+| 8 | POST /wms/outbound-status | WMS | applyNo/taskNo, outboundTime? | CARRIER_ACCEPTED→OUTBOUND（出库在前、司机提车在后），回填 outbound_date；重复回传仅补记日志（幂等） |
 | 10 | POST /drivers/sync | 狮桥 | driverName*, phone*, idCard*, licenseNo, licenseType, licenseValidFrom, licenseValidTo, carrierId? | 身份证号 UPSERT（source=2）+carrier_driver 维护 |
-| 12 | POST /shipping-tasks/status-sync | 承运商通用（狮桥/任意三方物流） | action*:`ACCEPT|PICKUP|ARRIVE|FINISH`, applyNo/taskNo, carrierName?（回传承运商，须与任务承运商一致；不传按狮桥留痕）, driverId?(ACCEPT), planPickupDate?(ACCEPT 可选调整，不传保持 CRM 下发值), photos?:[](PICKUP), actualFreight?, mileage?(ARRIVE) | 按状态机校验推进；ARRIVE 生成运费单；日志 source=carrierName 传时记 CARRIER |
+| 12 | POST /shipping-tasks/status-sync | 承运商通用（狮桥/任意三方物流） | action*:`ACCEPT|PICKUP|ARRIVE|FINISH`, applyNo/taskNo, carrierName?（回传承运商，须与任务承运商一致；不传按狮桥留痕）, driverId?(ACCEPT), planPickupDate?(ACCEPT 可选调整，不传保持 CRM 下发值), actualPickupDate?(PICKUP 实际提车日期=发运时间，不得早于出库日期，允许早于计划提车日期), photos?:[](PICKUP 提车照片), actualFreight?, mileage?(ARRIVE) | 按状态机校验推进；PICKUP 仅 OUTBOUND（已出库）可确认，回填 ship_time；ARRIVE 生成运费单；日志 source=carrierName 传时记 CARRIER |
 | 14 | POST /esign/sign-status | 狮桥 | esignId*, signStatus:`SIGNED|CANCELLED` | WAIT_SIGN→SIGNED(回填 sign_time)/CANCELLED |
 
 ## 7. 模拟辅助接口（/api/mock，演示面板专用）
 
-- `POST /api/mock/track` `{applyNo?, taskNo?, locationDesc, longitude, latitude, speed}` → 写 transport_track，PICKED/OUTBOUND（已确认提车）首次→IN_TRANSIT；OUTBOUND 且司机未确认提车仅记轨迹不进在途；transport_no=`SQ+yyyyMMdd+任务id补零4位`
+- `POST /api/mock/track` `{applyNo?, taskNo?, locationDesc, longitude, latitude, speed}` → 写 transport_track，PICKED（司机已确认提车）首次回传→IN_TRANSIT；OUTBOUND（已出库未提车）仅记轨迹不进在途；transport_no=`SQ+yyyyMMdd+任务id补零4位`
 - `POST /api/mock/esign/sign-task` `{applyNo?, taskNo?}` → 签署该任务最新待签署电子签（演示辅助）
 
 ## 8. 前端工程结构与分工
