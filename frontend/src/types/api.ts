@@ -46,8 +46,8 @@ export type TaskStatus =
   | 'WAIT_DISPATCH' // 待派单
   | 'DISPATCHED' // 已派单
   | 'CARRIER_ACCEPTED' // 承运商已接单
-  | 'PICKED' // 已提车
   | 'OUTBOUND' // 已出库
+  | 'PICKED' // 已提车
   | 'IN_TRANSIT' // 在途
   | 'ARRIVED' // 已到达
   | 'FINISHED' // 已完结
@@ -658,7 +658,7 @@ export interface EsignSignStatusPayload {
 // 模拟辅助接口（/api/mock，契约第 7 节）
 // ---------------------------------------------------------------------------
 
-/** 模拟位置回传（写 transport_track，PICKED/OUTBOUND 首次自动置在途） */
+/** 模拟位置回传（写 transport_track，已提车 PICKED 首次自动置在途；已出库未提车仅记轨迹） */
 export interface MockTrackPayload {
   applyNo?: string
   taskNo?: string
