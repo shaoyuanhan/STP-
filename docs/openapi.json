@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
-    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）、演示辅助接口（/api/mock）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，已提车在已出库之前）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 TMS 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
+    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）、演示辅助接口（/api/mock）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，已提车在已出库之前）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
     "version": "2.0.0"
   },
   "servers": [
@@ -410,12 +410,11 @@
             "content": {
               "application/json": {
                 "example": {
-                  "code": "00000", "message": "success",
+                  "code": "00000", "message": "批量派单完成：成功 2 单，跳过 1 单",
                   "data": {
                     "dispatched": 2,
                     "total_freight": 12200.0,
-                    "skipped": [{ "task_id": 4, "task_no": "FY202610180001", "reason": "当前状态不允许派单（DISPATCHED），仅「待派单」可派单" }],
-                    "message": "批量派单完成：成功 2 单，跳过 1 单"
+                    "skipped": [{ "task_id": 4, "task_no": "FY202610180001", "reason": "当前状态不允许派单（DISPATCHED），仅「待派单」可派单" }]
                   }
                 }
               }
@@ -469,7 +468,7 @@
             "description": "改派成功",
             "content": {
               "application/json": {
-                "example": { "code": "00000", "message": "success", "data": { "task_id": 12, "status": "DISPATCHED", "version": 3, "carrier_id": 2, "carrier_name": "安捷整车运输有限公司", "message": "改派成功：安捷整车运输有限公司，原派单已同步狮桥取消" } }
+                "example": { "code": "00000", "message": "改派成功：安捷整车运输有限公司，原派单已同步狮桥取消", "data": { "task_id": 12, "task_no": "FY202610200001", "status": "DISPATCHED", "version": 3, "carrier_id": 2, "carrier_name": "安捷整车运输有限公司" } }
               }
             }
           }
@@ -677,7 +676,7 @@
       "post": {
         "tags": ["08 外部接口·CRM"],
         "summary": "① 发运申请任务接收",
-        "description": "CRM 多车下发：applyNo 幂等（重复 → C0001）；任务单号 TMS 自动生成（FY+yyyyMMdd+4 位）；head.plan_freight=各车 planFreight 之和；交付地址必填；备注 ≤500 字落任务",
+        "description": "CRM 多车下发：applyNo 幂等（重复 → C0001）；任务单号 STP 自动生成（FY+yyyyMMdd+4 位）；计划提车日期 planPickupDate 必填（CRM 随发运申请直接下发，承运商接单后仅可调整）；head.plan_freight=各车 planFreight 之和；交付地址必填；备注 ≤500 字落任务",
         "requestBody": {
           "required": true,
           "content": {
@@ -714,7 +713,7 @@
               }
             }
           },
-          "400": { "description": "A0001 参数校验失败（applyNo/customerName/deliveryAddress/vehicles/vin 缺失或格式错误）" },
+          "400": { "description": "A0001 参数校验失败（applyNo/customerName/deliveryAddress/vehicles/vin/planPickupDate 缺失或格式错误）" },
           "409": { "description": "C0001 applyNo 已下发过（幂等拦截）" }
         }
       }
@@ -751,7 +750,7 @@
       "get": {
         "tags": ["08 外部接口·CRM"],
         "summary": "③ 送车发运申请取消前状态查询",
-        "description": "取消规则：WAIT_DISPATCH 可取消；DISPATCHED 需先在 TMS 取消派单；CARRIER_ACCEPTED 需承运商取消接单；OUTBOUND 及之后不可取消；CANCELLED 已取消",
+        "description": "取消规则：WAIT_DISPATCH 可取消；DISPATCHED 需先在 STP 取消派单；CARRIER_ACCEPTED 需承运商取消接单；OUTBOUND 及之后不可取消；CANCELLED 已取消",
         "parameters": [
           { "name": "applyNo", "in": "query", "schema": { "type": "string" }, "description": "发运申请号（优先）" },
           { "name": "taskNo", "in": "query", "schema": { "type": "string" }, "description": "任务单号（兼容）" }

@@ -8,7 +8,7 @@
 
 | 层 | 技术 |
 |---|---|
-| 前端 | 原生 HTML + CSS + JS（零依赖 SPA，双击 index.html 即可用） |
+| 前端 | Vue 3.5 + Vite + TypeScript + Pinia + Naive UI + Axios（工程目录 `frontend/`，dev 端口 5173） |
 | 后端 | Node.js 18+ / Express 4 |
 | 数据库 | MySQL 5.7+（或 MariaDB 10.x），InnoDB + utf8mb4 |
 
@@ -37,11 +37,26 @@ tms-vehicle-shipping/
 │           ├── freight.js   # 应付运费对账
 │           ├── esigns.js    # 电子签台账
 │           └── mock.js      # 外部系统模拟接口
-└── frontend/
-    ├── index.html          # 入口（含全部样式）
-    ├── app.js              # SPA 路由 + 页面逻辑
-    ├── china-map.js        # 中国地图数据与渲染器（内嵌，零依赖离线可用）
-    └── server.js           # 零依赖静态服务器 + API 代理（推荐启动方式）
+└── frontend/                  # Vue3 + Vite + TypeScript + Pinia + Naive UI 工程
+    ├── package.json           # 依赖与脚本（dev / build / preview）
+    ├── vite.config.ts         # dev 端口 5173，/api 代理到 http://localhost:3000
+    ├── tsconfig.json          # 严格模式 + @/* 路径别名
+    ├── index.html             # 入口（引入本地 vendor/intl-tel-input）
+    ├── public/
+    │   ├── favicon.svg
+    │   └── vendor/intl-tel-input/   # 电话控件本地化资源（无 CDN）
+    └── src/
+        ├── main.ts            # 应用入口（Pinia + Router + NaiveUI 全量注册）
+        ├── App.vue            # NConfigProvider（zhCN 中文 locale + 品牌主题）
+        ├── router/index.ts    # 8 个业务路由（懒加载），/ → /dashboard
+        ├── layouts/BasicLayout.vue  # 侧边分组菜单 + 顶栏 + 面包屑
+        ├── stores/            # dictionary（字典缓存）/ session（演示用户）
+        ├── services/          # http 拦截器 + carriers/drivers/tasks/tracking/freight/esigns/external/stats/dict
+        ├── types/api.ts       # 契约实体与枚举类型
+        ├── components/        # StatusTag/MoneyText/PageTable/DetailSection/ConfirmAction/PhoneInput/ChinaMap
+        ├── lib/china-map.js   # 中国地图数据与渲染器（零依赖离线）
+        ├── utils/format.ts    # 金额/日期/电话格式化
+        └── views/             # 8 个页面：工作台/承运商/司机/发运任务/在途监控/结算/电子签/外部系统模拟
 ```
 
 ## 部署步骤
@@ -78,25 +93,28 @@ DB_NAME=tms_vehicle
 PORT=3000
 ```
 
-### 3. 启动前端
-
-前端是纯静态文件，三种方式任选：
+### 3. 启动前端（Vue3 + Vite 工程）
 
 ```bash
-# 方式 A（推荐）：自带 API 代理的静态服务器，同源访问免跨域
 cd frontend
-node server.js          # 默认 8000，可传端口参数：node server.js 8080
-# 浏览器访问 http://localhost:8000/index.html
-# API 代理地址可用环境变量覆盖：BACKEND_HOST / BACKEND_PORT
-
-# 方式 B：任意静态服务器（python 等），页面会自动探测并回退到 http://localhost:3000
-cd frontend
-python3 -m http.server 8000
-
-# 方式 C：直接双击 index.html（file:// 打开时自动请求 http://localhost:3000）
+npm install        # 依赖安装；网络受限时可加 --registry=https://registry.npmmirror.com
+npm run dev        # 开发服务器，端口 5173，/api 自动代理到 http://localhost:3000
 ```
 
-后端已开启 CORS，前后端可分开部署到不同域名/端口；生产环境建议用 Nginx 把 `/api` 反代到后端，前端会自动使用同源相对路径。
+浏览器访问 <http://localhost:5173>（默认重定向到工作台 `/dashboard`）。
+
+生产构建与预览：
+
+```bash
+cd frontend
+npm run build      # 先 vue-tsc 类型检查，再 vite 构建到 dist/
+npm run preview    # 本地预览构建产物
+```
+
+> 8 个业务路由：`/dashboard` 工作台、`/carriers` 承运商管理、`/drivers` 司机管理、
+> `/tasks` 发运任务、`/tracking` 在途监控、`/freight` 结算管理、`/esigns` 电子签台账、
+> `/simulator` 外部系统模拟。开发环境所有 `/api` 请求由 Vite 代理转发到后端 3000 端口，
+> 前后端可分开部署；生产环境建议用 Nginx 将 `/api` 反代到后端即可，无需修改前端代码。
 
 ## 功能模块
 
@@ -188,6 +206,15 @@ python3 -m http.server 8000
 已完成 21 步全链路测试与浏览器全页面验证：CRM 下发 → 派单 → 接单 → 出库 → 提车 → 在途回传 → 到达 → 完结 → 运费修改/对账，以及取消链路，全部通过。
 
 ## 更新记录
+
+### V2.0（2026-10-20）前端整体重构为 Vue3 工程
+
+旧版原生 JS 前端（index.html + app.js）替换为 Vue 3.5 + Vite + TypeScript + Pinia + Naive UI 工程，目录结构按 `docs/api-contract.md` 第 8 节落地：
+
+- **路由与布局**：8 个业务路由懒加载（工作台/承运商/司机/发运任务/在途监控/结算/电子签/外部系统模拟），侧边分组菜单 + 顶栏 + 面包屑，`/` 重定向到 `/dashboard`
+- **请求层**：axios 统一信封拦截（`{code,message,data}`，`00000` 拆包，业务/HTTP 错误抛 `ApiError`），services 按契约第 5/6/7 节逐接口实现并全量 TypeScript 类型标注（`types/api.ts`）
+- **公共组件**：StatusTag（任务/承运商/司机/对账/电子签状态标签）、MoneyText、PageTable（远程分页+空态+错误重试）、DetailSection、ConfirmAction（危险确认）、PhoneInput（intl-tel-input 本地 vendor 包装，输出 E.164）、ChinaMap（china-map.js 渲染器包装）
+- **启动方式变化**：前端由 `node server.js`(8000) 改为 `npm run dev`(5173)，`/api` 由 Vite 代理到后端 3000；`启动STP.command` 已同步更新
 
 ### V1.2（2026-10-19）电话输入升级为 intl-tel-input（Google libphonenumber）
 

@@ -23,7 +23,7 @@ function allowedActions(status) {
   return [];
 }
 
-/** 写任务状态流转日志（from_status 初始为 NULL；source: TMS/CRM/SQ/WMS） */
+/** 写任务状态流转日志（from_status 初始为 NULL；source: STP/CRM/SQ/WMS） */
 async function writeStatusLog(conn, { taskId, taskNo, fromStatus, toStatus, source, operator, remark }) {
   await conn.query(
     `INSERT INTO task_status_log (task_id, task_no, from_status, to_status, source, operator, remark, create_name, update_name)
@@ -157,7 +157,7 @@ router.post('/dispatch', wrap(async (req, res) => {
     });
     await writeStatusLog(conn, {
       taskId: task.id, taskNo: task.task_no, fromStatus: 'WAIT_DISPATCH', toStatus: 'DISPATCHED',
-      source: 'TMS', operator: '系统管理员', remark: `派单至承运商：${carrier.carrier_name}`,
+      source: 'STP', operator: '系统管理员', remark: `派单至承运商：${carrier.carrier_name}`,
     });
     return { task, carrier, version: Number(task.version) + 1 };
   });
@@ -170,8 +170,7 @@ router.post('/dispatch', wrap(async (req, res) => {
     carrier_id: Number(carrier_id),
     carrier_name: result.carrier.carrier_name,
     plan_freight: result.task.plan_freight, // 线路参考价只读回显
-    message: `派单成功，任务已同步狮桥发运系统并下发 WMS（${result.carrier.carrier_name}）`,
-  });
+  }, `派单成功，任务已同步狮桥发运系统并下发 WMS（${result.carrier.carrier_name}）`);
 }));
 
 // ============ 批量派单（契约 5.4：batch_no 同批相同，返回 dispatched/total_freight/skipped） ============
@@ -219,7 +218,7 @@ router.post('/batch-dispatch', wrap(async (req, res) => {
       });
       await writeStatusLog(conn, {
         taskId: task.id, taskNo: task.task_no, fromStatus: 'WAIT_DISPATCH', toStatus: 'DISPATCHED',
-        source: 'TMS', operator: '系统管理员', remark: `批量派单（批次 ${batchNo}）至承运商：${carrier.carrier_name}`,
+        source: 'STP', operator: '系统管理员', remark: `批量派单（批次 ${batchNo}）至承运商：${carrier.carrier_name}`,
       });
       dispatched += 1;
       totalFreight += Number(task.plan_freight) || 0;
@@ -230,8 +229,7 @@ router.post('/batch-dispatch', wrap(async (req, res) => {
     dispatched,
     total_freight: Number(totalFreight.toFixed(2)), // 成功单计划运费（参考价）合计
     skipped,
-    message: `批量派单完成：成功 ${dispatched} 单` + (skipped.length ? `，跳过 ${skipped.length} 单` : ''),
-  });
+  }, `批量派单完成：成功 ${dispatched} 单` + (skipped.length ? `，跳过 ${skipped.length} 单` : ''));
 }));
 
 // ============ 取消派单（仅已派单即司机未接单 -> 待派单，契约 3.1/5.4） ============
@@ -261,7 +259,7 @@ router.post('/dispatch/cancel', wrap(async (req, res) => {
     });
     await writeStatusLog(conn, {
       taskId: task.id, taskNo: task.task_no, fromStatus: 'DISPATCHED', toStatus: 'WAIT_DISPATCH',
-      source: 'TMS', operator: '系统管理员',
+      source: 'STP', operator: '系统管理员',
       remark: `取消派单：${reason}${remark ? `——${remark}` : ''}，已同步狮桥取消`,
     });
     return { task, version: Number(task.version) + 1 };
@@ -272,8 +270,7 @@ router.post('/dispatch/cancel', wrap(async (req, res) => {
     task_no: result.task.task_no,
     status: 'WAIT_DISPATCH',
     version: result.version,
-    message: '已取消派单，任务回退到「待派单」，并同步狮桥取消',
-  });
+  }, '已取消派单，任务回退到「待派单」，并同步狮桥取消');
 }));
 
 // ============ 改派（仅已派单，更换承运商，状态仍为已派单） ============
@@ -304,7 +301,7 @@ router.post('/dispatch/reassign', wrap(async (req, res) => {
     });
     await writeStatusLog(conn, {
       taskId: task.id, taskNo: task.task_no, fromStatus: 'DISPATCHED', toStatus: 'DISPATCHED',
-      source: 'TMS', operator: '系统管理员',
+      source: 'STP', operator: '系统管理员',
       remark: `改派：${oldName} → ${carrier.carrier_name}，原派单已同步狮桥取消并重新下发`,
     });
     return { task, carrier, version: Number(task.version) + 1 };
@@ -317,8 +314,7 @@ router.post('/dispatch/reassign', wrap(async (req, res) => {
     version: result.version,
     carrier_id: Number(carrier_id),
     carrier_name: result.carrier.carrier_name,
-    message: `改派成功：${result.carrier.carrier_name}，原派单已同步狮桥取消`,
-  });
+  }, `改派成功：${result.carrier.carrier_name}，原派单已同步狮桥取消`);
 }));
 
 module.exports = router;

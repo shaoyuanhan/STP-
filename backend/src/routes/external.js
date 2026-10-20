@@ -43,7 +43,7 @@ async function resolveTask({ applyNo, taskNo }) {
   return rows[0];
 }
 
-/** 写任务状态流转日志（from_status 初始为 NULL；source: TMS/CRM/SQ/WMS） */
+/** 写任务状态流转日志（from_status 初始为 NULL；source: STP/CRM/SQ/WMS） */
 async function writeStatusLog(conn, { taskId, taskNo, fromStatus, toStatus, source, operator, remark }) {
   await conn.query(
     `INSERT INTO task_status_log (task_id, task_no, from_status, to_status, source, operator, remark, create_name, update_name)
@@ -69,7 +69,7 @@ function parseOutboundTime(v) {
 
 /**
  * CRM 取消规则（契约 3.1）：
- *   WAIT_DISPATCH 可取消；DISPATCHED 需先在 TMS 取消派单；CARRIER_ACCEPTED 需承运商取消接单；
+ *   WAIT_DISPATCH 可取消；DISPATCHED 需先在 STP 取消派单；CARRIER_ACCEPTED 需承运商取消接单；
  *   OUTBOUND 及之后车辆已出库发运不可取消；CANCELLED 已取消（幂等）。
  * @returns {{cancellable:boolean, message:string, done:boolean}} done=已处于终态可直接返回
  */
@@ -78,7 +78,7 @@ function cancelRule(status) {
     case 'WAIT_DISPATCH':
       return { cancellable: true, message: '当前为待派单状态，可以取消', done: false };
     case 'DISPATCHED':
-      return { cancellable: false, message: '当前为已派单状态，请先在 TMS 取消派单后再同步取消', done: false };
+      return { cancellable: false, message: '当前为已派单状态，请先在 STP 取消派单后再同步取消', done: false };
     case 'CARRIER_ACCEPTED':
       return { cancellable: false, message: '承运商已接单，需联系承运商取消接单后再同步取消', done: false };
     case 'CANCELLED':
@@ -110,11 +110,12 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
 
   const salesPhone = assertPhone(b.salesPhone, { label: '销售人员电话 salesPhone', required: false });
   const receiverPhone = assertPhone(b.receiverPhone, { label: '接车人电话 receiverPhone', required: false });
-  if (b.planPickupDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.planPickupDate).trim())) {
-    throw errParam('计划提车日期 planPickupDate 格式不正确，应为 YYYY-MM-DD');
+  // 计划提车日期由 CRM 随发运申请直接下发，必填（既有需求：承运商接单后仅可调整）
+  if (!b.planPickupDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.planPickupDate).trim())) {
+    throw errParam('计划提车日期 planPickupDate 必填，格式 YYYY-MM-DD');
   }
 
-  // ---- applyNo 幂等：重复下发 → C0001（既有需求 1：任务单号 TMS 自动生成，CRM 不传）----
+  // ---- applyNo 幂等：重复下发 → C0001（既有需求 1：任务单号 STP 自动生成，CRM 不传）----
   const dup = await query('SELECT id, task_no FROM shipping_task WHERE apply_no = ? AND deleted = 0', [applyNo]);
   if (dup.length) throw errDup(`发运申请号 ${applyNo} 已下发过，任务单号 ${dup[0].task_no}，请勿重复下发`);
 

@@ -44,7 +44,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 **已确认：已提车在已出库之前（线性主链）。**
 
 转换触发：
-- 派单（TMS）：WAIT_DISPATCH→DISPATCHED，写 dispatch_record(DISPATCH) + status_log
+- 派单（STP）：WAIT_DISPATCH→DISPATCHED，写 dispatch_record(DISPATCH) + status_log
 - 接单（狮桥 #12 ACCEPT）：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id、plan_pickup_date
 - 提车（#12 PICKUP）：CARRIER_ACCEPTED→PICKED，回填 ship_time；照片 URL 写 status_log.remark
 - 出库（WMS #8）：PICKED→OUTBOUND，回填 outbound_date
@@ -58,12 +58,12 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 
 **CRM 取消规则（#3 查询 / #6 取消）**：
 - WAIT_DISPATCH：可取消
-- DISPATCHED：不可，提示"请先在 TMS 取消派单"
+- DISPATCHED：不可，提示"请先在 STP 取消派单"
 - CARRIER_ACCEPTED：不可，提示"需联系承运商取消接单"
 - OUTBOUND 及之后：不可，"车辆已出库发运，不可取消"
 - 取消时：任务置 CANCELLED（cancel_reason/cancel_time），关联待签署电子签置 CANCELLED
 
-**取消派单（TMS 内部）**：仅 DISPATCHED（司机未接单）→ WAIT_DISPATCH；原因枚举：承运商无法履约/调度调整/其他 + 补充说明；清空 carrier_id/driver_id/plan_pickup_date。
+**取消派单（STP 内部）**：仅 DISPATCHED（司机未接单）→ WAIT_DISPATCH；原因枚举：承运商无法履约/调度调整/其他 + 补充说明；清空 carrier_id/driver_id/plan_pickup_date。
 
 **版本控制（多人冲突）**：shipping_task.version，每次 UPDATE +1。派单/取消派单/改派请求必须携带 `version`，不匹配返回 D0001"任务状态已变化，请刷新后重试"。列表/详情返回 version。allowedActions 由状态计算：
 - WAIT_DISPATCH：`["DISPATCH","BATCH_DISPATCH"]`
@@ -79,7 +79,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | 承运商编码 | CAR-3 位（全局） | CAR-001 |
 | 批量派单批次号 | PD+yyyyMMdd+4 位 | PD202610190001 |
 
-**任务单号由 TMS 自动生成，CRM 不传**（既有需求）。
+**任务单号由 STP 自动生成，CRM 不传**（既有需求）。
 
 ## 4. 数据库（后端技术方案 2.4 全量落地）
 
@@ -93,7 +93,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | shipping_task | task_no(uk), apply_no(uk), customer_name, region, sales_person, sales_phone, delivery_area, **delivery_address**(PRD 要求补), receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date, outbound_date, ship_time, arrive_time, finish_time, carrier_id, driver_id, plan_freight, actual_freight, status, cancel_reason, cancel_time, remark, **version** | head 表，VIN 明细下沉 |
 | shipping_task_vehicle | task_id, task_no(冗余), vin, order_no, report_no, plan_freight(单台), actual_freight, ship_location, vehicle_model, engine_config, cabin_type | **一任务多车**；head.plan_freight=各车之和 |
 | dispatch_record | task_id, task_no, action(DISPATCH/REASSIGN/CANCEL_DISPATCH), carrier_id, driver_id, batch_no, dispatch_person, dispatch_time, cancel_reason, remark | 派单备注存此表 remark |
-| task_status_log | task_id, task_no, from_status(初始 null), to_status, source(TMS/CRM/SQ/WMS), operator, remark | 每次状态流转一条；提车照片 URL 写 remark |
+| task_status_log | task_id, task_no, from_status(初始 null), to_status, source(STP/CRM/SQ/WMS), operator, remark | 每次状态流转一条；提车照片 URL 写 remark |
 | transport_track | task_id, task_no, transport_no(狮桥 SQ+日期+任务补零), longitude, latitude, location_desc, speed, report_time | |
 | freight_bill | freight_no(uk), task_id, task_no, carrier_id, driver_id, start_location, end_location, mileage, plan_freight, actual_freight, finish_time, reconcile_status tinyint 0 待对账/1 已对账, reconcile_time, reconciler | 到达时生成 |
 | freight_adjust_log | freight_bill_id, freight_no, before_freight, after_freight, adjust_reason, operator | 每次修改一条 |
@@ -147,7 +147,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 
 | # | 方法 路径 | 调用方 | 请求（关键字段） | 响应 data |
 | --- | --- | --- | --- | --- |
-| 1 | POST /shipping-tasks/receive | CRM | applyNo*, customerName*, vehicles*:[{vin*, orderNo, reportNo, planFreight, shipLocation, vehicleModel, engineConfig, cabinType}], region, salesPerson, salesPhone, deliveryArea, deliveryAddress*, receiverPhone, factory, storageLocation, shipMethod, planPickupDate, remark | `{taskNo}`（自动生成）；applyNo 重复 → C0001 |
+| 1 | POST /shipping-tasks/receive | CRM | applyNo*, customerName*, vehicles*:[{vin*, orderNo, reportNo, planFreight, shipLocation, vehicleModel, engineConfig, cabinType}], region, salesPerson, salesPhone, deliveryArea, deliveryAddress*, receiverPhone, factory, storageLocation, shipMethod, planPickupDate*（CRM 随申请下发）, remark | `{taskNo}`（自动生成）；applyNo 重复 → C0001 |
 | 2 | POST /esign/sync | CRM | esignId*, vin*, applyNo*（VIN+申请号匹配任务，vin 查车辆明细）, signType='物流电子签', triggerNode, signParty | `{}`；esignId 重复 → C0001 |
 | 3 | GET /shipping-tasks/cancel-check?applyNo= | CRM | - | `{taskNo, status, cancellable, message}` |
 | 4 | POST /esign/receipt-sync | 狮桥 | esignId* | `{esignId, signStatus}`（回执确认，幂等） |
