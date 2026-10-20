@@ -155,12 +155,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | 12 | POST /shipping-tasks/status-sync | 承运商通用（狮桥/任意三方物流） | action*:`ACCEPT|PICKUP|ARRIVE|FINISH`, applyNo/taskNo, carrierName?（回传承运商，须与任务承运商一致；不传按狮桥留痕）, driverId?(ACCEPT), planPickupDate?(ACCEPT 可选调整，不传保持 CRM 下发值), actualPickupDate?(PICKUP 实际提车日期=发运时间，不得早于出库日期，允许早于计划提车日期), photos?:[](PICKUP 提车照片) | 按状态机校验推进；PICKUP 仅 OUTBOUND（已出库）可确认，回填 ship_time；ARRIVE 回填 arrive_time（实际运费/里程不在本接口回传，运费功能暂未开放）；日志 source=carrierName 传时记 CARRIER |
 | 14 | POST /esign/sign-status | 狮桥 | esignId*, signStatus:`SIGNED|CANCELLED` | WAIT_SIGN→SIGNED(回填 sign_time)/CANCELLED |
 
-## 7. 模拟辅助接口（/api/mock，演示面板专用）
-
-- `POST /api/mock/track` `{applyNo?, taskNo?, locationDesc, longitude, latitude, speed}` → 写 transport_track，PICKED（司机已确认提车）首次回传→IN_TRANSIT；OUTBOUND（已出库未提车）仅记轨迹不进在途；transport_no=`SQ+yyyyMMdd+任务id补零4位`
-- `POST /api/mock/esign/sign-task` `{applyNo?, taskNo?}` → 签署该任务最新待签署电子签（演示辅助）
-
-## 8. 前端工程结构与分工
+## 7. 前端工程结构与分工
 
 ```
 frontend/

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
-    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）、演示辅助接口（/api/mock）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，WMS 出库在前、司机确认提车在后）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → OUTBOUND 已出库 → PICKED 已提车 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
+    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，WMS 出库在前、司机确认提车在后）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → OUTBOUND 已出库 → PICKED 已提车 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
     "version": "2.0.0"
   },
   "servers": [
@@ -41,9 +41,6 @@
     },
     {
       "name": "10 外部接口·狮桥物流"
-    },
-    {
-      "name": "11 演示辅助·模拟接口"
     },
     {
       "name": "12 外部接口·承运商通用"
@@ -2673,143 +2670,6 @@
           },
           "409": {
             "description": "D0001 当前状态不可流转"
-          }
-        }
-      }
-    },
-    "/api/mock/track": {
-      "post": {
-        "tags": [
-          "11 演示辅助·模拟接口"
-        ],
-        "summary": "狮桥位置回传模拟（写轨迹）",
-        "description": "写 transport_track；PICKED/OUTBOUND 首次回传置 IN_TRANSIT；transport_no=SQ+yyyyMMdd+任务id补零4位；在途任务继续记轨迹；已到达/完结/取消或未提车任务返回 D0001",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "applyNo": {
-                    "type": "string",
-                    "description": "发运申请号（推荐，与 taskNo 二选一）"
-                  },
-                  "taskNo": {
-                    "type": "string",
-                    "description": "任务单号（兼容）"
-                  },
-                  "locationDesc": {
-                    "type": "string",
-                    "description": "位置描述（必填）"
-                  },
-                  "longitude": {
-                    "type": "number",
-                    "description": "经度（必填）"
-                  },
-                  "latitude": {
-                    "type": "number",
-                    "description": "纬度（必填）"
-                  },
-                  "speed": {
-                    "type": "number",
-                    "description": "时速（km/h）"
-                  }
-                },
-                "required": [
-                  "locationDesc",
-                  "longitude",
-                  "latitude"
-                ]
-              },
-              "example": {
-                "applyNo": "APPLY-20261020-001",
-                "locationDesc": "巢湖市 G5011芜合高速",
-                "longitude": 117.87,
-                "latitude": 31.6,
-                "speed": 62
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "位置回传结果",
-            "content": {
-              "application/json": {
-                "example": {
-                  "code": "00000",
-                  "message": "位置回传成功，任务已置为在途",
-                  "data": {
-                    "transportNo": "SQ202610210001",
-                    "status": "IN_TRANSIT",
-                    "firstReport": true
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "A0001 经纬度必填且为数字 / 未提供定位参数"
-          },
-          "409": {
-            "description": "D0001 车辆尚未提车或已到达/终止"
-          }
-        }
-      }
-    },
-    "/api/mock/esign/sign-task": {
-      "post": {
-        "tags": [
-          "11 演示辅助·模拟接口"
-        ],
-        "summary": "签署任务最新待签署电子签（演示辅助）",
-        "description": "定位任务（applyNo 优先 taskNo 兼容）后签署其最新一条待签署电子签（置 SIGNED 并回填 sign_time）；无待签署电子签返回 A0002",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "applyNo": {
-                    "type": "string",
-                    "description": "发运申请号（推荐，与 taskNo 二选一）"
-                  },
-                  "taskNo": {
-                    "type": "string",
-                    "description": "任务单号（兼容）"
-                  }
-                }
-              },
-              "example": {
-                "applyNo": "APPLY-20261020-001"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "签署结果",
-            "content": {
-              "application/json": {
-                "example": {
-                  "code": "00000",
-                  "message": "电子签 ES202610200001 签署完成",
-                  "data": {
-                    "esignId": "ES202610200001",
-                    "vin": "LZXBCGH48P1D30001",
-                    "signStatus": "SIGNED"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "A0002 该任务无待签署的电子签"
-          },
-          "404": {
-            "description": "D0002 任务不存在"
           }
         }
       }

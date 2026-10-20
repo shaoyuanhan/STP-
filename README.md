@@ -174,26 +174,6 @@ npm run preview    # 本地预览构建产物
 | POST | `/api/freight-orders/:id/recon` | 确认对账 |
 | GET | `/api/esigns` | 电子签台账 |
 
-## 外部系统模拟接口（演示用）
-
-对应 PRD 系统交互协议，前端"发运任务-任务详情-外部系统操作"面板可直接触发完整链路：
-
-| 方法 | 路径 | 对应 PRD 接口 |
-|---|---|---|
-| POST | `/api/mock/crm/apply` | 接口1 CRM 下发发运申请（自动生成待派单任务） |
-| POST | `/api/mock/esign/init` | 接口2 CRM 同步物流电子签发起 |
-| GET | `/api/mock/crm/cancel-query` | 接口3 CRM 取消前查询 |
-| POST | `/api/mock/crm/cancel` | 接口6 CRM 同步取消 |
-| POST | `/api/mock/driver/sync` | 接口10 司机信息三方同步（按身份证幂等） |
-| POST | `/api/mock/shiqiao/accept` | 接口12 狮桥接单（分配司机） |
-| POST | `/api/mock/shiqiao/pickup` | 接口12 司机提车发运 |
-| POST | `/api/mock/wms/outbound` | 接口13 WMS 出库回传 |
-| POST | `/api/mock/esign/status` | 接口14 狮桥电子签状态回传 |
-| POST | `/api/mock/esign/sign-task` | 辅助：按任务号签收当前待签署电子签 |
-| POST | `/api/mock/shiqiao/track` | 接口15 狮桥位置回传（每小时） |
-| POST | `/api/mock/shiqiao/arrive` | 司机到达（回填运费/里程，生成运费单） |
-| POST | `/api/mock/shiqiao/finish` | 司机完结 |
-
 ## 关键设计
 
 - **编号规则引擎**：承运商 `CAR-001`；任务单号 `FY+YYYYMMDD+4位序列`；运费单号 `YF+YYYYMMDD+4位序列`。基于 `UPDATE ... SET seq_val = LAST_INSERT_ID(seq_val + 1)` 的原子机制，多连接并发下不重号，任务/运费序列按日重置。

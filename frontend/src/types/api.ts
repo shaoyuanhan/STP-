@@ -6,7 +6,6 @@
  *  - 第 4 节：数据库实体（内部接口字段 snake_case）
  *  - 第 5 节：内部管理接口（/api，snake_case）
  *  - 第 6 节：外部接口（/api/external，camelCase）
- *  - 第 7 节：模拟辅助接口（/api/mock）
  *
  * 注意：金额为 DECIMAL(12,2)，mysql2 可能以字符串返回，
  *       展示/计算前请使用 utils/format.ts 的 money() 做 Number() 归一。
@@ -652,24 +651,4 @@ export interface ExternalStatusSyncPayload {
 export interface EsignSignStatusPayload {
   esignId: string
   signStatus: Exclude<EsignStatus, 'WAIT_SIGN'>
-}
-
-// ---------------------------------------------------------------------------
-// 模拟辅助接口（/api/mock，契约第 7 节）
-// ---------------------------------------------------------------------------
-
-/** 模拟位置回传（写 transport_track，已提车 PICKED 首次自动置在途；已出库未提车仅记轨迹） */
-export interface MockTrackPayload {
-  applyNo?: string
-  taskNo?: string
-  locationDesc: string
-  longitude: number | string
-  latitude: number | string
-  speed?: number | string
-}
-
-/** 模拟签署任务最新待签署电子签 */
-export interface MockSignTaskPayload {
-  applyNo?: string
-  taskNo?: string
 }

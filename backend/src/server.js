@@ -17,7 +17,6 @@ const trackingRoutes = require('./routes/tracking');
 const freightBillRoutes = require('./routes/freightBills');
 const esignRoutes = require('./routes/esigns');
 const externalRoutes = require('./routes/external');
-const mockRoutes = require('./routes/mock');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -80,7 +79,6 @@ app.use('/api/tracking', trackingRoutes);
 app.use('/api/freight-bills', freightBillRoutes);
 app.use('/api/esign-records', esignRoutes);
 app.use('/api/external', externalRoutes);
-app.use('/api/mock', mockRoutes);
 
 // 404：未匹配到任何接口
 app.use((req, res) => res.status(404).json({ code: 'D0002', message: '接口不存在', data: null }));

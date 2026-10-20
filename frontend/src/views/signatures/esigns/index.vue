@@ -6,21 +6,16 @@
  * - 列表：签 ID/任务单号/申请号/客户/VIN/签署类型/触发节点/签署方/
  *         发起时间/签署状态/签署时间/任务状态/操作
  * - 详情抽屉：完整台账信息（含审计字段）
- * - 模拟签署：仅「待签署」且已关联任务的记录可操作，
- *   调 POST /api/mock/esign/sign-task（applyNo 优先 / taskNo 兼容），
- *   签署后状态置 SIGNED 并回填签署时间
  */
 import { computed, h, onActivated, onMounted, reactive, ref } from 'vue'
 import { useMessage, NButton } from 'naive-ui'
 import type { DataTableColumns, PaginationProps, SelectOption } from 'naive-ui'
 import { listEsignRecords } from '@/services/esigns'
 import type { EsignRow } from '@/services/esigns'
-import { mockSignTask } from '@/services/external'
 import type { EsignStatus } from '@/types/api'
 import { datetime } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
 import DetailSection from '@/components/DetailSection.vue'
-import ConfirmAction from '@/components/ConfirmAction.vue'
 
 const message = useMessage()
 
@@ -74,7 +69,7 @@ async function loadPage() {
   } finally {
     loading.value = false
   }
-  // 抽屉打开时同步最新行数据（如模拟签署后状态变化）
+  // 抽屉打开时同步最新行数据
   if (selectedId.value !== null) {
     selectedRow.value = rows.value.find((row) => row.id === selectedId.value) ?? selectedRow.value
   }
@@ -132,48 +127,6 @@ function openDetail(row: EsignRow) {
   selectedId.value = row.id ?? null
   selectedRow.value = row
   showDrawer.value = true
-}
-
-// ---- 模拟签署（演示辅助：POST /api/mock/esign/sign-task） ----
-const showSignConfirm = ref(false)
-const signSubmitting = ref(false)
-const signTarget = ref<EsignRow | null>(null)
-
-/** 仅「待签署」且已关联任务的记录可模拟签署 */
-function canSign(row: EsignRow): boolean {
-  return row.sign_status === 'WAIT_SIGN' && !!row.task_no
-}
-
-function askSign(row: EsignRow) {
-  if (!canSign(row)) {
-    message.warning('仅「待签署」且已关联任务的电子签可模拟签署')
-    return
-  }
-  signTarget.value = row
-  showSignConfirm.value = true
-}
-
-async function submitSign() {
-  const target = signTarget.value
-  if (!target) return
-  signSubmitting.value = true
-  try {
-    const result = (await mockSignTask({
-      applyNo: target.apply_no || undefined,
-      taskNo: target.task_no || undefined,
-    })) as { esignId?: string; vin?: string; signStatus?: string }
-    message.success(
-      `模拟签署成功：${result?.esignId ?? target.esign_id}${
-        result?.vin ? `（VIN：${result.vin}）` : ''
-      }，状态已置为已签署`,
-    )
-    showSignConfirm.value = false
-    await loadPage()
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : String(error))
-  } finally {
-    signSubmitting.value = false
-  }
 }
 
 const columns = computed<DataTableColumns<EsignRow>>(() => [
@@ -251,30 +204,22 @@ const columns = computed<DataTableColumns<EsignRow>>(() => [
     width: 155,
     fixed: 'right',
     render: (row) => {
-      const buttons = [
+      return h(
+        'div',
+        { class: 'esign-actions' },
         h(
           NButton,
           { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '详情' },
         ),
-      ]
-      if (canSign(row)) {
-        buttons.push(
-          h(
-            NButton,
-            { size: 'tiny', quaternary: true, type: 'success', onClick: () => askSign(row) },
-            { default: () => '模拟签署' },
-          ),
-        )
-      }
-      return h('div', { class: 'esign-actions' }, buttons)
+      )
     },
   },
 ])
 
 onMounted(loadPage)
 
-// keep-alive 页签切回时刷新列表（签署状态可能已被模拟器更新）
+// keep-alive 页签切回时刷新列表
 onActivated(loadPage)
 </script>
 
@@ -409,37 +354,13 @@ onActivated(loadPage)
           <n-alert v-if="selectedRow.sign_status === 'CANCELLED'" type="warning" :show-icon="false" class="esign-drawer__alert">
             该电子签已取消（任务取消时关联待签署电子签自动置为已取消）。
           </n-alert>
-          <n-alert
-            v-else-if="selectedRow.sign_status === 'WAIT_SIGN' && !selectedRow.task_no"
-            type="warning"
-            :show-icon="false"
-            class="esign-drawer__alert"
-          >
-            该记录未关联任务，无法模拟签署。
-          </n-alert>
         </template>
         <div v-else class="esign-drawer-skeleton">
           <n-skeleton text width="40%" />
           <n-skeleton text :repeat="6" />
         </div>
-        <template v-if="selectedRow && canSign(selectedRow)" #footer>
-          <div class="esign-drawer__footer">
-            <n-button size="small" type="success" @click="askSign(selectedRow)">模拟签署</n-button>
-          </div>
-        </template>
       </n-drawer-content>
     </n-drawer>
-
-    <!-- 模拟签署确认 -->
-    <ConfirmAction
-      v-model:show="showSignConfirm"
-      title="确认模拟签署该电子签？"
-      :content="`将以狮桥身份签署 ${signTarget?.esign_id ?? ''}（任务 ${signTarget?.task_no ?? ''} 最新一条待签署电子签），签署后状态置为「已签署」并回填签署时间。`"
-      confirm-text="确认签署"
-      :loading="signSubmitting"
-      :auto-close="false"
-      @confirm="submitSign"
-    />
   </div>
 </template>
 

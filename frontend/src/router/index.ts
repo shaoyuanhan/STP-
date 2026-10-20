@@ -58,12 +58,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/signatures/esigns/index.vue'),
         meta: { title: '电子签台账', group: '电子签章' },
       },
-      {
-        path: 'simulator',
-        name: 'simulator',
-        component: () => import('@/views/simulator/index.vue'),
-        meta: { title: '外部系统模拟', group: '演示' },
-      },
     ],
   },
   {

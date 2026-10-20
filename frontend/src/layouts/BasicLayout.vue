@@ -85,16 +85,6 @@ const MENU: Array<{ group: string; items: MenuLeaf[] }> = [
       },
     ],
   },
-  {
-    group: '演示',
-    items: [
-      {
-        path: '/simulator',
-        title: '外部系统模拟',
-        icon: '<rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.8 9l3.6 3.5L6.8 16"/><path d="M13 16h4.5"/>',
-      },
-    ],
-  },
 ]
 
 function renderIcon(svgBody: string) {

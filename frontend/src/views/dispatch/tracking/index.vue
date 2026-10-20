@@ -3,7 +3,7 @@
  * 在途监控（契约 5.5 /api/tracking，snake_case）
  *
  * 布局对齐旧版 pageTracking（track-layout：420px 左列 + 1fr 右列）：
- *  - 顶部筛选卡：任务单号 + 模拟位置回传（演示辅助，POST /api/mock/track）
+ *  - 顶部筛选卡：任务单号 + 查询/重置
  *  - 左列 420px「在途运单（N）」任务卡列表：任务单号加粗 + 状态标签，
  *    第二行 VIN/客户灰色小字，第三行最新位置与上报时间；
  *    选中行 #f0f7ff + 左 3px 主色边
@@ -12,26 +12,21 @@
  *      运输地图卡（上：整体路径放大视图 ChinaMap mode=route；下：中国地图 mode=map，PRD ⑤）
  *      运输节点时间线 + 位置记录表（狮桥每小时回传：上报时间/当前位置/时速）
  */
-import { computed, onActivated, onMounted, reactive, ref } from 'vue'
-import { useMessage } from 'naive-ui'
-import type { FormInst, FormItemRule } from 'naive-ui'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { listTrackingTasks, getTrackingTask } from '@/services/tracking'
-import { mockTrack } from '@/services/external'
 import type { TaskStatus, TrackingTask, TrackingTaskDetail, TransportTrack } from '@/types/api'
 import { matchCityGeo, PROV_CITY } from '@/lib/china-map'
 import { money, datetime, datetimeFull, dateShort, dateOnly, formatPhone } from '@/utils/format'
 import ChinaMap from '@/components/ChinaMap.vue'
 import StatusTag from '@/components/StatusTag.vue'
 
-const message = useMessage()
-
 /** 任务状态中文（与 StatusTag 内置口径一致，避免字典未加载时空白） */
 const STATUS_LABELS: Record<string, string> = {
   WAIT_DISPATCH: '待派单',
   DISPATCHED: '已派单',
   CARRIER_ACCEPTED: '承运商已接单',
-  PICKED: '已提车',
   OUTBOUND: '已出库',
+  PICKED: '已提车',
   IN_TRANSIT: '在途',
   ARRIVED: '已到达',
   FINISHED: '已完结',
@@ -264,105 +259,11 @@ const routeStops = computed(() =>
     cur: !isArrived.value && index === tracks.value.length - 1,
   })),
 )
-
-// ---- 模拟位置回传弹窗（契约 7 POST /api/mock/track） ----
-const showMockModal = ref(false)
-const mockSubmitting = ref(false)
-const mockFormRef = ref<FormInst | null>(null)
-const mockForm = reactive({
-  applyNo: '',
-  taskNo: '',
-  longitude: null as number | null,
-  latitude: null as number | null,
-  locationDesc: '',
-  speed: null as number | null,
-})
-
-const atLeastOneRule = (): FormItemRule => ({
-  trigger: ['input', 'blur'],
-  validator: () => {
-    if (!mockForm.applyNo.trim() && !mockForm.taskNo.trim()) {
-      return new Error('发运申请号与任务单号至少填写一项')
-    }
-    return true
-  },
-})
-
-const mockRules: Record<string, FormItemRule | FormItemRule[]> = {
-  applyNo: atLeastOneRule(),
-  taskNo: atLeastOneRule(),
-  locationDesc: { required: true, message: '请输入位置描述', trigger: ['input', 'blur'] },
-  longitude: {
-    trigger: ['blur', 'change'],
-    validator: (_rule, value: number | null) => {
-      if (value === null || value === undefined) return new Error('请输入经度')
-      if (value < -180 || value > 180) return new Error('经度范围 -180 ~ 180')
-      return true
-    },
-  },
-  latitude: {
-    trigger: ['blur', 'change'],
-    validator: (_rule, value: number | null) => {
-      if (value === null || value === undefined) return new Error('请输入纬度')
-      if (value < -90 || value > 90) return new Error('纬度范围 -90 ~ 90')
-      return true
-    },
-  },
-  speed: {
-    trigger: ['blur', 'change'],
-    validator: (_rule, value: number | null) => {
-      if (value === null || value === undefined) return true
-      if (value < 0 || value > 300) return new Error('时速范围 0 ~ 300 km/h')
-      return true
-    },
-  },
-}
-
-/** 打开弹窗：预填当前选中任务（applyNo/taskNo 双主键）与最新位置坐标 */
-function openMockModal() {
-  const task = tasks.value.find((item) => item.id === selectedId.value) ?? null
-  mockForm.applyNo = task?.apply_no ?? ''
-  mockForm.taskNo = task?.task_no ?? ''
-  const track = latestTrack.value
-  mockForm.longitude = track ? Number(track.longitude) : null
-  mockForm.latitude = track ? Number(track.latitude) : null
-  mockForm.locationDesc = ''
-  mockForm.speed = null
-  showMockModal.value = true
-  mockFormRef.value?.restoreValidation()
-}
-
-async function submitMockTrack() {
-  try {
-    await mockFormRef.value?.validate()
-  } catch {
-    return
-  }
-  mockSubmitting.value = true
-  try {
-    // 成功文案以后端 message 为准（"位置回传成功，任务已置为在途" / "位置回传成功"）
-    const env = await mockTrack({
-      applyNo: mockForm.applyNo.trim() || undefined,
-      taskNo: mockForm.taskNo.trim() || undefined,
-      longitude: mockForm.longitude as number,
-      latitude: mockForm.latitude as number,
-      locationDesc: mockForm.locationDesc.trim(),
-      speed: mockForm.speed ?? undefined,
-    })
-    message.success(env.message || '位置回传成功')
-    showMockModal.value = false
-    await refreshAll()
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : String(error))
-  } finally {
-    mockSubmitting.value = false
-  }
-}
 </script>
 
 <template>
   <div class="stp-page tracking">
-    <!-- 筛选卡（旧版 .filter：任务单号 + 查询/重置，附演示用「模拟位置回传」） -->
+    <!-- 筛选卡（旧版 .filter：任务单号 + 查询/重置） -->
     <section class="card filter">
       <div class="field">
         <label>任务单号</label>
@@ -376,7 +277,6 @@ async function submitMockTrack() {
         />
       </div>
       <div class="filter-actions">
-        <n-button size="small" @click="openMockModal">模拟位置回传</n-button>
         <n-button size="small" @click="handleReset">重置</n-button>
         <n-button size="small" type="primary" :loading="listLoading" @click="handleSearch">
           查询
@@ -570,88 +470,6 @@ async function submitMockTrack() {
         </n-spin>
       </section>
     </div>
-
-    <!-- 模拟位置回传弹窗（契约 7：POST /api/mock/track） -->
-    <n-modal
-      v-model:show="showMockModal"
-      preset="card"
-      title="模拟位置回传（狮桥端）"
-      :bordered="false"
-      :mask-closable="false"
-    >
-      <n-alert type="info" :show-icon="false" class="track-mock__alert">
-        模拟狮桥司机端回传位置：已提车/已出库任务首次回传将自动置为「在途」；发运申请号与任务单号至少填一项，申请号优先。
-      </n-alert>
-      <n-form
-        ref="mockFormRef"
-        :model="mockForm"
-        :rules="mockRules"
-        label-placement="left"
-        label-width="96"
-        size="small"
-      >
-        <n-grid :x-gap="12" cols="1 s:2" responsive="screen">
-          <n-gi>
-            <n-form-item label="发运申请号" path="applyNo">
-              <n-input v-model:value="mockForm.applyNo" placeholder="如 AP20260101001" clearable />
-            </n-form-item>
-          </n-gi>
-          <n-gi>
-            <n-form-item label="任务单号" path="taskNo">
-              <n-input v-model:value="mockForm.taskNo" placeholder="如 FY202601010001" clearable />
-            </n-form-item>
-          </n-gi>
-        </n-grid>
-        <n-grid :x-gap="12" cols="1 s:2" responsive="screen">
-          <n-gi>
-            <n-form-item label="经度" path="longitude">
-              <n-input-number
-                v-model:value="mockForm.longitude"
-                placeholder="-180 ~ 180"
-                :precision="6"
-                class="track-mock__num"
-              />
-            </n-form-item>
-          </n-gi>
-          <n-gi>
-            <n-form-item label="纬度" path="latitude">
-              <n-input-number
-                v-model:value="mockForm.latitude"
-                placeholder="-90 ~ 90"
-                :precision="6"
-                class="track-mock__num"
-              />
-            </n-form-item>
-          </n-gi>
-        </n-grid>
-        <n-form-item label="位置描述" path="locationDesc">
-          <n-input
-            v-model:value="mockForm.locationDesc"
-            placeholder="如 G3京台高速 淮南段 K1024"
-            maxlength="255"
-            clearable
-          />
-        </n-form-item>
-        <n-form-item label="时速（km/h）" path="speed">
-          <n-input-number
-            v-model:value="mockForm.speed"
-            placeholder="选填"
-            :min="0"
-            :max="300"
-            :precision="0"
-            class="track-mock__num"
-          />
-        </n-form-item>
-      </n-form>
-      <template #footer>
-        <div class="track-mock__footer">
-          <n-button size="small" :disabled="mockSubmitting" @click="showMockModal = false">取 消</n-button>
-          <n-button size="small" type="primary" :loading="mockSubmitting" @click="submitMockTrack">
-            回传位置
-          </n-button>
-        </div>
-      </template>
-    </n-modal>
   </div>
 </template>
 
@@ -1066,21 +884,6 @@ async function submitMockTrack() {
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: bottom;
-}
-
-/* 弹窗 */
-.track-mock__alert {
-  margin-bottom: 14px;
-}
-
-.track-mock__num {
-  width: 100%;
-}
-
-.track-mock__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 
 @media (max-width: 1100px) {
