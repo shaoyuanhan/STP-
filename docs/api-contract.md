@@ -147,7 +147,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 
 | # | 方法 路径 | 调用方 | 请求（关键字段） | 响应 data |
 | --- | --- | --- | --- | --- |
-| 1 | POST /shipping-tasks/receive | CRM | applyNo*, customerName*, vehicles*:[{vin*, orderNo, reportNo, planFreight, shipLocation, vehicleModel, engineConfig, cabinType}], region, salesPerson, salesPhone, deliveryArea, deliveryAddress*, receiverPhone, factory, storageLocation, shipMethod, planPickupDate*（CRM 随申请下发）, remark | `{taskNo}`（自动生成）；applyNo 重复 → C0001 |
+| 1 | POST /shipping-tasks/receive | CRM | applyNo*, customerName*, vehicles*:[{vin*, orderNo, reportNo, planFreight, shipLocation*（或顶层统一提供）, vehicleModel, engineConfig, cabinType}], region, salesPerson, salesPhone, deliveryArea, deliveryAddress*, receiverPhone, factory*, storageLocation*, shipMethod, planPickupDate*（CRM 随申请下发）, remark | `{taskNo}`（自动生成）；applyNo 重复 → C0001 |
 | 2 | POST /esign/sync | CRM | esignId*, vin*, applyNo*（VIN+申请号匹配任务，vin 查车辆明细）, signType='物流电子签', triggerNode, signParty | `{}`；esignId 重复 → C0001 |
 | 3 | GET /shipping-tasks/cancel-check?applyNo= | CRM | - | `{taskNo, status, cancellable, message}` |
 | 4 | POST /esign/receipt-sync | 狮桥 | esignId* | `{esignId, signStatus}`（回执确认，幂等） |

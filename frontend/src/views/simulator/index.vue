@@ -206,10 +206,13 @@ function validateReceive(): string | null {
   if (!receiveForm.customerName.trim()) return '请填写客户名称 customerName'
   if (!receiveForm.deliveryAddress.trim()) return '请填写交付地址 deliveryAddress'
   if (!receiveForm.planPickupDate) return '请填写计划提车日期 planPickupDate（CRM 随发运申请下发，必填）'
+  if (!receiveForm.factory.trim()) return '请填写生产工厂 factory（CRM 随发运申请下发，必填）'
+  if (!receiveForm.storageLocation.trim()) return '请填写存放地点 storageLocation（CRM 随发运申请下发，必填）'
   for (let i = 0; i < receiveForm.vehicles.length; i += 1) {
     const vin = receiveForm.vehicles[i].vin.trim().toUpperCase()
     if (!vin) return `第 ${i + 1} 台车的 VIN 必填`
     if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return `第 ${i + 1} 台车的 VIN 须为 17 位（不含 I/O/Q）`
+    if (!receiveForm.vehicles[i].shipLocation.trim()) return `第 ${i + 1} 台车的发运地点 shipLocation 必填`
   }
   return null
 }
@@ -722,8 +725,8 @@ onActivated(() => {
                   <n-form-item label="计划运费 planFreight（元）">
                     <n-input-number v-model:value="vehicle.planFreight" :min="0" :precision="2" placeholder="线路参考价" />
                   </n-form-item>
-                  <n-form-item label="发运地点 shipLocation">
-                    <n-input v-model:value="vehicle.shipLocation" clearable placeholder="如 安徽合肥" />
+                  <n-form-item label="发运地点 shipLocation" show-require-mark>
+                    <n-input v-model:value="vehicle.shipLocation" clearable placeholder="如 合肥市包河区上海路88号" />
                   </n-form-item>
                   <n-form-item label="订单号 orderNo">
                     <n-input v-model:value="vehicle.orderNo" clearable placeholder="选填" />

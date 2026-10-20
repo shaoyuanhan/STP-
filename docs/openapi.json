@@ -713,7 +713,7 @@
               }
             }
           },
-          "400": { "description": "A0001 参数校验失败（applyNo/customerName/deliveryAddress/vehicles/vin/planPickupDate 缺失或格式错误）" },
+          "400": { "description": "A0001 参数校验失败（applyNo/customerName/deliveryAddress/vehicles/vin/planPickupDate/factory/storageLocation/shipLocation 缺失或格式错误）" },
           "409": { "description": "C0001 applyNo 已下发过（幂等拦截）" }
         }
       }

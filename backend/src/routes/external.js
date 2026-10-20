@@ -114,6 +114,17 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
   if (!b.planPickupDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.planPickupDate).trim())) {
     throw errParam('计划提车日期 planPickupDate 必填，格式 YYYY-MM-DD');
   }
+  // 生产工厂/存放地点/发运地点由 CRM 随发运申请下发，必填（PRD 基础信息 + 车辆明细字段）
+  const factory = String(b.factory ?? '').trim();
+  if (!factory) throw errParam('生产工厂 factory 必填');
+  const storageLocation = String(b.storageLocation ?? '').trim();
+  if (!storageLocation) throw errParam('存放地点 storageLocation 必填');
+  const headShipLocation = String(b.shipLocation ?? '').trim();
+  b.vehicles.forEach((v, i) => {
+    if (!String(v?.shipLocation ?? '').trim() && !headShipLocation) {
+      throw errParam(`第 ${i + 1} 台车的发运地点 shipLocation 必填（或顶层 shipLocation 统一提供）`);
+    }
+  });
 
   // ---- applyNo 幂等：重复下发 → C0001（既有需求 1：任务单号 STP 自动生成，CRM 不传）----
   const dup = await query('SELECT id, task_no FROM shipping_task WHERE apply_no = ? AND deleted = 0', [applyNo]);
@@ -144,10 +155,11 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
        cutStr(String(b.deliveryArea ?? '').trim(), 128) || null,
        cutStr(deliveryAddress, 255),
        receiverPhone,
-       cutStr(String(b.factory ?? '').trim(), 128) || null,
-       cutStr(String(b.storageLocation ?? '').trim(), 128) || null,
+       cutStr(factory, 128),
+       cutStr(storageLocation, 128),
        cutStr(String(b.shipMethod ?? '送车').trim(), 16) || '送车',
-       cutStr(String(b.shipLocation ?? '').trim(), 128) || null,
+       // head 发运地点：顶层优先，未传取首台车（列表页展示 head 级，保证不为空）
+       cutStr(headShipLocation || String(b.vehicles[0]?.shipLocation ?? '').trim(), 128),
        b.planPickupDate ? String(b.planPickupDate).trim() : null,
        planFreight,
        cutStr(String(b.remark ?? '').trim(), 500) || null]
