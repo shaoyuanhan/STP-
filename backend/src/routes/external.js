@@ -421,9 +421,12 @@ router.post('/drivers/sync', wrap(async (req, res) => {
   }, result.created ? '司机同步成功，已新增' : '司机同步成功，已更新（身份证号 UPSERT）');
 }));
 
-/* ======================= ⑫ 狮桥：任务状态同步（状态机校验推进） ======================= */
+/* ======================= ⑫ 承运商通用：任务状态回传（状态机校验推进） ======================= */
 // POST /api/external/shipping-tasks/status-sync
-//   action=ACCEPT  承运商接单：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id、plan_pickup_date
+//   通用运单状态回传接口：狮桥物流及其他承运商/三方物流供应商均可调用。
+//   可选 carrierName 标识回传承运商（须与任务当前承运商一致，防串单）；
+//   不传按狮桥物流留痕（兼容既有对接）。
+//   action=ACCEPT  承运商接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id、plan_pickup_date
 //   action=PICKUP  司机提车：CARRIER_ACCEPTED→PICKED 回填 ship_time，photos 写 status_log.remark；
 //                  已出库及之后重复回传仅补记日志+补 ship_time（时序兜底，不回退状态）
 //   action=ARRIVE  司机到达：→ARRIVED 回填 actual_freight/mileage/arrive_time，生成 YF 运费单（FOR UPDATE 幂等）
@@ -438,6 +441,21 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
 
   const result = await withTransaction(async (conn) => {
     const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
+
+    // ---- 回传方身份（通用接口：任意承运商/三方物流可调；carrierName 传时须与任务承运商一致）----
+    let operatorName = '狮桥物流'; // 未传身份按狮桥留痕（兼容既有对接）
+    let logSource = 'SQ';
+    const carrierNameParam = String(b.carrierName ?? '').trim();
+    if (carrierNameParam) {
+      const [crows] = await conn.query('SELECT * FROM carrier WHERE carrier_name = ? AND deleted = 0', [carrierNameParam]);
+      if (!crows.length) throw errNotFound(`承运商不存在：${carrierNameParam}`);
+      if (Number(crows[0].status) !== 1) throw errBiz(`该承运商已停用，不可回传：${carrierNameParam}`);
+      if (task.carrier_id && Number(task.carrier_id) !== Number(crows[0].id)) {
+        throw errBiz(`回传方（${carrierNameParam}）与任务当前承运商不一致，不可回传`);
+      }
+      operatorName = crows[0].carrier_name;
+      logSource = 'CARRIER';
+    }
 
     /* ---- 承运商接单并分配司机 ---- */
     if (action === 'ACCEPT') {
@@ -463,13 +481,13 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
       if (task.status === 'DISPATCHED') {
         await conn.query(
           `UPDATE shipping_task SET status = 'CARRIER_ACCEPTED', driver_id = ?,
-                  plan_pickup_date = COALESCE(?, plan_pickup_date), version = version + 1, update_name = '狮桥物流'
+                  plan_pickup_date = COALESCE(?, plan_pickup_date), version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
-          [driverId, planPickupDate, task.id, task.version]
+          [driverId, planPickupDate, operatorName, task.id, task.version]
         );
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: 'DISPATCHED', toStatus: 'CARRIER_ACCEPTED',
-          source: 'SQ', operator: '狮桥物流',
+          source: logSource, operator: operatorName,
           remark: `承运商确认接单，分配司机：${driver.driver_name}${planPickupDate ? `，计划提车 ${planPickupDate}` : ''}`,
         });
         return { taskNo: task.task_no, status: 'CARRIER_ACCEPTED', message: `接单成功，已分配司机：${driver.driver_name}` };
@@ -477,11 +495,11 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
       // 幂等：已接单及之后重复回传，仅补记日志（可补填司机）
       if (['CARRIER_ACCEPTED', 'PICKED', 'OUTBOUND', 'IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
         if (!task.driver_id) {
-          await conn.query('UPDATE shipping_task SET driver_id = ?, update_name = ? WHERE id = ?', [driverId, '狮桥物流', task.id]);
+          await conn.query('UPDATE shipping_task SET driver_id = ?, update_name = ? WHERE id = ?', [driverId, operatorName, task.id]);
         }
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: task.status,
-          source: 'SQ', operator: '狮桥物流', remark: `接单状态重复回传，幂等处理仅补记日志（司机：${driver.driver_name}）`,
+          source: logSource, operator: operatorName, remark: `接单状态重复回传，幂等处理仅补记日志（司机：${driver.driver_name}）`,
         });
         return { taskNo: task.task_no, status: task.status, message: '接单状态重复回传，幂等处理仅补记日志' };
       }
@@ -495,14 +513,14 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
 
       if (task.status === 'CARRIER_ACCEPTED') {
         await conn.query(
-          `UPDATE shipping_task SET status = 'PICKED', ship_time = NOW(), version = version + 1, update_name = '狮桥物流'
+          `UPDATE shipping_task SET status = 'PICKED', ship_time = NOW(), version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
-          [task.id, task.version]
+          [operatorName, task.id, task.version]
         );
         // 状态流转日志一条完成：流转说明 + 照片 URL（契约 3.1：照片 URL 写 status_log.remark）
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: 'CARRIER_ACCEPTED', toStatus: 'PICKED',
-          source: 'SQ', operator: '狮桥物流',
+          source: logSource, operator: operatorName,
           remark: cutStr(`司机确认提车发运${photos ? `，${photos.length} 张提车照片已同步` : ''}${photoRemark ? `；${photoRemark}` : ''}`, 255),
         });
         return { taskNo: task.task_no, status: 'PICKED', message: '提车成功，任务状态：已提车，照片已留痕' };
@@ -510,11 +528,11 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
       // 幂等/时序兜底：已提车/已出库/在途/已到达/已完结重复回传，仅补记日志 + 补 ship_time，不回退状态
       if (['PICKED', 'OUTBOUND', 'IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
         if (!task.ship_time) {
-          await conn.query('UPDATE shipping_task SET ship_time = NOW(), update_name = ? WHERE id = ?', ['狮桥物流', task.id]);
+          await conn.query('UPDATE shipping_task SET ship_time = NOW(), update_name = ? WHERE id = ?', [operatorName, task.id]);
         }
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: task.status,
-          source: 'SQ', operator: '狮桥物流',
+          source: logSource, operator: operatorName,
           remark: cutStr(`提车状态重复回传，幂等处理仅补记日志、不回退状态${photoRemark ? `；${photoRemark}` : ''}`, 255),
         });
         return { taskNo: task.task_no, status: task.status, message: '提车状态重复回传，幂等处理仅补记日志' };
@@ -540,9 +558,9 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
       if (task.status !== 'ARRIVED' && task.status !== 'FINISHED') {
         await conn.query(
           `UPDATE shipping_task SET status = 'ARRIVED', arrive_time = NOW(), actual_freight = ?,
-                  version = version + 1, update_name = '狮桥物流'
+                  version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
-          [finalFreight, task.id, task.version]
+          [finalFreight, operatorName, task.id, task.version]
         );
         // 同步回填车辆明细实际运费（多车任务按台数均分至单台展示口径）
         const [vc] = await conn.query('SELECT COUNT(*) AS n FROM shipping_task_vehicle WHERE task_id = ? AND deleted = 0', [task.id]);
@@ -550,18 +568,18 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
         if (vehicleCount > 0) {
           await conn.query(
             'UPDATE shipping_task_vehicle SET actual_freight = ?, update_name = ? WHERE task_id = ? AND deleted = 0',
-            [Number((finalFreight / vehicleCount).toFixed(2)), '狮桥物流', task.id]
+            [Number((finalFreight / vehicleCount).toFixed(2)), operatorName, task.id]
           );
         }
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: 'ARRIVED',
-          source: 'SQ', operator: '狮桥物流',
+          source: logSource, operator: operatorName,
           remark: `司机确认到达，实际运费 ${finalFreight.toFixed(2)} 元${mileage ? `，里程 ${mileage} 公里` : ''}`,
         });
       } else {
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: task.status,
-          source: 'SQ', operator: '狮桥物流', remark: '到达状态重复回传，幂等处理仅补记日志',
+          source: logSource, operator: operatorName, remark: '到达状态重复回传，幂等处理仅补记日志',
         });
       }
 
@@ -575,10 +593,10 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
           `INSERT INTO freight_bill
             (freight_no, task_id, task_no, carrier_id, driver_id, start_location, end_location, mileage,
              plan_freight, actual_freight, reconcile_status, create_name, update_name)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '狮桥物流', '狮桥物流')`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
           [freightNo, task.id, task.task_no, task.carrier_id, task.driver_id,
            task.ship_location, task.delivery_address || task.delivery_area,
-           mileage, task.plan_freight, finalFreight]
+           mileage, task.plan_freight, finalFreight, operatorName, operatorName]
         );
         billCreated = true;
       }
@@ -593,21 +611,21 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
     if (action === 'FINISH') {
       if (task.status === 'ARRIVED') {
         await conn.query(
-          `UPDATE shipping_task SET status = 'FINISHED', finish_time = NOW(), version = version + 1, update_name = '狮桥物流'
+          `UPDATE shipping_task SET status = 'FINISHED', finish_time = NOW(), version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
-          [task.id, task.version]
+          [operatorName, task.id, task.version]
         );
-        await conn.query("UPDATE freight_bill SET finish_time = NOW(), update_name = '狮桥物流' WHERE task_id = ? AND deleted = 0", [task.id]);
+        await conn.query('UPDATE freight_bill SET finish_time = NOW(), update_name = ? WHERE task_id = ? AND deleted = 0', [operatorName, task.id]);
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: 'ARRIVED', toStatus: 'FINISHED',
-          source: 'SQ', operator: '狮桥物流', remark: '司机与客户完成交接，运单完结，已同步运费单完结时间',
+          source: logSource, operator: operatorName, remark: '司机与客户完成交接，运单完结，已同步运费单完结时间',
         });
         return { taskNo: task.task_no, status: 'FINISHED', message: '任务已完结，运费单完结时间已同步' };
       }
       if (task.status === 'FINISHED') {
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: 'FINISHED', toStatus: 'FINISHED',
-          source: 'SQ', operator: '狮桥物流', remark: '完结状态重复回传，幂等处理仅补记日志',
+          source: logSource, operator: operatorName, remark: '完结状态重复回传，幂等处理仅补记日志',
         });
         return { taskNo: task.task_no, status: 'FINISHED', message: '完结状态重复回传，幂等处理仅补记日志' };
       }

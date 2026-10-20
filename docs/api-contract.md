@@ -93,7 +93,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | shipping_task | task_no(uk), apply_no(uk), customer_name, region, sales_person, sales_phone, delivery_area, **delivery_address**(PRD 要求补), receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date, outbound_date, ship_time, arrive_time, finish_time, carrier_id, driver_id, plan_freight, actual_freight, status, cancel_reason, cancel_time, remark, **version** | head 表，VIN 明细下沉 |
 | shipping_task_vehicle | task_id, task_no(冗余), vin, order_no, report_no, plan_freight(单台), actual_freight, ship_location, vehicle_model, engine_config, cabin_type | **一任务多车**；head.plan_freight=各车之和 |
 | dispatch_record | task_id, task_no, action(DISPATCH/REASSIGN/CANCEL_DISPATCH), carrier_id, driver_id, batch_no, dispatch_person, dispatch_time, cancel_reason, remark | 派单备注存此表 remark |
-| task_status_log | task_id, task_no, from_status(初始 null), to_status, source(STP/CRM/SQ/WMS), operator, remark | 每次状态流转一条；提车照片 URL 写 remark |
+| task_status_log | task_id, task_no, from_status(初始 null), to_status, source(STP/CRM/SQ狮桥/CARRIER承运商通用回传/WMS), operator, remark | 每次状态流转一条；提车照片 URL 写 remark |
 | transport_track | task_id, task_no, transport_no(狮桥 SQ+日期+任务补零), longitude, latitude, location_desc, speed, report_time | |
 | freight_bill | freight_no(uk), task_id, task_no, carrier_id, driver_id, start_location, end_location, mileage, plan_freight, actual_freight, finish_time, reconcile_status tinyint 0 待对账/1 已对账, reconcile_time, reconciler | 到达时生成 |
 | freight_adjust_log | freight_bill_id, freight_no, before_freight, after_freight, adjust_reason, operator | 每次修改一条 |
@@ -154,7 +154,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | 6 | POST /shipping-tasks/cancel | CRM | applyNo*, cancelReason | 按取消规则校验；关联待签署电子签置 CANCELLED |
 | 8 | POST /wms/outbound-status | WMS | applyNo/taskNo, outboundTime? | PICKED→OUTBOUND；CARRIER_ACCEPTED（乱序）→IN_TRANSIT 兜底 |
 | 10 | POST /drivers/sync | 狮桥 | driverName*, phone*, idCard*, licenseNo, licenseType, licenseValidFrom, licenseValidTo, carrierId? | 身份证号 UPSERT（source=2）+carrier_driver 维护 |
-| 12 | POST /shipping-tasks/status-sync | 狮桥 | action*:`ACCEPT|PICKUP|ARRIVE|FINISH`, applyNo/taskNo, driverId?(ACCEPT), planPickupDate?, photos?:[](PICKUP), actualFreight?, mileage?(ARRIVE) | 按状态机校验推进；ARRIVE 生成运费单 |
+| 12 | POST /shipping-tasks/status-sync | 承运商通用（狮桥/任意三方物流） | action*:`ACCEPT|PICKUP|ARRIVE|FINISH`, applyNo/taskNo, carrierName?（回传承运商，须与任务承运商一致；不传按狮桥留痕）, driverId?(ACCEPT), planPickupDate?, photos?:[](PICKUP), actualFreight?, mileage?(ARRIVE) | 按状态机校验推进；ARRIVE 生成运费单；日志 source=carrierName 传时记 CARRIER |
 | 14 | POST /esign/sign-status | 狮桥 | esignId*, signStatus:`SIGNED|CANCELLED` | WAIT_SIGN→SIGNED(回填 sign_time)/CANCELLED |
 
 ## 7. 模拟辅助接口（/api/mock，演示面板专用）

@@ -4,7 +4,8 @@
  *
  * 覆盖契约第 6 节全部 9 个外部接口 + 第 7 节 2 个 mock 辅助接口，共 11 张表单卡：
  *   CRM 系统：#1 下发发运申请 / #2 发起物流电子签 / #3 取消前查询 / #6 同步取消
- *   狮桥物流：#4 电子签回执确认 / #10 司机同步 / #12 任务状态回传 / #14 电子签状态回传
+ *   狮桥物流：#4 电子签回执确认 / #10 司机同步 / #14 电子签状态回传
+ *   承运商通用：#12 运单状态回传（狮桥及其他承运商/三方物流均可调用，选填 carrierName 标识回传方）
  *   WMS 仓储：#8 出库状态回传
  *   演示辅助：MOCK-1 模拟位置回传 / MOCK-2 模拟签署
  *
@@ -466,6 +467,7 @@ const statusSyncForm = reactive({
   action: 'ACCEPT' as string,
   applyNo: '',
   taskNo: '',
+  carrierName: '',
   driverId: null as number | null,
   planPickupDate: null as string | null,
   photosText: '',
@@ -492,6 +494,7 @@ async function submitStatusSync(): Promise<void> {
     action,
     applyNo: statusSyncForm.applyNo.trim(),
     taskNo: statusSyncForm.taskNo.trim(),
+    carrierName: statusSyncForm.carrierName.trim(),
     driverId: statusSyncForm.driverId,
     planPickupDate: statusSyncForm.planPickupDate ?? '',
     actualFreight: statusSyncForm.actualFreight,
@@ -986,14 +989,16 @@ onActivated(() => {
             <SimResponse :state="respStates.driverSync" />
           </SimCard>
 
-          <!-- #12 任务状态回传 -->
+          <!-- #12 任务状态回传（通用） -->
           <SimCard
             no="#12"
-            title="狮桥任务状态回传"
+            title="运单状态回传（通用接口）"
             method="POST"
             path="/api/external/shipping-tasks/status-sync"
-            summary="按状态机校验推进任务状态：ACCEPT 接单 / PICKUP 提车 / ARRIVE 到达 / FINISH 完结"
+            summary="承运商/三方物流通用回传接口：ACCEPT 接单指派司机 / PICKUP 提车 / ARRIVE 到达 / FINISH 完结"
             :desc="[
+              '通用接口：狮桥物流及其他承运商/三方物流均可调用（后续供应商接入复用本接口）。',
+              '选填 carrierName 标识回传承运商（承运商页可查名称）：须与任务当前承运商一致防串单；不传按狮桥物流留痕。',
               'ACCEPT：已派单 → 承运商已接单，必须分配司机 driverId（须启用且属于任务承运商）。',
               'PICKUP：承运商已接单 → 已提车，回填发运时间；提车照片 URL 写状态日志留痕。',
               'ARRIVE：→ 已到达，回填实际运费/里程，并自动生成运费单（YF+日期+四位）。',
@@ -1010,6 +1015,13 @@ onActivated(() => {
                   <SimTaskLocator
                     v-model:applyNo="statusSyncForm.applyNo"
                     v-model:taskNo="statusSyncForm.taskNo"
+                  />
+                </n-form-item>
+                <n-form-item label="回传承运商 carrierName（选填，不传按狮桥留痕）" class="sim-form__wide">
+                  <n-input
+                    v-model:value="statusSyncForm.carrierName"
+                    clearable
+                    placeholder="如 狮桥物流 / 京东物流；传时须与任务当前承运商一致"
                   />
                 </n-form-item>
                 <template v-if="statusSyncForm.action === 'ACCEPT'">

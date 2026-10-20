@@ -186,9 +186,12 @@ function timelineNodeName(log: TaskStatusLog): string {
 function timelineContent(log: TaskStatusLog): string {
   const parts: string[] = []
   if (log.remark) parts.push(log.remark)
+  const sourceLabels: Record<string, string> = {
+    STP: 'STP 系统', CRM: 'CRM 系统', SQ: '狮桥物流', CARRIER: '承运商', WMS: 'WMS 系统',
+  }
   const meta: string[] = []
   if (log.operator) meta.push(`操作人：${log.operator}`)
-  if (log.source) meta.push(`来源：${log.source}`)
+  if (log.source) meta.push(`来源：${sourceLabels[log.source] ?? log.source}`)
   if (meta.length) parts.push(meta.join(' · '))
   return parts.join('\n')
 }

@@ -43,6 +43,7 @@ const SOURCE_LABELS: Record<string, string> = {
   STP: 'STP 系统',
   CRM: 'CRM 系统',
   SQ: '狮桥物流',
+  CARRIER: '承运商',
   WMS: 'WMS 系统',
 }
 

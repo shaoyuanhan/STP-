@@ -91,7 +91,7 @@ export type DispatchRecordAction = 'DISPATCH' | 'REASSIGN' | 'CANCEL_DISPATCH'
 export type ExternalTaskAction = 'ACCEPT' | 'PICKUP' | 'ARRIVE' | 'FINISH'
 
 /** 状态日志来源（task_status_log.source） */
-export type StatusLogSource = 'STP' | 'CRM' | 'SQ' | 'WMS'
+export type StatusLogSource = 'STP' | 'CRM' | 'SQ' | 'CARRIER' | 'WMS'
 
 /** 取消派单原因（契约 3.1 / 字典 cancelReasons） */
 export const CANCEL_DISPATCH_REASONS: string[] = ['承运商无法履约', '调度调整', '其他']

@@ -214,7 +214,7 @@ CREATE TABLE `task_status_log` (
   `task_no` VARCHAR(32) NOT NULL COMMENT '任务单号,冗余',
   `from_status` VARCHAR(16) DEFAULT NULL COMMENT '原状态,初始为NULL',
   `to_status` VARCHAR(16) NOT NULL COMMENT '目标状态,枚举同shipping_task.status',
-  `source` VARCHAR(16) NOT NULL COMMENT '来源:STP/CRM/SQ(狮桥)/WMS',
+  `source` VARCHAR(16) NOT NULL COMMENT '来源:STP/CRM/SQ(狮桥)/CARRIER(承运商通用回传)/WMS',
   `operator` VARCHAR(64) DEFAULT NULL COMMENT '操作人,系统触发记系统名',
   `remark` VARCHAR(255) DEFAULT NULL COMMENT '备注,如提车照片URL等',
   `create_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
