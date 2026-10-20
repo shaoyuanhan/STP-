@@ -2,7 +2,7 @@
  * 模拟辅助接口（契约第 7 节，/api/mock，演示面板专用）
  *
  *   POST /api/mock/track             狮桥位置回传模拟：写 transport_track，
- *                                     PICKED/OUTBOUND 首次回传 → IN_TRANSIT；
+ *                                     PICKED 首次回传 → IN_TRANSIT；OUTBOUND（已出库未提车）仅记轨迹；
  *                                     transport_no = SQ+yyyyMMdd+任务id补零4位
  *   POST /api/mock/esign/sign-task   签署该任务最新一条待签署电子签（演示辅助）
  *
@@ -80,8 +80,9 @@ router.post('/track', wrap(async (req, res) => {
       [task.id, task.task_no, transportNo, longitude, latitude, locationDesc, speed]
     );
 
-    // PICKED/OUTBOUND 首次位置回传 → IN_TRANSIT（契约 3.1：位置触发在途）
-    if (task.status === 'PICKED' || task.status === 'OUTBOUND') {
+    // 首次位置回传 → IN_TRANSIT（契约 3.1：位置触发在途）
+    // 仅已提车（司机已确认提车/发运）可进入在途；OUTBOUND（已出库未提车）仅记轨迹
+    if (task.status === 'PICKED') {
       await conn.query(
         `UPDATE shipping_task SET status = 'IN_TRANSIT', version = version + 1, update_name = '狮桥物流' WHERE id = ? AND version = ?`,
         [task.id, task.version]
@@ -93,12 +94,17 @@ router.post('/track', wrap(async (req, res) => {
       );
       return { transportNo, status: 'IN_TRANSIT', firstReport: true };
     }
+    if (task.status === 'OUTBOUND') {
+      return { transportNo, status: 'OUTBOUND', firstReport: false, pendingPickup: true };
+    }
 
     // 在途任务继续记录轨迹（不重复写状态日志）
     return { transportNo, status: 'IN_TRANSIT', firstReport: false };
   });
 
-  ok(res, result, result.firstReport ? '位置回传成功，任务已置为在途' : '位置回传成功');
+  ok(res, result, result.pendingPickup
+    ? '位置已记录；司机尚未确认提车（WMS 已先行出库），确认提车后再进入在途'
+    : result.firstReport ? '位置回传成功，任务已置为在途' : '位置回传成功');
 }));
 
 /* ============ 签署任务最新待签署电子签（演示辅助） ============ */

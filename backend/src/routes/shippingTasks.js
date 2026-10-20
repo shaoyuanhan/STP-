@@ -1,7 +1,7 @@
 /**
  * 运输调度 - 发运任务（契约 5.4）
- * 状态机（契约 3.1，已提车 PICKED 在已出库 OUTBOUND 之前）：
- *   WAIT_DISPATCH → DISPATCHED → CARRIER_ACCEPTED → PICKED → OUTBOUND → IN_TRANSIT → ARRIVED → FINISHED
+ * 状态机（WMS 出库在前、司机确认提车/发运在后）：
+ *   WAIT_DISPATCH → DISPATCHED → CARRIER_ACCEPTED → OUTBOUND → PICKED → IN_TRANSIT → ARRIVED → FINISHED
  *   WAIT_DISPATCH → CANCELLED（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）
  * 版本控制：派单/取消派单/改派必须携带 version，不匹配返回 D0001「任务状态已变化，请刷新后重试」
  */

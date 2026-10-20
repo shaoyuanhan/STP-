@@ -470,6 +470,7 @@ const statusSyncForm = reactive({
   carrierName: '',
   driverId: null as number | null,
   planPickupDate: null as string | null,
+  actualPickupDate: null as string | null,
   photosText: '',
   actualFreight: null as number | null,
   mileage: null as number | null,
@@ -1000,7 +1001,7 @@ onActivated(() => {
               '通用接口：狮桥物流及其他承运商/三方物流均可调用（后续供应商接入复用本接口）。',
               '选填 carrierName 标识回传承运商（承运商页可查名称）：须与任务当前承运商一致防串单；不传按狮桥物流留痕。',
               'ACCEPT：已派单 → 承运商已接单，必须分配司机 driverId（须启用且属于任务承运商）；计划提车日期主来源 CRM 下发（#1），此处可选调整。',
-              'PICKUP：承运商已接单 → 已提车，回填发运时间；提车照片 URL 写状态日志留痕。',
+              'PICKUP：司机确认提车（承运商已接单 → 已提车），可选传实际提车日期（允许早于计划提车日期）与提车照片；WMS 已先行出库（已出库）时补确认 → 直接进入在途。',
               'ARRIVE：→ 已到达，回填实际运费/里程，并自动生成运费单（YF+日期+四位）。',
               'FINISH：已到达 → 已完结，同步运费单完结时间。',
               '重复回传幂等：仅补记日志，不回退状态。',
@@ -1038,14 +1039,25 @@ onActivated(() => {
                     />
                   </n-form-item>
                 </template>
-                <n-form-item v-else-if="statusSyncForm.action === 'PICKUP'" label="提车照片 photos（多个 URL 换行或逗号分隔）" class="sim-form__wide">
-                  <n-input
-                    v-model:value="statusSyncForm.photosText"
-                    type="textarea"
-                    :rows="2"
-                    placeholder="https://…/pickup-1.jpg，https://…/pickup-2.jpg"
-                  />
-                </n-form-item>
+                <template v-else-if="statusSyncForm.action === 'PICKUP'">
+                  <n-form-item label="实际提车日期 actualPickupDate（=发运时间；允许早于计划提车日期，不得早于出库时间）">
+                    <n-date-picker
+                      v-model:formatted-value="statusSyncForm.actualPickupDate"
+                      type="date"
+                      value-format="yyyy-MM-dd"
+                      clearable
+                      placeholder="YYYY-MM-DD，不传取当前时间"
+                    />
+                  </n-form-item>
+                  <n-form-item label="提车照片 photos（多个 URL 换行或逗号分隔）" class="sim-form__wide">
+                    <n-input
+                      v-model:value="statusSyncForm.photosText"
+                      type="textarea"
+                      :rows="2"
+                      placeholder="https://…/pickup-1.jpg，https://…/pickup-2.jpg"
+                    />
+                  </n-form-item>
+                </template>
                 <template v-else-if="statusSyncForm.action === 'ARRIVE'">
                   <n-form-item label="实际运费 actualFreight（元）">
                     <n-input-number v-model:value="statusSyncForm.actualFreight" :min="0" :precision="2" placeholder="不传默认计划运费" />
@@ -1115,11 +1127,10 @@ onActivated(() => {
             title="WMS 出库状态回传"
             method="POST"
             path="/api/external/wms/outbound-status"
-            summary="已提车 → 已出库（回填出库日期）；出库早于提车时兜底直接置为在途"
+            summary="承运商已接单 → 已出库（回填出库日期）；出库在前，司机确认提车（#12 PICKUP）在后"
             :desc="[
-              '正常链：PICKED → OUTBOUND，回填出库日期。',
-              '乱序兜底：出库回传先于提车（当前承运商已接单）→ 直接置 IN_TRANSIT 并留痕。',
-              '重复回传（已出库/在途/已到达/已完结）→ 幂等仅补记日志，不回退状态。',
+              '正常链：CARRIER_ACCEPTED → OUTBOUND，回填出库日期；WMS 出库后司机方可确认提车。',
+              '重复回传（已出库/已提车/在途/已到达/已完结）→ 幂等仅补记日志，不回退状态。',
               'outboundTime 不传时取服务器当前时间。',
             ]"
           >

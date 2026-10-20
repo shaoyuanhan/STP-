@@ -159,7 +159,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 
 ## 7. 模拟辅助接口（/api/mock，演示面板专用）
 
-- `POST /api/mock/track` `{applyNo?, taskNo?, locationDesc, longitude, latitude, speed}` → 写 transport_track，PICKED/OUTBOUND 首次→IN_TRANSIT；transport_no=`SQ+yyyyMMdd+任务id补零4位`
+- `POST /api/mock/track` `{applyNo?, taskNo?, locationDesc, longitude, latitude, speed}` → 写 transport_track，PICKED/OUTBOUND（已确认提车）首次→IN_TRANSIT；OUTBOUND 且司机未确认提车仅记轨迹不进在途；transport_no=`SQ+yyyyMMdd+任务id补零4位`
 - `POST /api/mock/esign/sign-task` `{applyNo?, taskNo?}` → 签署该任务最新待签署电子签（演示辅助）
 
 ## 8. 前端工程结构与分工
