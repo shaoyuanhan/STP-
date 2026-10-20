@@ -11,7 +11,7 @@ const router = Router();
 
 // 在途列表包含的未终态状态；排序：在途最优先，其余按创建时间倒序
 const ACTIVE_STATUSES = ['WAIT_DISPATCH', 'DISPATCHED', 'CARRIER_ACCEPTED', 'PICKED', 'OUTBOUND', 'IN_TRANSIT', 'ARRIVED'];
-const STATUS_ORDER = ['IN_TRANSIT', 'PICKED', 'OUTBOUND', 'ARRIVED', 'CARRIER_ACCEPTED', 'DISPATCHED', 'WAIT_DISPATCH'];
+const STATUS_ORDER = ['IN_TRANSIT', 'OUTBOUND', 'PICKED', 'ARRIVED', 'CARRIER_ACCEPTED', 'DISPATCHED', 'WAIT_DISPATCH'];
 
 /** 在途任务列表 */
 router.get('/tasks', wrap(async (req, res) => {

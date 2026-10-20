@@ -347,12 +347,12 @@ const esignColumns: DataTableColumns<EsignRecord> = [
               <span v-if="task.plan_pickup_date">{{ dateOnly(task.plan_pickup_date) }}</span>
               <span v-else class="muted">待回传</span>
             </n-descriptions-item>
-            <n-descriptions-item label="出库日期">
-              <span v-if="task.outbound_date">{{ datetime(task.outbound_date) }}</span>
-              <span v-else class="muted">待回传</span>
-            </n-descriptions-item>
             <n-descriptions-item label="发运时间">
               <span v-if="task.ship_time">{{ datetime(task.ship_time) }}</span>
+              <span v-else class="muted">待回传</span>
+            </n-descriptions-item>
+            <n-descriptions-item label="出库日期">
+              <span v-if="task.outbound_date">{{ datetime(task.outbound_date) }}</span>
               <span v-else class="muted">待回传</span>
             </n-descriptions-item>
             <n-descriptions-item label="到达时间">

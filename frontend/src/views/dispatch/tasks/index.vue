@@ -272,16 +272,16 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
     render: (row) => (row.plan_pickup_date ? dateOnly(row.plan_pickup_date) : '-'),
   },
   {
-    title: '出库日期',
-    key: 'outbound_date',
-    width: 130,
-    render: (row) => (row.outbound_date ? datetime(row.outbound_date) : '-'),
-  },
-  {
     title: '发运时间',
     key: 'ship_time',
     width: 130,
     render: (row) => (row.ship_time ? datetime(row.ship_time) : '-'),
+  },
+  {
+    title: '出库日期',
+    key: 'outbound_date',
+    width: 130,
+    render: (row) => (row.outbound_date ? datetime(row.outbound_date) : '-'),
   },
   {
     title: '到达日期',

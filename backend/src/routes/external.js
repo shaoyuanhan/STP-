@@ -7,7 +7,7 @@
  *   CRM  ③ GET  /shipping-tasks/cancel-check    送车发运申请取消前状态查询
  *   狮桥 ④ POST /esign/receipt-sync             物流电子签签收回执确认（幂等）
  *   CRM  ⑥ POST /shipping-tasks/cancel          送车发运申请取消（按取消规则，关联待签署电子签置 CANCELLED）
- *   WMS  ⑧ POST /wms/outbound-status            WMS 出库状态同步（CARRIER_ACCEPTED→OUTBOUND，出库在前、司机提车在后）
+ *   WMS  ⑧ POST /wms/outbound-status            WMS 出库状态同步（PICKED→OUTBOUND→IN_TRANSIT，司机提车在前、仓库出库在后）
  *   狮桥 ⑩ POST /drivers/sync                   司机信息同步（身份证号 UPSERT，source=2，维护 carrier_driver）
  *   狮桥 ⑫ POST /shipping-tasks/status-sync     任务状态同步（ACCEPT/PICKUP/ARRIVE/FINISH，按状态机校验）
  *   狮桥 ⑭ POST /esign/sign-status              电子签签署状态同步（WAIT_SIGN→SIGNED/CANCELLED）
@@ -296,8 +296,8 @@ router.post('/shipping-tasks/cancel', wrap(async (req, res) => {
 
 /* ======================= ⑧ WMS：出库状态同步 ======================= */
 // POST /api/external/wms/outbound-status
-//   CARRIER_ACCEPTED→OUTBOUND（WMS 出库在前，司机确认提车在后）；回填 outbound_date；
-//   重复回传（OUTBOUND/PICKED/IN_TRANSIT/ARRIVED/FINISHED）仅补记日志，幂等不回退。
+//   PICKED→OUTBOUND→IN_TRANSIT（司机先办提车、仓库后出库，出库完成后直接进入在途）；回填 outbound_date；
+//   未提车不可出库；重复回传（已出库及之后）仅补记日志，幂等不回退。
 router.post('/wms/outbound-status', wrap(async (req, res) => {
   const b = req.body || {};
   const outboundTime = parseOutboundTime(b.outboundTime);
@@ -305,22 +305,38 @@ router.post('/wms/outbound-status', wrap(async (req, res) => {
   const result = await withTransaction(async (conn) => {
     const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
 
-    // 正常链：承运商已接单 → 已出库，回填出库日期；司机确认提车（#12 PICKUP）须在出库之后
-    if (task.status === 'CARRIER_ACCEPTED') {
+    // 正常链：已提车 → 已出库 → 在途（提车在前、出库在后，出库完成即发车进入在途）
+    if (task.status === 'PICKED') {
+      if (outboundTime && task.ship_time) {
+        const shipDay = String(task.ship_time).slice(0, 10);
+        const outboundDay = String(outboundTime).slice(0, 10);
+        if (outboundDay < shipDay) {
+          throw errBiz(`出库时间（${outboundDay}）不能早于提车发运时间（${shipDay}），须先提车后出库`);
+        }
+      }
       await conn.query(
-        `UPDATE shipping_task SET status = 'OUTBOUND', outbound_date = COALESCE(?, NOW()), version = version + 1, update_name = 'WMS 系统'
+        `UPDATE shipping_task SET status = 'IN_TRANSIT', outbound_date = COALESCE(?, NOW()), version = version + 1, update_name = 'WMS 系统'
           WHERE id = ? AND version = ?`,
         [outboundTime, task.id, task.version]
       );
       await writeStatusLog(conn, {
-        taskId: task.id, taskNo: task.task_no, fromStatus: 'CARRIER_ACCEPTED', toStatus: 'OUTBOUND',
-        source: 'WMS', operator: 'WMS 系统', remark: 'WMS出库回传，车辆已出库；待司机确认提车（发运）',
+        taskId: task.id, taskNo: task.task_no, fromStatus: 'PICKED', toStatus: 'OUTBOUND',
+        source: 'WMS', operator: 'WMS 系统', remark: 'WMS出库回传，车辆已出库',
       });
-      return { taskNo: task.task_no, status: 'OUTBOUND', message: '出库回传成功，任务状态：已出库，待司机确认提车' };
+      await writeStatusLog(conn, {
+        taskId: task.id, taskNo: task.task_no, fromStatus: 'OUTBOUND', toStatus: 'IN_TRANSIT',
+        source: 'WMS', operator: 'WMS 系统', remark: '出库完成，车辆已进入在途运输',
+      });
+      return { taskNo: task.task_no, status: 'IN_TRANSIT', message: '出库回传成功，任务状态：在途' };
+    }
+
+    // 未办提车：司机须先确认提车（发运），仓库方可出库
+    if (task.status === 'CARRIER_ACCEPTED') {
+      throw errState('司机尚未办理提车，提车确认后方可出库');
     }
 
     // 幂等：出库重复回传/晚到回传（已出库及之后）仅补记日志，不回退状态
-    if (['OUTBOUND', 'PICKED', 'IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
+    if (['OUTBOUND', 'IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
       if (!task.outbound_date && outboundTime) {
         await conn.query('UPDATE shipping_task SET outbound_date = ?, update_name = ? WHERE id = ?', [outboundTime, 'WMS 系统', task.id]);
       }
@@ -332,7 +348,7 @@ router.post('/wms/outbound-status', wrap(async (req, res) => {
     }
 
     // WAIT_DISPATCH / DISPATCHED / CANCELLED：WMS 不应回传出库（任务未派发/未接单或已取消）
-    throw errState(`当前任务状态不允许出库回传（${task.status}），需承运商接单后方可出库`);
+    throw errState(`当前任务状态不允许出库回传（${task.status}），需司机提车后方可出库`);
   });
 
   ok(res, result, result.message);
@@ -413,9 +429,8 @@ router.post('/drivers/sync', wrap(async (req, res) => {
 //   action=ACCEPT  承运商接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id；
 //                  planPickupDate 主来源为 CRM（#1 必填），接单可选调整（传则覆盖，不传保持）
 //   action=PICKUP  司机确认提车（=发运，含车辆照片 photos 写 status_log.remark）：
-//                  OUTBOUND→PICKED 回填 ship_time（发运时间）；可选 actualPickupDate 实际提车日期
-//                  （允许早于计划提车日期，但不得早于出库时间）；CARRIER_ACCEPTED（未出库）拒绝；
-//                  之后重复回传仅补记日志（幂等不回退）
+//                  CARRIER_ACCEPTED→PICKED 回填 ship_time（发运时间），待仓库出库；可选 actualPickupDate 实际提车日期
+//                  （允许早于计划提车日期）；之后重复回传仅补记日志（幂等不回退）
 //   action=ARRIVE  司机到达：→ARRIVED 回填 arrive_time，生成 YF 运费单（FOR UPDATE 幂等）；
 //                  实际运费/里程不在本接口回传（运费功能暂未开放），运费单按计划运费生成
 //   action=FINISH  司机完结：ARRIVED→FINISHED 回填 finish_time，同步运费单 finish_time
@@ -499,42 +514,30 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
     if (action === 'PICKUP') {
       const photos = Array.isArray(b.photos) ? b.photos : null;
       const photoRemark = photosToRemark(photos);
-      // 实际提车日期 = 发运时间：选填 YYYY-MM-DD，允许早于计划提车日期（提前提车），
-      // 但不得早于出库时间（WMS 出库后方可提车），缺省取当前时间
+      // 实际提车日期 = 发运时间：选填 YYYY-MM-DD，允许早于计划提车日期（提前提车），缺省取当前时间
       if (b.actualPickupDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.actualPickupDate).trim())) {
         throw errParam('实际提车日期 actualPickupDate 格式不正确，应为 YYYY-MM-DD');
       }
       const shipTime = b.actualPickupDate ? String(b.actualPickupDate).trim() : null;
       const photoNote = photos ? `，${photos.length} 张提车照片已同步` : '';
 
-      // 出库未完成：车辆尚未出库，司机不可确认提车
+      // 正常链：承运商已接单 → 已提车（司机先办提车，车辆照片留痕；仓库出库回传后进入在途）
       if (task.status === 'CARRIER_ACCEPTED') {
-        throw errState('车辆尚未出库，WMS 出库回传后方可确认提车');
-      }
-
-      // 正常链：已出库 → 已提车（司机确认提车/发运，车辆照片留痕）
-      if (task.status === 'OUTBOUND') {
-        if (shipTime && task.outbound_date) {
-          const outboundDay = String(task.outbound_date).slice(0, 10);
-          if (shipTime < outboundDay) {
-            throw errBiz(`发运时间（实际提车日期 ${shipTime}）不能早于出库时间（${outboundDay}），WMS 出库后方可提车`);
-          }
-        }
         await conn.query(
           `UPDATE shipping_task SET status = 'PICKED', ship_time = COALESCE(?, NOW()), version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
           [shipTime, operatorName, task.id, task.version]
         );
         await writeStatusLog(conn, {
-          taskId: task.id, taskNo: task.task_no, fromStatus: 'OUTBOUND', toStatus: 'PICKED',
+          taskId: task.id, taskNo: task.task_no, fromStatus: 'CARRIER_ACCEPTED', toStatus: 'PICKED',
           source: logSource, operator: operatorName,
           remark: cutStr(`司机确认提车（发运）${shipTime ? `，发运时间 ${shipTime}（可早于计划提车日期）` : ''}${photoNote}${photoRemark ? `；${photoRemark}` : ''}`, 255),
         });
-        return { taskNo: task.task_no, status: 'PICKED', message: '提车确认成功，任务状态：已提车，照片已留痕' };
+        return { taskNo: task.task_no, status: 'PICKED', message: '提车确认成功，任务状态：已提车，待仓库出库' };
       }
 
-      // 幂等：已提车/在途/已到达/已完结重复回传，仅补记日志 + 补 ship_time，不回退状态
-      if (['PICKED', 'IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
+      // 幂等：已提车/已出库/在途/已到达/已完结重复回传，仅补记日志 + 补 ship_time，不回退状态
+      if (['PICKED', 'OUTBOUND', 'IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
         if (!task.ship_time) {
           await conn.query('UPDATE shipping_task SET ship_time = COALESCE(?, NOW()), update_name = ? WHERE id = ?', [shipTime, operatorName, task.id]);
         }
@@ -545,13 +548,13 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
         });
         return { taskNo: task.task_no, status: task.status, message: '提车状态重复回传，幂等处理仅补记日志' };
       }
-      throw errState(`当前任务状态不允许提车确认（${task.status}），需「已出库」后方可确认提车`);
+      throw errState(`当前任务状态不允许提车确认（${task.status}），仅「承运商已接单」可确认提车`);
     }
 
     /* ---- 司机到达（回填运费/里程，生成 YF 运费单 FOR UPDATE 幂等） ---- */
     if (action === 'ARRIVE') {
-      if (!['PICKED', 'IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
-        throw errState(`当前任务状态不允许到达（${task.status}），车辆尚未提车发运`);
+      if (!['IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
+        throw errState(`当前任务状态不允许到达（${task.status}），车辆尚未出库进入在途`);
       }
       // 实际运费/里程不在状态回传接口（运费相关功能暂未开放），运费单按计划运费生成
       const finalFreight = Number(task.plan_freight) || 0;

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
-    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，WMS 出库在前、司机确认提车在后）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → OUTBOUND 已出库 → PICKED 已提车 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
+    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
     "version": "2.0.0"
   },
   "servers": [
@@ -2295,7 +2295,7 @@
           "09 外部接口·WMS"
         ],
         "summary": "⑧ WMS 出库状态同步",
-        "description": "WMS 出库状态回传（出库在前、司机确认提车在后）：CARRIER_ACCEPTED→OUTBOUND，回填 outbound_date（出库日期）；出库后任务须由司机确认提车（⑫ status-sync action=PICKUP，发运时间不得早于出库日期）方可流转至在途；重复回传（OUTBOUND/PICKED/IN_TRANSIT/ARRIVED/FINISHED）仅补记日志，幂等不回退",
+        "description": "WMS 出库状态回传（司机先办提车、仓库后出库，出库完成即进入在途）：PICKED→OUTBOUND→IN_TRANSIT，回填 outbound_date（出库日期，不得早于发运时间）；未提车（承运商已接单）返回 D0001「司机尚未办理提车，提车确认后方可出库」；重复回传（已出库及之后）仅补记日志，幂等不回退",
         "requestBody": {
           "required": true,
           "content": {
@@ -2446,7 +2446,7 @@
           "12 外部接口·承运商通用"
         ],
         "summary": "⑫ 运单状态回传（通用接口，ACCEPT=承运商接单并指派司机）",
-        "description": "承运商通用回传接口：狮桥物流及其他承运商/三方物流供应商均可调用，后续供应商接入复用本接口。可选 carrierName 标识回传承运商（须与任务当前承运商一致防串单，不传按狮桥物流留痕）。action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）；可选 planPickupDate 调整计划提车日期（主来源为 ① receive 随申请下发必填，不传保持原值）；action=PICKUP：司机确认提车（=发运），仅 OUTBOUND（已出库）可确认，OUTBOUND→PICKED 回填 ship_time（发运时间）；可选 actualPickupDate 实际提车日期（YYYY-MM-DD，即发运时间，允许早于计划提车日期，但不得早于出库日期，WMS 出库后方可提车；未出库 CARRIER_ACCEPTED 拒绝）；photos 提车照片数组写 status_log.remark；已提车及之后重复回传仅补记日志不回退；action=ARRIVE：司机到达，→ARRIVED 回填 arrive_time；实际运费/里程不在本接口回传（运费相关功能暂未开放，运费单以计划运费生成）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
+        "description": "承运商通用回传接口：狮桥物流及其他承运商/三方物流供应商均可调用，后续供应商接入复用本接口。可选 carrierName 标识回传承运商（须与任务当前承运商一致防串单，不传按狮桥物流留痕）。action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）；可选 planPickupDate 调整计划提车日期（主来源为 ① receive 随申请下发必填，不传保持原值）；action=PICKUP：司机确认提车（=提车发运+拍照），仅 CARRIER_ACCEPTED（承运商已接单）可确认，CARRIER_ACCEPTED→PICKED，回填 ship_time（发运时间），提车后待仓库出库（⑧ 出库回传后进入在途）；可选 actualPickupDate 实际提车日期（YYYY-MM-DD，即发运时间，允许早于计划提车日期）；photos 提车照片数组写 status_log.remark；已提车及之后重复回传仅补记日志不回退；action=ARRIVE：司机到达，→ARRIVED 回填 arrive_time；实际运费/里程不在本接口回传（运费相关功能暂未开放，运费单以计划运费生成）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
         "requestBody": {
           "required": true,
           "content": {
@@ -2486,7 +2486,7 @@
                   },
                   "actualPickupDate": {
                     "type": "string",
-                    "description": "实际提车日期（action=PICKUP 选填，YYYY-MM-DD，即发运时间；允许早于计划提车日期，但不得早于出库日期，WMS 出库后方可提车；不传取当前时间）"
+                    "description": "实际提车日期（action=PICKUP 选填，YYYY-MM-DD，即发运时间；允许早于计划提车日期；提车后待仓库出库；不传取当前时间）"
                   },
                   "photos": {
                     "type": "array",

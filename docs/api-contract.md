@@ -35,24 +35,23 @@
 ### 3.1 任务状态（shipping_task.status）
 
 ```
-WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → OUTBOUND 已出库
-→ PICKED 已提车 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结
+WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车
+→ OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结
 WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）
 DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派换承运商）
 ```
 
-**已确认：WMS 出库在前、司机确认提车（发运）在后（线性主链），必须逐步流转。**
+**已确认：司机先办提车（发运）、仓库后出库，出库完成即进入在途（线性主链），必须逐步流转。**
 
 转换触发：
 - 派单（STP）：WAIT_DISPATCH→DISPATCHED，写 dispatch_record(DISPATCH) + status_log
 - 接单（狮桥 #12 ACCEPT）：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id、plan_pickup_date
-- 出库（WMS #8）：CARRIER_ACCEPTED→OUTBOUND，回填 outbound_date（出库后方可提车）
-- 提车（#12 PICKUP，=发运）：OUTBOUND→PICKED，回填 ship_time（实际提车日期=发运时间，不得早于出库日期，允许早于计划提车日期）；照片 URL 写 status_log.remark
-- 位置（模拟 #15 拉取结果）：仅 PICKED 首次回传→IN_TRANSIT；已出库未提车仅记轨迹
+- 提车（#12 PICKUP，=司机提车发运+拍照）：CARRIER_ACCEPTED→PICKED，回填 ship_time（实际提车日期=发运时间，允许早于计划提车日期）；照片 URL 写 status_log.remark；提车后待仓库出库
+- 出库（WMS #8）：PICKED→OUTBOUND→IN_TRANSIT，回填 outbound_date（出库时间不得早于发运时间）；OUTBOUND 为出库瞬时留痕节点，任务当前状态直接置 IN_TRANSIT（PRD：在途=确认发车后、未到达前）
 - 到达（#12 ARRIVE）：→ARRIVED，回填 arrive_time；实际运费/里程不在本接口回传（运费相关功能暂未开放）
 - 完结（#12 FINISH）：ARRIVED→FINISHED，回填 finish_time，同步运费单 finish_time
 
-**幂等**：各状态重复回传仅补记日志，不回退已推进状态；不允许跳步（如未出库直接提车返回 D0001）。
+**幂等**：各状态重复回传仅补记日志，不回退已推进状态；不允许跳步（如未提车直接出库返回 D0001）。
 
 **CRM 取消规则（#3 查询 / #6 取消）**：
 - WAIT_DISPATCH：可取消
@@ -150,9 +149,9 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | 3 | GET /shipping-tasks/cancel-check?applyNo= | CRM | - | `{taskNo, status, cancellable, message}` |
 | 4 | POST /esign/receipt-sync | 狮桥 | esignId* | `{esignId, signStatus}`（回执确认，幂等） |
 | 6 | POST /shipping-tasks/cancel | CRM | applyNo*, cancelReason | 按取消规则校验；关联待签署电子签置 CANCELLED |
-| 8 | POST /wms/outbound-status | WMS | applyNo/taskNo, outboundTime? | CARRIER_ACCEPTED→OUTBOUND（出库在前、司机提车在后），回填 outbound_date；重复回传仅补记日志（幂等） |
+| 8 | POST /wms/outbound-status | WMS | applyNo/taskNo, outboundTime? | PICKED→OUTBOUND→IN_TRANSIT（司机提车在前、仓库出库在后，出库完成即进在途），回填 outbound_date（不得早于发运时间）；未提车返回 D0001；重复回传仅补记日志（幂等） |
 | 10 | POST /drivers/sync | 狮桥 | driverName*, phone*, idCard*, licenseNo, licenseType, licenseValidFrom, licenseValidTo, carrierId? | 身份证号 UPSERT（source=2）+carrier_driver 维护 |
-| 12 | POST /shipping-tasks/status-sync | 承运商通用（狮桥/任意三方物流） | action*:`ACCEPT|PICKUP|ARRIVE|FINISH`, applyNo/taskNo, carrierName?（回传承运商，须与任务承运商一致；不传按狮桥留痕）, driverId?(ACCEPT), planPickupDate?(ACCEPT 可选调整，不传保持 CRM 下发值), actualPickupDate?(PICKUP 实际提车日期=发运时间，不得早于出库日期，允许早于计划提车日期), photos?:[](PICKUP 提车照片) | 按状态机校验推进；PICKUP 仅 OUTBOUND（已出库）可确认，回填 ship_time；ARRIVE 回填 arrive_time（实际运费/里程不在本接口回传，运费功能暂未开放）；日志 source=carrierName 传时记 CARRIER |
+| 12 | POST /shipping-tasks/status-sync | 承运商通用（狮桥/任意三方物流） | action*:`ACCEPT|PICKUP|ARRIVE|FINISH`, applyNo/taskNo, carrierName?（回传承运商，须与任务承运商一致；不传按狮桥留痕）, driverId?(ACCEPT), planPickupDate?(ACCEPT 可选调整，不传保持 CRM 下发值), actualPickupDate?(PICKUP 实际提车日期=发运时间，允许早于计划提车日期), photos?:[](PICKUP 提车照片) | 按状态机校验推进；PICKUP 仅 CARRIER_ACCEPTED（承运商已接单）可确认，回填 ship_time 并置为 PICKED（已提车，待仓库出库）；ARRIVE 回填 arrive_time（实际运费/里程不在本接口回传，运费功能暂未开放）；日志 source=carrierName 传时记 CARRIER |
 | 14 | POST /esign/sign-status | 狮桥 | esignId*, signStatus:`SIGNED|CANCELLED` | WAIT_SIGN→SIGNED(回填 sign_time)/CANCELLED |
 
 ## 7. 前端工程结构与分工

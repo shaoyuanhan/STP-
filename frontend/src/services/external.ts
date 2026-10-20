@@ -56,7 +56,7 @@ export function cancelShippingTask(payload: ExternalCancelPayload): Promise<{
   return post('/external/shipping-tasks/cancel', payload)
 }
 
-/** #8 WMS 出库状态回传（CARRIER_ACCEPTED→OUTBOUND；出库在前，司机确认提车在后） */
+/** #8 WMS 出库状态回传（PICKED→OUTBOUND→IN_TRANSIT；司机先办提车，仓库后出库，出库完成即进在途） */
 export function syncWmsOutboundStatus(
   payload: WmsOutboundPayload,
 ): Promise<Record<string, unknown>> {
