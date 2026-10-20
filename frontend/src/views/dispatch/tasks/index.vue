@@ -211,6 +211,7 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
     key: '__selection',
     width: 42,
     align: 'center',
+    fixed: 'left',
     title: () =>
       h(
         'span',
@@ -235,6 +236,7 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
     title: '任务单号',
     key: 'task_no',
     width: 150,
+    fixed: 'left',
     render: (row) =>
       h(
         NButton,
@@ -316,6 +318,7 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
     title: '操作',
     key: 'actions',
     width: 84,
+    fixed: 'right',
     render: (row) => renderActions(row),
   },
 ])

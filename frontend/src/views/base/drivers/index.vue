@@ -165,6 +165,7 @@ const columns: DataTableColumns<DriverRow> = [
     title: '操作',
     key: 'actions',
     width: 76,
+    fixed: 'right',
     render: (row) =>
       h('div', { class: 'row-actions' }, [
         h(
