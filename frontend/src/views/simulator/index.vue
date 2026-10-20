@@ -459,7 +459,7 @@ const ACTION_VALUES: ExternalTaskAction[] = ['ACCEPT', 'PICKUP', 'ARRIVE', 'FINI
 const actionOptions: SelectOption[] = [
   { label: 'ACCEPT · 承运商接单', value: 'ACCEPT' },
   { label: 'PICKUP · 司机提车', value: 'PICKUP' },
-  { label: 'ARRIVE · 司机到达（生成运费单）', value: 'ARRIVE' },
+  { label: 'ARRIVE · 司机到达', value: 'ARRIVE' },
   { label: 'FINISH · 司机完结', value: 'FINISH' },
 ]
 
@@ -472,8 +472,6 @@ const statusSyncForm = reactive({
   planPickupDate: null as string | null,
   actualPickupDate: null as string | null,
   photosText: '',
-  actualFreight: null as number | null,
-  mileage: null as number | null,
 })
 
 async function submitStatusSync(): Promise<void> {
@@ -498,8 +496,6 @@ async function submitStatusSync(): Promise<void> {
     carrierName: statusSyncForm.carrierName.trim(),
     driverId: statusSyncForm.driverId,
     planPickupDate: statusSyncForm.planPickupDate ?? '',
-    actualFreight: statusSyncForm.actualFreight,
-    mileage: statusSyncForm.mileage,
   })
   if (action === 'PICKUP') {
     const photos = statusSyncForm.photosText
@@ -623,7 +619,7 @@ onActivated(() => {
       </div>
       <div>
         <b>演示链路</b>：#1 CRM 下发 → STP 派单（发运任务页）→ #12 ACCEPT 接单 → #2 发起电子签 →
-        #12 PICKUP 提车 → #8 WMS 出库 → MOCK-1 位置回传 → #12 ARRIVE 到达（生成运费单）→ #12
+        #8 WMS 出库 → #12 PICKUP 提车（发运）→ MOCK-1 位置回传 → #12 ARRIVE 到达 → #12
         FINISH 完结 → 电子签签署（MOCK-2 或 #14）→ 结算对账。
       </div>
     </n-alert>
@@ -1001,8 +997,8 @@ onActivated(() => {
               '通用接口：狮桥物流及其他承运商/三方物流均可调用（后续供应商接入复用本接口）。',
               '选填 carrierName 标识回传承运商（承运商页可查名称）：须与任务当前承运商一致防串单；不传按狮桥物流留痕。',
               'ACCEPT：已派单 → 承运商已接单，必须分配司机 driverId（须启用且属于任务承运商）；计划提车日期主来源 CRM 下发（#1），此处可选调整。',
-              'PICKUP：司机确认提车（承运商已接单 → 已提车），可选传实际提车日期（允许早于计划提车日期）与提车照片；WMS 已先行出库（已出库）时补确认 → 直接进入在途。',
-              'ARRIVE：→ 已到达，回填实际运费/里程，并自动生成运费单（YF+日期+四位）。',
+              'PICKUP：司机确认提车（=发运，已出库 → 已提车），可选传实际提车日期（发运时间，不得早于出库日期、允许早于计划提车日期）与提车照片；未出库不可提车。',
+              'ARRIVE：已提车/在途 → 已到达，回填到达时间；实际运费/里程不在本接口回传（运费功能暂未开放）。',
               'FINISH：已到达 → 已完结，同步运费单完结时间。',
               '重复回传幂等：仅补记日志，不回退状态。',
             ]"
@@ -1056,14 +1052,6 @@ onActivated(() => {
                       :rows="2"
                       placeholder="https://…/pickup-1.jpg，https://…/pickup-2.jpg"
                     />
-                  </n-form-item>
-                </template>
-                <template v-else-if="statusSyncForm.action === 'ARRIVE'">
-                  <n-form-item label="实际运费 actualFreight（元）">
-                    <n-input-number v-model:value="statusSyncForm.actualFreight" :min="0" :precision="2" placeholder="不传默认计划运费" />
-                  </n-form-item>
-                  <n-form-item label="里程 mileage（公里）">
-                    <n-input-number v-model:value="statusSyncForm.mileage" :min="0" :precision="1" placeholder="选填" />
                   </n-form-item>
                 </template>
               </div>

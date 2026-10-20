@@ -2449,7 +2449,7 @@
           "12 外部接口·承运商通用"
         ],
         "summary": "⑫ 运单状态回传（通用接口，ACCEPT=承运商接单并指派司机）",
-        "description": "承运商通用回传接口：狮桥物流及其他承运商/三方物流供应商均可调用，后续供应商接入复用本接口。可选 carrierName 标识回传承运商（须与任务当前承运商一致防串单，不传按狮桥物流留痕）。action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）；可选 planPickupDate 调整计划提车日期（主来源为 ① receive 随申请下发必填，不传保持原值）；action=PICKUP：司机确认提车（=发运），仅 OUTBOUND（已出库）可确认，OUTBOUND→PICKED 回填 ship_time（发运时间）；可选 actualPickupDate 实际提车日期（YYYY-MM-DD，即发运时间，允许早于计划提车日期，但不得早于出库日期，WMS 出库后方可提车；未出库 CARRIER_ACCEPTED 拒绝）；photos 提车照片数组写 status_log.remark；已提车及之后重复回传仅补记日志不回退；action=ARRIVE：→ARRIVED 回填 actual_freight（未传用计划运费）/mileage/arrive_time 并生成 YF 运费单（FOR UPDATE 幂等，车辆明细实际运费按台数均分）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
+        "description": "承运商通用回传接口：狮桥物流及其他承运商/三方物流供应商均可调用，后续供应商接入复用本接口。可选 carrierName 标识回传承运商（须与任务当前承运商一致防串单，不传按狮桥物流留痕）。action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）；可选 planPickupDate 调整计划提车日期（主来源为 ① receive 随申请下发必填，不传保持原值）；action=PICKUP：司机确认提车（=发运），仅 OUTBOUND（已出库）可确认，OUTBOUND→PICKED 回填 ship_time（发运时间）；可选 actualPickupDate 实际提车日期（YYYY-MM-DD，即发运时间，允许早于计划提车日期，但不得早于出库日期，WMS 出库后方可提车；未出库 CARRIER_ACCEPTED 拒绝）；photos 提车照片数组写 status_log.remark；已提车及之后重复回传仅补记日志不回退；action=ARRIVE：司机到达，→ARRIVED 回填 arrive_time；实际运费/里程不在本接口回传（运费相关功能暂未开放，运费单以计划运费生成）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
         "requestBody": {
           "required": true,
           "content": {
@@ -2497,14 +2497,6 @@
                       "type": "string"
                     },
                     "description": "提车照片 URL 数组（action=PICKUP 选填，写任务状态日志留痕）"
-                  },
-                  "actualFreight": {
-                    "type": "number",
-                    "description": "实际运费（action=ARRIVE 选填，不传用计划运费）"
-                  },
-                  "mileage": {
-                    "type": "number",
-                    "description": "运输里程（公里，action=ARRIVE 选填）"
                   }
                 },
                 "required": [
@@ -2549,17 +2541,16 @@
                   "data": {
                     "taskNo": "FY202610200001",
                     "status": "ARRIVED",
-                    "actualFreight": 11500,
-                    "mileage": 650,
                     "freightNo": "YF202610200001",
                     "billCreated": true
                   }
-                }
+                },
+                "description": "状态推进结果（ARRIVE 含生成的运费单号）"
               }
             }
           },
           "400": {
-            "description": "A0001 action 缺失或不合法 / driverId 缺失 / 金额格式错误"
+            "description": "A0001 action 缺失或不合法 / driverId 缺失 / 日期格式错误"
           },
           "409": {
             "description": "D0001 当前状态不允许该动作（状态机校验）"

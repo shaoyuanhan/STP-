@@ -416,7 +416,8 @@ router.post('/drivers/sync', wrap(async (req, res) => {
 //                  OUTBOUND→PICKED 回填 ship_time（发运时间）；可选 actualPickupDate 实际提车日期
 //                  （允许早于计划提车日期，但不得早于出库时间）；CARRIER_ACCEPTED（未出库）拒绝；
 //                  之后重复回传仅补记日志（幂等不回退）
-//   action=ARRIVE  司机到达：→ARRIVED 回填 actual_freight/mileage/arrive_time，生成 YF 运费单（FOR UPDATE 幂等）
+//   action=ARRIVE  司机到达：→ARRIVED 回填 arrive_time，生成 YF 运费单（FOR UPDATE 幂等）；
+//                  实际运费/里程不在本接口回传（运费功能暂未开放），运费单按计划运费生成
 //   action=FINISH  司机完结：ARRIVED→FINISHED 回填 finish_time，同步运费单 finish_time
 router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
   const b = req.body || {};
@@ -552,13 +553,8 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
       if (!['PICKED', 'IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
         throw errState(`当前任务状态不允许到达（${task.status}），车辆尚未提车发运`);
       }
-      const actualFreight = (b.actualFreight === undefined || b.actualFreight === null || b.actualFreight === '')
-        ? null
-        : assertAmount(b.actualFreight, { label: '实际运费 actualFreight' });
-      const mileage = (b.mileage === undefined || b.mileage === null || b.mileage === '')
-        ? null
-        : assertAmount(b.mileage, { label: '里程 mileage' });
-      const finalFreight = actualFreight ?? Number(task.plan_freight) ?? 0; // 未传用计划运费
+      // 实际运费/里程不在状态回传接口（运费相关功能暂未开放），运费单按计划运费生成
+      const finalFreight = Number(task.plan_freight) || 0;
 
       let freightNo = null;
       let billCreated = false;
@@ -581,7 +577,7 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: 'ARRIVED',
           source: logSource, operator: operatorName,
-          remark: `司机确认到达，实际运费 ${finalFreight.toFixed(2)} 元${mileage ? `，里程 ${mileage} 公里` : ''}`,
+          remark: '司机确认到达',
         });
       } else {
         await writeStatusLog(conn, {
@@ -600,16 +596,16 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
           `INSERT INTO freight_bill
             (freight_no, task_id, task_no, carrier_id, driver_id, start_location, end_location, mileage,
              plan_freight, actual_freight, reconcile_status, create_name, update_name)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, ?)`,
           [freightNo, task.id, task.task_no, task.carrier_id, task.driver_id,
            task.ship_location, task.delivery_address || task.delivery_area,
-           mileage, task.plan_freight, finalFreight, operatorName, operatorName]
+           task.plan_freight, finalFreight, operatorName, operatorName]
         );
         billCreated = true;
       }
       return {
         taskNo: task.task_no, status: task.status === 'ARRIVED' || task.status === 'FINISHED' ? task.status : 'ARRIVED',
-        actualFreight: finalFreight, mileage, freightNo, billCreated,
+        freightNo, billCreated,
         message: `到达确认成功${billCreated ? `，已生成运费结算单 ${freightNo}（待对账）` : `，运费单 ${freightNo} 已存在（幂等）`}`,
       };
     }
