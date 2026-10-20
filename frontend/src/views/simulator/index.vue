@@ -469,6 +469,7 @@ const statusSyncForm = reactive({
   taskNo: '',
   carrierName: '',
   driverId: null as number | null,
+  planPickupDate: null as string | null,
   photosText: '',
   actualFreight: null as number | null,
   mileage: null as number | null,
@@ -495,6 +496,7 @@ async function submitStatusSync(): Promise<void> {
     taskNo: statusSyncForm.taskNo.trim(),
     carrierName: statusSyncForm.carrierName.trim(),
     driverId: statusSyncForm.driverId,
+    planPickupDate: statusSyncForm.planPickupDate ?? '',
     actualFreight: statusSyncForm.actualFreight,
     mileage: statusSyncForm.mileage,
   })
@@ -997,7 +999,7 @@ onActivated(() => {
             :desc="[
               '通用接口：狮桥物流及其他承运商/三方物流均可调用（后续供应商接入复用本接口）。',
               '选填 carrierName 标识回传承运商（承运商页可查名称）：须与任务当前承运商一致防串单；不传按狮桥物流留痕。',
-              'ACCEPT：已派单 → 承运商已接单，必须分配司机 driverId（须启用且属于任务承运商）。',
+              'ACCEPT：已派单 → 承运商已接单，必须分配司机 driverId（须启用且属于任务承运商）；计划提车日期主来源 CRM 下发（#1），此处可选调整。',
               'PICKUP：承运商已接单 → 已提车，回填发运时间；提车照片 URL 写状态日志留痕。',
               'ARRIVE：→ 已到达，回填实际运费/里程，并自动生成运费单（YF+日期+四位）。',
               'FINISH：已到达 → 已完结，同步运费单完结时间。',
@@ -1026,9 +1028,15 @@ onActivated(() => {
                   <n-form-item label="接单司机 driverId（司机管理页可查）" show-require-mark>
                     <n-input-number v-model:value="statusSyncForm.driverId" :min="1" :precision="0" placeholder="司机 ID" />
                   </n-form-item>
-                  <n-alert type="info" :show-icon="false" size="small" style="grid-column: 1 / -1">
-                    计划提车日期由 CRM 随发运申请下发（#1），接单仅分配司机，不在此处修改
-                  </n-alert>
+                  <n-form-item label="计划提车日期 planPickupDate（选填，可调整 CRM 下发值）">
+                    <n-date-picker
+                      v-model:formatted-value="statusSyncForm.planPickupDate"
+                      type="date"
+                      value-format="yyyy-MM-dd"
+                      clearable
+                      placeholder="YYYY-MM-DD，不传保持 CRM 下发值"
+                    />
+                  </n-form-item>
                 </template>
                 <n-form-item v-else-if="statusSyncForm.action === 'PICKUP'" label="提车照片 photos（多个 URL 换行或逗号分隔）" class="sim-form__wide">
                   <n-input
