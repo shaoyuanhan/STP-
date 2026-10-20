@@ -172,10 +172,15 @@ function renderVins(row: ShippingTaskListItem) {
   ])
 }
 
-function renderCarrierDriver(row: ShippingTaskListItem) {
+function renderCarrier(row: ShippingTaskListItem) {
   if (!row.carrier_name) return h('span', { class: 'muted' }, '-')
-  const text = row.driver_name ? `${row.carrier_name} / ${row.driver_name}` : `${row.carrier_name} / 司机待分配`
-  return h('span', { title: text }, text)
+  return h('span', { title: row.carrier_name }, row.carrier_name)
+}
+
+function renderDriver(row: ShippingTaskListItem) {
+  if (!row.carrier_name) return h('span', { class: 'muted' }, '-')
+  if (!row.driver_name) return h('span', { class: 'muted' }, '司机待分配')
+  return h('span', { title: row.driver_name }, row.driver_name)
 }
 
 function renderActions(row: ShippingTaskListItem) {
@@ -283,10 +288,17 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
     render: (row) => (row.arrive_time ? datetime(row.arrive_time) : '-'),
   },
   {
-    title: '承运商/司机',
-    key: 'carrier_driver',
-    minWidth: 160,
-    render: (row) => renderCarrierDriver(row),
+    title: '承运商',
+    key: 'carrier_name',
+    minWidth: 130,
+    ellipsis: { tooltip: true },
+    render: (row) => renderCarrier(row),
+  },
+  {
+    title: '司机',
+    key: 'driver_name',
+    width: 100,
+    render: (row) => renderDriver(row),
   },
   {
     title: '状态',
