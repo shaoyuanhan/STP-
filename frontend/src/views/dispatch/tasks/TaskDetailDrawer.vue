@@ -4,10 +4,10 @@
  *
  * 分区：基础信息（含 CRM 备注）/ 车辆信息（多车明细表 + 仓库库位 + 运费合计）/
  *       发运信息（未回传节点显示「待回传」灰字）/ 承运信息（派单备注 + 取消记录）/
- *       运输时间轴（status_log）/ 轨迹记录（若有）/ 电子签记录（若有）
+ *       运输时间轴（status_log）/ 轨迹记录（若有）
  *
  * 说明：基础信息/发运信息/承运信息用公共 DetailSection；
- *       车辆信息/时间轴/轨迹/电子签含表格或时间轴组件，
+ *       车辆信息/时间轴/轨迹含表格或时间轴组件，
  *       采用与 DetailSection 一致的分区头样式承载（NDescriptions 插槽仅接受 NDescriptionsItem）。
  */
 import { computed, h, ref, watch } from 'vue'
@@ -19,7 +19,6 @@ import StatusTag from '@/components/StatusTag.vue'
 import { getShippingTask } from '@/services/tasks'
 import { dateOnly, datetime, datetimeFull, formatPhone } from '@/utils/format'
 import type {
-  EsignRecord,
   ShippingTask,
   ShippingTaskDetail,
   ShippingTaskVehicle,
@@ -88,7 +87,6 @@ const task = computed<TaskHeadExt | null>(() => (detail.value?.task ?? null) as 
 const vehicles = computed<ShippingTaskVehicle[]>(() => detail.value?.vehicles ?? [])
 const statusLogs = computed<TaskStatusLog[]>(() => detail.value?.statusLogs ?? [])
 const tracks = computed<TransportTrack[]>(() => detail.value?.tracks ?? [])
-const esigns = computed<EsignRecord[]>(() => detail.value?.esigns ?? [])
 
 /** 派单备注：取最近一次派单/改派记录的 remark（契约：派单备注存 dispatch_record.remark） */
 const dispatchRemark = computed(() => {
@@ -168,6 +166,28 @@ const vehicleColumns: DataTableColumns<ShippingTaskVehicle> = [
 ]
 
 // ---------------- 运输时间轴（status_log 数据驱动，节点名对齐 PRD） ----------------
+/** 时间轴折叠（默认展开） */
+const timelineCollapsed = ref(false)
+
+const PHOTO_URL_RE = /https?:\/\/[^\s；;，,]+/g
+const IMG_EXT_RE = /\.(?:jpe?g|png|webp|gif|bmp)(?:\?\S*)?$/i
+
+/** 提车照片：优先取结构化 photos 字段，历史数据兜底从 remark 提取完整图片链接 */
+function logPhotos(log: TaskStatusLog): string[] {
+  if (log.photos) {
+    try {
+      const parsed = JSON.parse(log.photos)
+      if (Array.isArray(parsed)) {
+        return parsed.map((url) => String(url)).filter((url) => /^https?:\/\//i.test(url))
+      }
+    } catch {
+      // 非 JSON 时走 remark 兜底
+    }
+  }
+  if (!log.remark) return []
+  return (log.remark.match(PHOTO_URL_RE) ?? []).filter((url) => IMG_EXT_RE.test(url))
+}
+
 function timelineNodeName(log: TaskStatusLog): string {
   if (log.to_status === 'WAIT_DISPATCH') {
     return log.from_status ? '取消派单，回退待派单' : 'CRM 下发发运申请'
@@ -185,7 +205,11 @@ function timelineNodeName(log: TaskStatusLog): string {
 
 function timelineContent(log: TaskStatusLog): string {
   const parts: string[] = []
-  if (log.remark) parts.push(log.remark)
+  // 照片单独以缩略图呈现，正文剥离 remark 中的照片 URL 串，避免撑开节点
+  const remark = logPhotos(log).length
+    ? (log.remark ?? '').replace(/[；;]\s*提车照片[:：][\s\S]*$/, '')
+    : log.remark
+  if (remark) parts.push(remark)
   const sourceLabels: Record<string, string> = {
     STP: 'STP 系统', CRM: 'CRM 系统', SQ: '狮桥物流', CARRIER: '承运商', WMS: 'WMS 系统',
   }
@@ -229,35 +253,6 @@ const trackColumns: DataTableColumns<TransportTrack> = [
   },
 ]
 
-// ---------------- 电子签记录 ----------------
-const esignColumns: DataTableColumns<EsignRecord> = [
-  { title: '电子签 ID', key: 'esign_id', width: 150, render: (row) => row.esign_id || '-' },
-  {
-    title: 'VIN',
-    key: 'vin',
-    width: 190,
-    ellipsis: { tooltip: true },
-    render: (row) => row.vin || '-',
-  },
-  {
-    title: '状态',
-    key: 'sign_status',
-    width: 100,
-    render: (row) => h(StatusTag, { type: 'esign', value: row.sign_status }),
-  },
-  {
-    title: '发起时间',
-    key: 'initiate_time',
-    width: 150,
-    render: (row) => (row.initiate_time ? datetime(row.initiate_time) : '-'),
-  },
-  {
-    title: '签署时间',
-    key: 'sign_time',
-    width: 150,
-    render: (row) => (row.sign_time ? datetime(row.sign_time) : '-'),
-  },
-]
 </script>
 
 <template>
@@ -396,18 +391,45 @@ const esignColumns: DataTableColumns<EsignRecord> = [
             <div class="drawer-section__header">
               <span class="drawer-section__bar"></span>
               <h3 class="drawer-section__title">运输时间轴</h3>
+              <button
+                v-if="statusLogs.length"
+                type="button"
+                class="drawer-section__toggle"
+                @click="timelineCollapsed = !timelineCollapsed"
+              >
+                {{ timelineCollapsed ? '展开' : '收起' }}
+                <span class="drawer-section__arrow" :class="{ 'is-collapsed': timelineCollapsed }">▾</span>
+              </button>
             </div>
-            <n-timeline v-if="statusLogs.length" class="drawer-section__timeline">
-              <n-timeline-item
-                v-for="(log, index) in statusLogs"
-                :key="log.id ?? index"
-                :type="timelineType(log)"
-                :title="timelineNodeName(log)"
-                :content="timelineContent(log)"
-                :time="log.create_time ? datetimeFull(log.create_time) : undefined"
-              />
-            </n-timeline>
-            <div v-else class="drawer-section__empty">暂无执行节点</div>
+            <div v-show="!timelineCollapsed">
+              <n-timeline v-if="statusLogs.length" class="drawer-section__timeline">
+                <n-timeline-item
+                  v-for="(log, index) in statusLogs"
+                  :key="log.id ?? index"
+                  :type="timelineType(log)"
+                  :title="timelineNodeName(log)"
+                  :time="log.create_time ? datetimeFull(log.create_time) : undefined"
+                >
+                  <div class="tl-body">
+                    <div class="tl-text">{{ timelineContent(log) }}</div>
+                    <n-image-group v-if="logPhotos(log).length">
+                      <div class="tl-photos" :class="{ 'tl-photos--compact': logPhotos(log).length >= 4 }">
+                        <n-image
+                          v-for="(url, photoIndex) in logPhotos(log)"
+                          :key="photoIndex"
+                          :src="url"
+                          :width="logPhotos(log).length >= 4 ? 56 : 76"
+                          :height="logPhotos(log).length >= 4 ? 56 : 76"
+                          object-fit="cover"
+                          class="tl-photo"
+                        />
+                      </div>
+                    </n-image-group>
+                  </div>
+                </n-timeline-item>
+              </n-timeline>
+              <div v-else class="drawer-section__empty">暂无执行节点</div>
+            </div>
           </section>
 
           <!-- 轨迹记录（若有） -->
@@ -426,21 +448,6 @@ const esignColumns: DataTableColumns<EsignRecord> = [
             />
           </section>
 
-          <!-- 电子签记录（若有） -->
-          <section v-if="esigns.length" class="drawer-section">
-            <div class="drawer-section__header">
-              <span class="drawer-section__bar"></span>
-              <h3 class="drawer-section__title">电子签记录（{{ esigns.length }} 条）</h3>
-            </div>
-            <n-data-table
-              :columns="esignColumns"
-              :data="esigns"
-              :row-key="(row: EsignRecord) => row.id ?? row.esign_id"
-              size="small"
-              :bordered="true"
-              :scroll-x="740"
-            />
-          </section>
         </div>
       </n-spin>
     </n-drawer-content>
@@ -520,6 +527,60 @@ const esignColumns: DataTableColumns<EsignRecord> = [
 
 .drawer-section__timeline {
   padding: 4px 2px 0;
+}
+
+.drawer-section__toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: #8c8c8c;
+  cursor: pointer;
+}
+
+.drawer-section__toggle:hover {
+  color: #1677ff;
+}
+
+.drawer-section__arrow {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+
+.drawer-section__arrow.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.tl-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tl-text {
+  white-space: pre-line;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #595959;
+}
+
+.tl-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tl-photo {
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #f0f0f0;
+  background: #fafafa;
 }
 
 .drawer-section__empty {

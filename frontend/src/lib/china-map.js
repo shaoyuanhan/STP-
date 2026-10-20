@@ -72,6 +72,42 @@ function matchCityGeo(text) {
   return null;
 }
 
+/** 城市 → 省份（覆盖内置城市坐标库，用于「苏州/深圳」等非省会城市归属） */
+const CITY_PROV = {
+  合肥: '安徽', 六安: '安徽', 巢湖: '安徽', 淮南: '安徽', 蚌埠: '安徽', 宿州: '安徽',
+  芜湖: '安徽', 马鞍山: '安徽', 安庆: '安徽', 阜阳: '安徽', 滁州: '安徽', 淮北: '安徽',
+  铜陵: '安徽', 宣城: '安徽', 池州: '安徽', 黄山: '安徽', 亳州: '安徽',
+  宿迁: '江苏', 南京: '江苏', 常州: '江苏', 苏州: '江苏', 徐州: '江苏', 无锡: '江苏',
+  南通: '江苏', 镇江: '江苏', 扬州: '江苏', 泰州: '江苏', 盐城: '江苏', 连云港: '江苏',
+  淮安: '江苏', 宿: '江苏',
+  上海: '上海', 杭州: '浙江', 宁波: '浙江', 温州: '浙江', 嘉兴: '浙江', 绍兴: '浙江',
+  金华: '浙江', 台州: '浙江',
+  郑州: '河南', 洛阳: '河南', 开封: '河南',
+  长沙: '湖南', 株洲: '湖南', 武汉: '湖北', 宜昌: '湖北', 襄阳: '湖北',
+  北京: '北京', 天津: '天津',
+  济南: '山东', 青岛: '山东', 烟台: '山东', 临沂: '山东', 济宁: '山东', 淄博: '山东',
+  太原: '山西', 石家庄: '河北', 唐山: '河北', 保定: '河北',
+  南昌: '江西', 九江: '江西',
+  广州: '广东', 深圳: '广东', 东莞: '广东', 佛山: '广东',
+  重庆: '重庆', 成都: '四川', 西安: '陕西', 福州: '福建', 厦门: '福建',
+  昆明: '云南', 贵阳: '贵州', 南宁: '广西', 兰州: '甘肃', 西宁: '青海',
+  银川: '宁夏', 拉萨: '西藏', 海口: '海南', 三亚: '海南',
+  哈尔滨: '黑龙江', 长春: '吉林', 沈阳: '辽宁', 大连: '辽宁',
+  呼和浩特: '内蒙古', 包头: '内蒙古',
+  乌鲁木齐: '新疆', 吐鲁番: '新疆', 喀什: '新疆',
+};
+
+/** 从文本中提取省份名：先匹配省名，再按城市 → 省份归属表反查 */
+function matchProvince(text) {
+  const s = String(text ?? '').trim();
+  if (!s) return null;
+  for (const p of Object.keys(PROV_CITY)) {
+    if (s.includes(p)) return p;
+  }
+  const hit = matchCityGeo(s);
+  return hit ? CITY_PROV[hit.city] || null : null;
+}
+
 // ---- 经纬度 → 地图坐标（与数据构建投影一致） ----
 const M = CHINA_MAP;
 const toXY = (lng, lat) => [
@@ -93,20 +129,97 @@ function smoothPath(pts) {
   return d;
 }
 
+/** 地图画布基准（与 svg 基础 viewBox 一致） */
+const CANVAS = { w: 1000, h: 674 };
+
 /**
- * 渲染中国地图 + 运输路径
+ * 计算自适应视野：按起点/终点/回传点外接框放大，并贴合容器宽高比
+ * @returns {{x:number,y:number,w:number,h:number}}
+ */
+function computeView(el, points) {
+  if (!points.length) return { x: 0, y: 0, w: CANVAS.w, h: CANVAS.h };
+
+  const cw = el.clientWidth || 900;
+  const ch = Math.max((el.clientHeight || 560) - 38, 220);
+  const aspect = cw / ch;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of points) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  const pad = Math.max(Math.max(spanX, spanY) * 0.35, 16);
+  let w = spanX + pad * 2;
+  let h = spanY + pad * 2;
+  if (w / h < aspect) w = h * aspect;
+  else h = w / aspect;
+  // 最小视野：单点或极短路径时避免贴脸放大
+  if (w < 110) {
+    const k = 110 / w;
+    w *= k;
+    h *= k;
+  }
+
+  let x = (minX + maxX) / 2 - w / 2;
+  let y = (minY + maxY) / 2 - h / 2;
+  x = w >= CANVAS.w ? (CANVAS.w - w) / 2 : Math.min(Math.max(x, 0), CANVAS.w - w);
+  y = h >= CANVAS.h ? (CANVAS.h - h) / 2 : Math.min(Math.max(y, 0), CANVAS.h - h);
+  return { x: +x.toFixed(1), y: +y.toFixed(1), w: +w.toFixed(1), h: +h.toFixed(1) };
+}
+
+/**
+ * 渲染中国地图 + 运输路径（视野可自适应放大，也支持全国总览）
  * opts = {
  *   origin: {label, lng, lat}, dest: {label, lng, lat},
- *   stops: [{lng, lat, tip}], cur: {lng, lat, tip} | null,
- *   provincesHL: [省名] 高亮省份
+ *   stops: [{lng, lat, tip, index}], cur: {lng, lat, tip, index} | null,
+ *   active: {lng, lat} | null 高亮选中的回传点,
+ *   provincesHL: [省名],
+ *   fit: 是否按起终点自适应放大（默认 true；false = 全国视图），
+ *   heat: {省名: 单量} 省份热力,
+ *   bubbles: [{key, name, lng, lat, count, active}] 聚合气泡,
+ *   tags: [{id, name, lng, lat, active}] 单票运单号标签（可点击选中运单）,
+ *   links: [{id, points: [[lng,lat],...], active, label}] 多运单线路,
+ *   legend: [{color, text}] 自定义图例（缺省用起终点图例）,
+ *   keepView: 保持上一次的缩放/平移视野（仅高亮点、刷新等轻量更新时使用）,
+ *   onSelect(index) / onSelectTask(id) / onSelectProvince(name) / onSelectBubble(key) 点击回调
  * }
  */
 function renderChinaMap(el, opts = {}) {
-  const { origin, dest, stops = [], cur, provincesHL = [] } = opts;
-  const vbH = M.vb[3];
-  const provPaths = M.provinces.map((p) =>
-    `<path class="mp-prov${provincesHL.includes(p.name) ? ' hl' : ''}" d="${p.d}" data-name="${p.name}"><title>${p.name}</title></path>`
-  ).join('');
+  const {
+    origin, dest, stops = [], cur, active, provincesHL = [],
+    fit = true, heat = null, bubbles = [], tags = [], links = [], legend = null,
+    keepView = false, mode = 'transit',
+    onSelect, onSelectTask, onSelectProvince, onSelectBubble,
+  } = opts;
+
+  /** 到达热度 4 级暖色：单量越多越深，与蓝色线路形成对比 */
+  const HEAT_COLORS = ['#ffe7b8', '#ffc580', '#ff9c40', '#f56a00'];
+  const heatColor = (ratio) =>
+    HEAT_COLORS[ratio >= 0.99 ? 3 : ratio >= 0.66 ? 2 : ratio >= 0.33 ? 1 : 0];
+
+  const points = [origin, ...stops, cur, dest]
+    .filter((p) => p && p.geo2)
+    .map((p) => p.geo2);
+  const view = fit ? computeView(el, points) : { x: 0, y: 0, w: CANVAS.w, h: CANVAS.h };
+
+  // 屏幕像素 → 地图单位，marker 保持稳定的视觉尺寸
+  const cw = el.clientWidth || 900;
+  const ch = Math.max((el.clientHeight || 560) - 38, 220);
+  const scale = Math.min(cw / view.w, ch / view.h) || 1;
+  const u = (px) => +(px / scale).toFixed(2);
+
+  const heatMax = heat ? Math.max(0, ...Object.values(heat)) : 0;
+  const provPaths = M.provinces.map((p) => {
+    const n = heat ? heat[p.name] || 0 : 0;
+    const ratio = heatMax ? n / heatMax : 0;
+    const style = heat && n ? ` style="fill:${heatColor(ratio)}"` : '';
+    return `<path class="mp-prov${provincesHL.includes(p.name) ? ' hl' : ''}${heat ? ' mp-heat' : ''}" d="${p.d}" data-name="${p.name}"${heat ? ` data-province="${p.name}"` : ''}${style} vector-effect="non-scaling-stroke"><title>${p.name}${heat && n ? ` · ${n} 单` : ''}</title></path>`;
+  }).join('');
 
   // 运输路径：起点 → 历史位置点 → 当前位置 → 终点（平滑曲线）
   const routePts = [];
@@ -116,72 +229,293 @@ function renderChinaMap(el, opts = {}) {
   if (dest?.geo2) routePts.push(dest.geo2);
   const routeD = routePts.length >= 2 ? smoothPath(routePts) : '';
 
-  // marker 生成器
+  // 多运单线路（总览层）：点击可选中对应运单
+  const linkEls = links
+    .map((link) => {
+      const pts = (link.points || [])
+        .map(([lng, lat]) => [Number(lng), Number(lat)])
+        .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat))
+        .map(([lng, lat]) => toXY(lng, lat));
+      if (pts.length < 2) return '';
+      const d = smoothPath(pts);
+      // 透明加宽热区（16px）垫在线路下方：细线也能轻松点中
+      return `<path class="mp-link-hit" d="${d}" data-task-id="${link.id}" vector-effect="non-scaling-stroke"></path>
+        <path class="mp-link${link.active ? ' active' : ''}" d="${d}" data-task-id="${link.id}" vector-effect="non-scaling-stroke"><title>${link.label || ''}</title></path>`;
+    })
+    .join('');
+
+  // marker 生成器（index 存在时可点击选中）
   const marker = (m, cls, label) => {
     if (!m?.geo2) return '';
     const [x, y] = m.geo2;
-    return `<g class="mp-marker ${cls}" transform="translate(${x},${y})">
-      <circle class="mp-pulse" r="9"/>
-      <circle class="mp-core" r="5"/>
-      <text x="0" y="${cls === 'end' ? 22 : -12}">${label || ''}</text>
+    const clickable = m.index !== undefined && m.index !== null;
+    return `<g class="mp-marker ${cls}" transform="translate(${x},${y})"${clickable ? ` data-track-index="${m.index}"` : ''}>
+      <circle class="mp-pulse" r="${u(9)}" data-r-px="9"/>
+      <circle class="mp-core" r="${u(5)}" data-r-px="5" vector-effect="non-scaling-stroke"/>
+      <text x="0" y="${cls === 'end' ? u(20) : -u(11)}" data-fs-px="13" style="font-size:${u(13)}px;stroke-width:${u(3)}px">${label || ''}</text>
       ${m.tip ? `<title>${m.tip}</title>` : ''}
     </g>`;
   };
-  const stopDots = stops.filter((s) => s.geo2).map((s) =>
-    `<circle class="mp-stop" cx="${s.geo2[0]}" cy="${s.geo2[1]}" r="3"><title>${s.tip || '途经位置'}</title></circle>`
-  ).join('');
+  const stopDots = stops
+    .filter((s) => s.geo2)
+    .map(
+      (s) =>
+        `<circle class="mp-stop${s.index !== undefined ? ' mp-clickable' : ''}" cx="${s.geo2[0]}" cy="${s.geo2[1]}" r="${u(3.5)}" data-r-px="3.5"${s.index !== undefined ? ` data-track-index="${s.index}"` : ''} vector-effect="non-scaling-stroke"><title>${s.tip || '途经位置'}</title></circle>`
+    )
+    .join('');
+
+  // 聚合气泡（同城/同省单量）
+  const bubbleEls = bubbles
+    .map((b) => {
+      const lng = Number(b.lng);
+      const lat = Number(b.lat);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return '';
+      const [x, y] = toXY(lng, lat);
+      const count = Math.max(1, Number(b.count) || 1);
+      // hideCount：单票点位只画小圆点，不显示数字/名称，避免遮挡线路
+      const rPx = b.hideCount ? 5 : 8 + Math.min(10, Math.sqrt(count) * 3);
+      const r = u(rPx);
+      return `<g class="mp-bubble${b.hideCount ? ' is-dot' : ''}${b.active ? ' active' : ''}" transform="translate(${x},${y})" data-bubble-key="${b.key}">
+        <circle r="${r}" data-r-px="${rPx}" vector-effect="non-scaling-stroke"/>
+        ${b.hideCount ? '' : `<text y="${u(4)}" data-fs-px="12" style="font-size:${u(12)}px">${count}</text>`}
+        ${!b.hideCount && b.name ? `<text class="mp-bubble-name" y="${+(r + u(13)).toFixed(1)}" data-fs-px="11" style="font-size:${u(11)}px">${b.name}</text>` : ''}
+        <title>${b.tip || `${b.name || ''} · ${count} 单`}</title>
+      </g>`;
+    })
+    .join('');
+
+  // 单票运单号标签（同城仅一单时直接显示单号，点击选中该运单）
+  const tagEls = tags
+    .map((t) => {
+      const lng = Number(t.lng);
+      const lat = Number(t.lat);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return '';
+      const [x, y] = toXY(lng, lat);
+      const text = String(t.name ?? '');
+      const w = u(14) + text.length * u(6.8);
+      const h = u(19);
+      const top = -h - u(7);
+      return `<g class="mp-tag${t.active ? ' active' : ''}" transform="translate(${x},${y})" data-task-id="${t.id}">
+        <line class="mp-tag-line" x1="0" y1="${top.toFixed(1)}" x2="0" y2="0" vector-effect="non-scaling-stroke"/>
+        <circle class="mp-tag-dot" r="${u(2.4)}" vector-effect="non-scaling-stroke"/>
+        <rect x="${(-w / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="${u(4)}" vector-effect="non-scaling-stroke"/>
+        <text x="0" y="${(top + h / 2 + u(4)).toFixed(1)}" text-anchor="middle" style="font-size:${u(11)}px">${text}</text>
+        <title>${text}</title>
+      </g>`;
+    })
+    .join('');
+
+  const activeRing = active?.geo2
+    ? `<circle class="mp-ring" cx="${active.geo2[0]}" cy="${active.geo2[1]}" r="${u(10)}" data-r-px="10" vector-effect="non-scaling-stroke"/>`
+    : '';
+  // 视野放大后不再绘制南海诸岛插图（插图坐标基于全图）
+  const showInset = view.w >= 700;
+  // 轻量更新（切换高亮点、自动刷新）前记录当前视野，渲染后恢复
+  const prevViewBox = keepView ? el.querySelector('.mp-svg')?.getAttribute('viewBox') : null;
 
   el.innerHTML = `
-  <div class="mp-wrap">
-    <svg class="mp-svg" viewBox="0 0 1000 674" preserveAspectRatio="xMidYMid meet" role="img">
+  <div class="mp-wrap mp-mode-${mode === 'history' ? 'history' : 'transit'}">
+    <svg class="mp-svg" viewBox="${view.x} ${view.y} ${view.w} ${view.h}" preserveAspectRatio="xMidYMid meet" role="img">
       <g class="mp-land">${provPaths}</g>
-      <path class="mp-outline" d="${M.outline}"/>
-      <path class="mp-dash" d="${M.nineDash}"/>
-      ${routeD ? `<path class="mp-route" d="${routeD}"/><path class="mp-route-flow" d="${routeD}"/>` : ''}
+      <path class="mp-outline" d="${M.outline}" vector-effect="non-scaling-stroke"/>
+      <path class="mp-dash" d="${M.nineDash}" vector-effect="non-scaling-stroke"/>
+      ${linkEls}
+      ${routeD ? `<path class="mp-route" d="${routeD}" vector-effect="non-scaling-stroke"/><path class="mp-route-flow" d="${routeD}" vector-effect="non-scaling-stroke"/>` : ''}
+      ${activeRing}
       ${stopDots}
+      ${bubbleEls}
+      ${tagEls}
       ${marker(origin, 'start', origin?.label)}
       ${marker(dest, 'end', dest?.label)}
       ${marker(cur, 'cur', '当前位置')}
-      <!-- 南海诸岛标框（规范全图画法） -->
-      <svg class="mp-inset" x="768" y="404" width="216" height="256" viewBox="752 660 248 336">
+      <!-- 南海诸岛标框（仅全图视野） -->
+      ${showInset ? `<svg class="mp-inset" x="768" y="404" width="216" height="256" viewBox="752 660 248 336">
         <path class="mp-prov" d="${M.provinces.find((p) => p.name === '海南')?.d || ''}"/>
         <path class="mp-dash" d="${M.nineDash}"/>
         <text class="mp-inset-tt" x="10" y="18">南海诸岛</text>
         <rect class="mp-inset-bd" x="1" y="1" width="214" height="254"/>
-      </svg>
+      </svg>` : ''}
     </svg>
+    <div class="mp-zoom">
+      <button type="button" data-zoom="in" title="放大（滚轮向上）">+</button>
+      <button type="button" data-zoom="out" title="缩小（滚轮向下）">−</button>
+      <button type="button" data-zoom="reset" title="复位（双击地图）">⟲</button>
+    </div>
     <div class="mp-legend">
-      <span><i class="lg lg-start"></i>起始地：${opts.originLabel || '-'}</span>
+      ${
+        Array.isArray(legend) && legend.length
+          ? legend
+              .map((item) => `<span><i class="lg" style="background:${item.color}"></i>${item.text}</span>`)
+              .join('')
+          : `<span><i class="lg lg-start"></i>起始地：${opts.originLabel || '-'}</span>
       <span><i class="lg lg-end"></i>目的地：${opts.destLabel || '-'}</span>
       ${cur ? `<span><i class="lg lg-cur"></i>当前位置：${opts.curLabel || ''}</span>` : ''}
-      <span><i class="lg lg-stop"></i>位置回传点</span>
+      ${stops.length ? '<span><i class="lg lg-stop"></i>位置回传点</span>' : ''}`
+      }
     </div>
   </div>`;
-}
 
-/**
- * 渲染"整体路径放大界面"：横向串联 起点 → 位置回传点(按时间序) → 终点
- * stops = [{name, time, speed, cur}] cur 标记最新位置
- */
-/**
- * 路径放大视图
- * @param {HTMLElement} el
- * @param {{ originLabel?: string, destLabel?: string, stops?: Array<{ name?: string, meta?: string, cur?: boolean, tip?: string }>, done?: boolean }} opts
- */
-function renderRouteZoom(el, { originLabel, destLabel, stops = [], done = false }) {
-  const item = (name, meta, cls, tip) => `
-    <div class="rz-item ${cls}" ${tip ? `title="${tip}"` : ''}>
-      <div class="rz-dot">${cls === 'start' ? '起' : cls === 'end' ? '终' : ''}</div>
-      <div class="rz-name">${name}</div>
-      ${meta ? `<div class="rz-meta">${meta}</div>` : ''}
-    </div>`;
-  el.innerHTML = `
-  <div class="rz-wrap${done ? ' done' : ''}">
-    <div class="rz-track"></div>
-    ${item(originLabel || '起点', '发运地', 'start')}
-    ${stops.map((s) => item(s.name, s.meta, s.cur ? 'cur' : 'stop', s.tip)).join('')}
-    ${item(destLabel || '终点', done ? '已到达' : '目的地', 'end')}
-  </div>`;
+  // ---- 视野交互：滚轮缩放 + 拖拽平移 + 双击复位 ----
+  const svg = el.querySelector('.mp-svg');
+  if (svg) {
+    const baseView = { x: view.x, y: view.y, w: view.w, h: view.h };
+    const ratio = baseView.h / baseView.w;
+    const minW = Math.max(24, baseView.w / 14);
+    const maxW = Math.max(CANVAS.w, baseView.w) * 1.05;
+    let box = { ...baseView };
+    const insetEl = svg.querySelector('.mp-inset');
+
+    /** 缩放时保持圆点/字号为固定屏幕尺寸，避免放大后 marker 变成大圆饼 */
+    const keepScreenSize = () => {
+      const rect = svg.getBoundingClientRect();
+      const scale = Math.min((rect.width || 1) / box.w, (rect.height || 1) / box.h) || 1;
+      svg.querySelectorAll('[data-r-px]').forEach((node) => {
+        node.setAttribute('r', (Number(node.getAttribute('data-r-px')) / scale).toFixed(2));
+      });
+      svg.querySelectorAll('[data-fs-px]').forEach((node) => {
+        node.style.fontSize = `${(Number(node.getAttribute('data-fs-px')) / scale).toFixed(2)}px`;
+      });
+    };
+
+    const applyView = () => {
+      svg.setAttribute(
+        'viewBox',
+        `${box.x.toFixed(1)} ${box.y.toFixed(1)} ${box.w.toFixed(1)} ${box.h.toFixed(1)}`
+      );
+      if (insetEl) insetEl.style.display = box.w >= 700 ? '' : 'none';
+      keepScreenSize();
+    };
+
+    const clampPos = () => {
+      if (box.w >= CANVAS.w) box.x = (CANVAS.w - box.w) / 2;
+      else box.x = Math.min(Math.max(box.x, 0), CANVAS.w - box.w);
+      if (box.h >= CANVAS.h) box.y = (CANVAS.h - box.h) / 2;
+      else box.y = Math.min(Math.max(box.y, 0), CANVAS.h - box.h);
+    };
+
+    const zoomAt = (cx, cy, factor) => {
+      const nw = Math.min(maxW, Math.max(minW, box.w * factor));
+      if (nw === box.w) return;
+      const k = nw / box.w;
+      box.x = cx - (cx - box.x) * k;
+      box.y = cy - (cy - box.y) * k;
+      box.w = nw;
+      box.h = nw * ratio;
+      clampPos();
+      applyView();
+    };
+
+    const toLocal = (clientX, clientY) => {
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return [box.x + box.w / 2, box.y + box.h / 2];
+      const pt = svg.createSVGPoint();
+      pt.x = clientX;
+      pt.y = clientY;
+      const local = pt.matrixTransform(ctm.inverse());
+      return [local.x, local.y];
+    };
+
+    svg.addEventListener(
+      'wheel',
+      (event) => {
+        event.preventDefault();
+        const [cx, cy] = toLocal(event.clientX, event.clientY);
+        zoomAt(cx, cy, Math.exp(event.deltaY * 0.0015));
+      },
+      { passive: false }
+    );
+
+    let drag = null;
+    let dragged = false;
+
+    svg.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      drag = { x: event.clientX, y: event.clientY, box: { ...box }, pointerId: event.pointerId };
+      dragged = false;
+      // 不在 pointerdown 立即捕获指针：否则 click 会被重定向到 svg，线路/点位点不中
+    });
+
+    svg.addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      const dx = event.clientX - drag.x;
+      const dy = event.clientY - drag.y;
+      if (!dragged && Math.abs(dx) + Math.abs(dy) > 4) {
+        dragged = true;
+        svg.setPointerCapture?.(drag.pointerId);
+        svg.classList.add('is-dragging');
+      }
+      if (!dragged) return;
+      const rect = svg.getBoundingClientRect();
+      box.x = drag.box.x - (dx * drag.box.w) / (rect.width || 1);
+      box.y = drag.box.y - (dy * drag.box.h) / (rect.height || 1);
+      clampPos();
+      applyView();
+    });
+
+    const endDrag = () => {
+      if (!drag) return;
+      drag = null;
+      svg.classList.remove('is-dragging');
+      // 拖拽结束后紧随的 click 不应触发运单/点位选中
+      setTimeout(() => {
+        dragged = false;
+      }, 0);
+    };
+
+    svg.addEventListener('pointerup', endDrag);
+    svg.addEventListener('pointercancel', endDrag);
+    svg.addEventListener('dblclick', () => {
+      box = { ...baseView };
+      applyView();
+    });
+    svg.addEventListener(
+      'click',
+      (event) => {
+        if (!dragged) return;
+        event.stopPropagation();
+        event.preventDefault();
+      },
+      true
+    );
+
+    if (prevViewBox) {
+      const [px, py, pw, ph] = prevViewBox.split(/\s+/).map(Number);
+      if ([px, py, pw, ph].every((n) => Number.isFinite(n))) {
+        box = { x: px, y: py, w: Math.min(maxW, Math.max(minW, pw)), h: Math.min(maxW, Math.max(minW, pw)) * ratio };
+        clampPos();
+        applyView();
+        void ph;
+      }
+    }
+
+    el.querySelectorAll('[data-zoom]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const action = btn.getAttribute('data-zoom');
+        if (action === 'reset') {
+          box = { ...baseView };
+          applyView();
+          return;
+        }
+        zoomAt(box.x + box.w / 2, box.y + box.h / 2, action === 'in' ? 0.72 : 1.38);
+      });
+    });
+  }
+
+  const bind = (selector, attr, callback, mapValue) => {
+    if (!callback) return;
+    el.querySelectorAll(selector).forEach((node) => {
+      node.style.cursor = 'pointer';
+      node.addEventListener('click', (event) => {
+        event.stopPropagation();
+        callback(mapValue(node.getAttribute(attr)));
+      });
+    });
+  };
+  bind('[data-track-index]', 'data-track-index', onSelect, Number);
+  bind('[data-task-id]', 'data-task-id', onSelectTask, Number);
+  bind('[data-province]', 'data-province', onSelectProvince, String);
+  bind('[data-bubble-key]', 'data-bubble-key', onSelectBubble, String);
 }
 
 // ---- ESM 导出（供 Vue3 工程 ChinaMap 组件按需导入；不影响原有全局用法） ----
@@ -190,8 +524,8 @@ export {
   CITY_GEO,
   PROV_CITY,
   matchCityGeo,
+  matchProvince,
   toXY,
   smoothPath,
   renderChinaMap,
-  renderRouteZoom,
 };

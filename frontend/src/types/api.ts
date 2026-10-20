@@ -86,8 +86,13 @@ export type TaskAllowedAction = 'DISPATCH' | 'BATCH_DISPATCH' | 'CANCEL_DISPATCH
 /** 派单记录动作（dispatch_record.action） */
 export type DispatchRecordAction = 'DISPATCH' | 'REASSIGN' | 'CANCEL_DISPATCH'
 
-/** 外部状态回传动作（接口 #12：ACCEPT/PICKUP/ARRIVE/FINISH） */
-export type ExternalTaskAction = 'ACCEPT' | 'PICKUP' | 'ARRIVE' | 'FINISH'
+/** 外部状态回传公共定位字段（接口 #12，四个接口共用） */
+export type ExternalTaskRef = {
+  applyNo?: string
+  taskNo?: string
+  /** 回传承运商名称，须与任务当前承运商一致，不传按狮桥物流留痕 */
+  carrierName?: string
+}
 
 /** 状态日志来源（task_status_log.source） */
 export type StatusLogSource = 'STP' | 'CRM' | 'SQ' | 'CARRIER' | 'WMS'
@@ -306,6 +311,8 @@ export interface TaskStatusLog {
   source?: StatusLogSource
   operator?: string | null
   remark?: string | null
+  /** 提车照片 URL 列表（后端 TEXT 存 JSON 数组字符串） */
+  photos?: string | null
   create_time?: string | null
 }
 
@@ -406,25 +413,44 @@ export interface LatestTrack {
   report_time?: string
 }
 
-/** 在途任务列表行（未终态任务，IN_TRANSIT 最优先，契约 5.5） */
+/** 在途任务列表行（scope=transit 仅在途；scope=history 仅已完结，契约 5.5） */
 export interface TrackingTask {
   id: number
   task_no: string
   apply_no?: string
   customer_name?: string
   vins?: string
+  vehicle_models?: string
   carrier_name?: string | null
   driver_name?: string | null
   driver_phone?: string | null
   ship_location?: string | null
   delivery_address?: string | null
   status: TaskStatus
+  ship_time?: string | null
+  outbound_date?: string | null
+  arrive_time?: string | null
+  finish_time?: string | null
+  create_time?: string
   latest_track?: LatestTrack | null
 }
 
 export interface TrackingQuery extends PageQuery {
+  /** transit=在途监控（默认）；history=已完结历史轨迹 */
+  scope?: 'transit' | 'history'
   task_no?: string
   transport_no?: string
+}
+
+/** 全国态势行：列表字段 + 轨迹折线（经纬度对，已降采样） */
+export interface TrackingOverviewTask extends TrackingTask {
+  points: Array<[number, number]>
+}
+
+/** 全国态势响应（契约 5.5 GET /api/tracking/overview） */
+export interface TrackingOverview {
+  scope: 'transit' | 'history'
+  tasks: TrackingOverviewTask[]
 }
 
 /** 在途任务详情响应（契约 5.5；tracks 时间升序） */
@@ -631,21 +657,33 @@ export interface ExternalDriverSyncPayload {
   carrierId?: number | string
 }
 
-/** #12 狮桥任务状态回传 */
-export interface ExternalStatusSyncPayload {
-  action: ExternalTaskAction
-  applyNo?: string
-  taskNo?: string
-  /** ACCEPT 时回填司机 */
-  driverId?: number | string
-  planPickupDate?: string
-  /** PICKUP 提车照片 URL 列表 */
-  photos?: string[]
-  /** ARRIVE 实际运费 */
-  actualFreight?: number | string
-  /** ARRIVE 里程 */
-  mileage?: number | string
+/** #12 承运商接单（分配司机；计划提车日期由 CRM 发运申请下发，不在此接口） */
+export interface ExternalAcceptPayload extends ExternalTaskRef {
+  driverId: number | string
 }
+
+/** #12 司机确认提车（=发运，含提车照片） */
+export interface ExternalPickupPayload extends ExternalTaskRef {
+  /** 实际提车日期（YYYY-MM-DD，即发运时间，不得晚于当天） */
+  actualPickupDate?: string
+  /** 提车照片 URL 列表 */
+  photos?: string[]
+}
+
+/** #12 司机到达（回填实际运费/里程/到达时间） */
+export interface ExternalArrivePayload extends ExternalTaskRef {
+  /** 实际运费 */
+  actualFreight?: number | string
+  /** 里程 */
+  mileage?: number | string
+  /** 到达时间（YYYY-MM-DD HH:mm:ss，不传取当前时间，不得晚于当前时间） */
+  arriveTime?: string
+  /** 逐车实际运费 */
+  vehicles?: Array<{ vin: string; actualFreight: number | string }>
+}
+
+/** #12 司机完结 */
+export type ExternalFinishPayload = ExternalTaskRef
 
 /** #14 狮桥电子签状态回传 */
 export interface EsignSignStatusPayload {

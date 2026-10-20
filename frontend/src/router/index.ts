@@ -40,11 +40,14 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/dispatch/tasks/index.vue'),
         meta: { title: '发运任务', group: '运输调度' },
       },
+      // 旧「全国态势 / 历史轨迹」入口统一并入运输监控，保留链接兼容
+      { path: 'tracking/overview', redirect: '/tracking' },
+      { path: 'tracking/history', redirect: '/tracking?scope=history' },
       {
         path: 'tracking',
         name: 'tracking',
         component: () => import('@/views/dispatch/tracking/index.vue'),
-        meta: { title: '在途监控', group: '运输调度' },
+        meta: { title: '运输监控', group: '运输调度' },
       },
       {
         path: 'freight',

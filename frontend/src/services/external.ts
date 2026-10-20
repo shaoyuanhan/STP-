@@ -9,9 +9,12 @@ import type {
   EsignReceiptResult,
   EsignSignStatusPayload,
   EsignSyncPayload,
+  ExternalAcceptPayload,
+  ExternalArrivePayload,
   ExternalCancelPayload,
   ExternalDriverSyncPayload,
-  ExternalStatusSyncPayload,
+  ExternalFinishPayload,
+  ExternalPickupPayload,
   ReceiveTaskPayload,
   WmsOutboundPayload,
 } from '@/types/api'
@@ -70,11 +73,32 @@ export function syncExternalDriver(
   return post<Record<string, unknown>>('/external/drivers/sync', payload)
 }
 
-/** #12 狮桥任务状态回传（ACCEPT/PICKUP/ARRIVE/FINISH；ARRIVE 生成运费单 YF 单号） */
-export function syncTaskStatus(
-  payload: ExternalStatusSyncPayload,
+/** #12 承运商接单（DISPATCHED→CARRIER_ACCEPTED，分配司机） */
+export function acceptShippingTask(
+  payload: ExternalAcceptPayload,
 ): Promise<Record<string, unknown>> {
-  return post<Record<string, unknown>>('/external/shipping-tasks/status-sync', payload)
+  return post<Record<string, unknown>>('/external/shipping-tasks/accept', payload)
+}
+
+/** #12 司机确认提车（CARRIER_ACCEPTED→PICKED，含提车照片） */
+export function pickupShippingTask(
+  payload: ExternalPickupPayload,
+): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/external/shipping-tasks/pickup', payload)
+}
+
+/** #12 司机到达（IN_TRANSIT→ARRIVED，回填实际运费/里程并生成运费单） */
+export function arriveShippingTask(
+  payload: ExternalArrivePayload,
+): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/external/shipping-tasks/arrive', payload)
+}
+
+/** #12 司机完结（ARRIVED→FINISHED，同步运费单完结时间） */
+export function finishShippingTask(
+  payload: ExternalFinishPayload,
+): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/external/shipping-tasks/finish', payload)
 }
 
 /** #14 狮桥电子签状态回传（WAIT_SIGN→SIGNED(回填 sign_time)/CANCELLED） */
