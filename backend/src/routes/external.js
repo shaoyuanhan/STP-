@@ -9,7 +9,10 @@
  *   CRM  ⑥ POST /shipping-tasks/cancel          送车发运申请取消（按取消规则，关联待签署电子签置 CANCELLED）
  *   WMS  ⑧ POST /wms/outbound-status            WMS 出库状态同步（PICKED→OUTBOUND→IN_TRANSIT，司机提车在前、仓库出库在后）
  *   狮桥 ⑩ POST /drivers/sync                   司机信息同步（身份证号 UPSERT，source=2，维护 carrier_driver）
- *   狮桥 ⑫ POST /shipping-tasks/status-sync     任务状态同步（ACCEPT/PICKUP/ARRIVE/FINISH，按状态机校验）
+ *   狮桥 ⑫ POST /shipping-tasks/accept          承运商接单（DISPATCHED→CARRIER_ACCEPTED，分配司机）
+ *   狮桥 ⑫ POST /shipping-tasks/pickup          司机提车（CARRIER_ACCEPTED→PICKED，含提车照片）
+ *   狮桥 ⑫ POST /shipping-tasks/arrive          司机到达（IN_TRANSIT→ARRIVED，回填实际运费/里程）
+ *   狮桥 ⑫ POST /shipping-tasks/finish          司机完结（ARRIVED→FINISHED）
  *   狮桥 ⑭ POST /esign/sign-status              电子签签署状态同步（WAIT_SIGN→SIGNED/CANCELLED）
  *
  * 统一定位（契约第 6 节）：优先 applyNo（发运申请号，CRM 业务主键），兼容 taskNo；都无 → A0001。
@@ -44,27 +47,48 @@ async function resolveTask({ applyNo, taskNo }) {
 }
 
 /** 写任务状态流转日志（from_status 初始为 NULL；source: STP/CRM/SQ/WMS） */
-async function writeStatusLog(conn, { taskId, taskNo, fromStatus, toStatus, source, operator, remark }) {
+async function writeStatusLog(conn, { taskId, taskNo, fromStatus, toStatus, source, operator, remark, photos }) {
   await conn.query(
-    `INSERT INTO task_status_log (task_id, task_no, from_status, to_status, source, operator, remark, create_name, update_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [taskId, taskNo, fromStatus ?? null, toStatus, source, operator, cutStr(remark, 255), operator, operator]
+    `INSERT INTO task_status_log (task_id, task_no, from_status, to_status, source, operator, remark, photos, create_name, update_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [taskId, taskNo, fromStatus ?? null, toStatus, source, operator, cutStr(remark, 255),
+      photos && photos.length ? JSON.stringify(photos) : null, operator, operator]
   );
 }
 
-/** 提车照片数组 → 留痕备注（PICKUP photos 写 status_log.remark） */
-function photosToRemark(photos) {
-  if (!Array.isArray(photos) || !photos.length) return null;
-  return `提车照片：${photos.map((p) => String(p).trim()).filter(Boolean).join('；')}`;
+/** 提车照片入参规范化：去空、去重、仅接受 http(s) URL */
+function normalizePhotos(photos) {
+  if (!Array.isArray(photos)) return null;
+  const list = [...new Set(photos.map((p) => String(p ?? '').trim()).filter((p) => /^https?:\/\//i.test(p)))];
+  return list.length ? list : null;
 }
 
-/** 出库时间解析：未传用当前时间，格式非法抛 A0001 */
-function parseOutboundTime(v) {
-  if (v === undefined || v === null || v === '') return null; // NULL 交给 SQL NOW()
+/** 时间入参解析：未传返回 null（交给 SQL 默认值），格式非法抛 A0001 */
+function parseDateTime(v, label = '时间') {
+  if (v === undefined || v === null || v === '') return null;
   const d = new Date(String(v).replace(' ', 'T'));
-  if (Number.isNaN(d.getTime())) throw errParam('出库时间 outboundTime 格式不正确');
+  if (Number.isNaN(d.getTime())) throw errParam(`${label}格式不正确`);
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/** 本地当前时间 YYYY-MM-DD HH:mm:ss（与 parseDateTime 输出同格式，可直接字符串比较） */
+function nowStr() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/** 节点时间不得晚于当前时间（禁止未来时间回传） */
+function assertNotFuture(timeStr, label) {
+  if (timeStr && timeStr > nowStr()) throw errParam(`${label} 不能晚于当前时间（${nowStr()}）`);
+}
+
+/** 流程时间须向后：当前节点时间不得早于上一节点时间 */
+function assertNotBefore(timeStr, prevTime, { label, prevLabel }) {
+  if (!timeStr || !prevTime) return;
+  const prev = String(prevTime);
+  if (timeStr < prev) throw errBiz(`${label}（${timeStr}）不能早于${prevLabel}（${prev}）`);
 }
 
 /**
@@ -300,20 +324,15 @@ router.post('/shipping-tasks/cancel', wrap(async (req, res) => {
 //   未提车不可出库；重复回传（已出库及之后）仅补记日志，幂等不回退。
 router.post('/wms/outbound-status', wrap(async (req, res) => {
   const b = req.body || {};
-  const outboundTime = parseOutboundTime(b.outboundTime);
+  const outboundTime = parseDateTime(b.outboundTime, '出库时间 outboundTime');
+  assertNotFuture(outboundTime, '出库时间 outboundTime');
 
   const result = await withTransaction(async (conn) => {
     const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
 
     // 正常链：已提车 → 已出库 → 在途（提车在前、出库在后，出库完成即发车进入在途）
     if (task.status === 'PICKED') {
-      if (outboundTime && task.ship_time) {
-        const shipDay = String(task.ship_time).slice(0, 10);
-        const outboundDay = String(outboundTime).slice(0, 10);
-        if (outboundDay < shipDay) {
-          throw errBiz(`出库时间（${outboundDay}）不能早于提车发运时间（${shipDay}），须先提车后出库`);
-        }
-      }
+      assertNotBefore(outboundTime, task.ship_time, { label: '出库时间', prevLabel: '提车发运时间' });
       await conn.query(
         `UPDATE shipping_task SET status = 'IN_TRANSIT', outbound_date = COALESCE(?, NOW()), version = version + 1, update_name = 'WMS 系统'
           WHERE id = ? AND version = ?`,
@@ -422,25 +441,23 @@ router.post('/drivers/sync', wrap(async (req, res) => {
 }));
 
 /* ======================= ⑫ 承运商通用：任务状态回传（状态机校验推进） ======================= */
-// POST /api/external/shipping-tasks/status-sync
+// ⑫ 承运商通用：任务状态回传（按状态拆分为四个接口，均走同一状态机与时间校验）
 //   通用运单状态回传接口：狮桥物流及其他承运商/三方物流供应商均可调用。
 //   可选 carrierName 标识回传承运商（须与任务当前承运商一致，防串单）；
 //   不传按狮桥物流留痕（兼容既有对接）。
-//   action=ACCEPT  承运商接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id；
-//                  planPickupDate 主来源为 CRM（#1 必填），接单可选调整（传则覆盖，不传保持）
-//   action=PICKUP  司机确认提车（=发运，含车辆照片 photos 写 status_log.remark）：
-//                  CARRIER_ACCEPTED→PICKED 回填 ship_time（发运时间），待仓库出库；可选 actualPickupDate 实际提车日期
-//                  （允许早于计划提车日期）；之后重复回传仅补记日志（幂等不回退）
-//   action=ARRIVE  司机到达：→ARRIVED 回填 arrive_time，生成 YF 运费单（FOR UPDATE 幂等）；
-//                  实际运费/里程不在本接口回传（运费功能暂未开放），运费单按计划运费生成
-//   action=FINISH  司机完结：ARRIVED→FINISHED 回填 finish_time，同步运费单 finish_time
-router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
+//   POST /shipping-tasks/accept  承运商接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id；
+//                                计划提车日期由 CRM 在 ① receive 下发，本接口不接收
+//   POST /shipping-tasks/pickup  司机确认提车（=发运，含车辆照片 photos）：
+//                                CARRIER_ACCEPTED→PICKED 回填 ship_time（发运时间），待仓库出库；
+//                                可选 actualPickupDate 实际提车日期（允许早于计划提车日期，不得晚于今天）；
+//                                之后重复回传仅补记日志（幂等不回退）
+//   POST /shipping-tasks/arrive  司机到达：IN_TRANSIT→ARRIVED 回填 arrive_time，生成 YF 运费单（FOR UPDATE 幂等）；
+//                                可选 actualFreight/mileage/arriveTime 与逐车 vehicles 回写实际运费，缺省按计划运费生成；
+//                                时间须晚于提车/出库时间且不得晚于当前时间
+//   POST /shipping-tasks/finish  司机完结：ARRIVED→FINISHED 回填 finish_time，同步运费单 finish_time；
+//                                当前时间须晚于到达时间
+async function runStatusAction(req, action) {
   const b = req.body || {};
-  const action = String(b.action ?? '').trim().toUpperCase();
-  if (!action) throw errParam('动作 action 必填（ACCEPT/PICKUP/ARRIVE/FINISH）');
-  if (!['ACCEPT', 'PICKUP', 'ARRIVE', 'FINISH'].includes(action)) {
-    throw errParam('动作 action 仅支持 ACCEPT/PICKUP/ARRIVE/FINISH');
-  }
 
   const result = await withTransaction(async (conn) => {
     const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
@@ -464,11 +481,7 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
     if (action === 'ACCEPT') {
       const driverId = b.driverId === undefined || b.driverId === null || b.driverId === '' ? null : Number(b.driverId);
       if (!driverId) throw errParam('接单必须分配司机 driverId');
-      // 计划提车日期主来源为 CRM 随申请下发（#1 必填）；接单时可选调整（传则校验格式并覆盖）
-      if (b.planPickupDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.planPickupDate).trim())) {
-        throw errParam('计划提车日期 planPickupDate 格式不正确，应为 YYYY-MM-DD');
-      }
-      const planPickupDate = b.planPickupDate ? String(b.planPickupDate).trim() : null;
+      // 计划提车日期由 CRM 在发运申请（#1 receive）下发，接单接口不接收、不修改
       // 司机校验：存在、启用（停用拦截新分派，既有需求 10）、属于任务承运商（carrier_driver 多对多）
       const [drows] = await conn.query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [driverId]);
       if (!drows.length) throw errNotFound(`司机不存在（ID: ${driverId}）`);
@@ -484,15 +497,14 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
 
       if (task.status === 'DISPATCHED') {
         await conn.query(
-          `UPDATE shipping_task SET status = 'CARRIER_ACCEPTED', driver_id = ?,
-                  plan_pickup_date = COALESCE(?, plan_pickup_date), version = version + 1, update_name = ?
+          `UPDATE shipping_task SET status = 'CARRIER_ACCEPTED', driver_id = ?, version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
-          [driverId, planPickupDate, operatorName, task.id, task.version]
+          [driverId, operatorName, task.id, task.version]
         );
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: 'DISPATCHED', toStatus: 'CARRIER_ACCEPTED',
           source: logSource, operator: operatorName,
-          remark: `承运商确认接单，分配司机：${driver.driver_name}${planPickupDate ? `，计划提车调整为 ${planPickupDate}` : ''}`,
+          remark: `承运商确认接单，分配司机：${driver.driver_name}`,
         });
         return { taskNo: task.task_no, status: 'CARRIER_ACCEPTED', message: `接单成功，已分配司机：${driver.driver_name}` };
       }
@@ -510,15 +522,17 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
       throw errState(`当前任务状态不允许接单（${task.status}），仅「已派单」可接单`);
     }
 
-    /* ---- 司机确认提车（=发运，回填 ship_time 发运时间；photos 写 status_log.remark） ---- */
+    /* ---- 司机确认提车（=发运，回填 ship_time 发运时间；photos 结构化存 status_log.photos） ---- */
     if (action === 'PICKUP') {
-      const photos = Array.isArray(b.photos) ? b.photos : null;
-      const photoRemark = photosToRemark(photos);
+      const photos = normalizePhotos(b.photos);
       // 实际提车日期 = 发运时间：选填 YYYY-MM-DD，允许早于计划提车日期（提前提车），缺省取当前时间
       if (b.actualPickupDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.actualPickupDate).trim())) {
         throw errParam('实际提车日期 actualPickupDate 格式不正确，应为 YYYY-MM-DD');
       }
       const shipTime = b.actualPickupDate ? String(b.actualPickupDate).trim() : null;
+      if (shipTime && shipTime > localDateStr()) {
+        throw errParam(`实际提车日期（${shipTime}）不能晚于当前日期（${localDateStr()}）`);
+      }
       const photoNote = photos ? `，${photos.length} 张提车照片已同步` : '';
 
       // 正常链：承运商已接单 → 已提车（司机先办提车，车辆照片留痕；仓库出库回传后进入在途）
@@ -530,8 +544,8 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
         );
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: 'CARRIER_ACCEPTED', toStatus: 'PICKED',
-          source: logSource, operator: operatorName,
-          remark: cutStr(`司机确认提车（发运）${shipTime ? `，发运时间 ${shipTime}（可早于计划提车日期）` : ''}${photoNote}${photoRemark ? `；${photoRemark}` : ''}`, 255),
+          source: logSource, operator: operatorName, photos,
+          remark: cutStr(`司机确认提车（发运）${shipTime ? `，发运时间 ${shipTime}（可早于计划提车日期）` : ''}${photoNote}`, 255),
         });
         return { taskNo: task.task_no, status: 'PICKED', message: '提车确认成功，任务状态：已提车，待仓库出库' };
       }
@@ -543,44 +557,87 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
         }
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: task.status,
-          source: logSource, operator: operatorName,
-          remark: cutStr(`提车状态重复回传，幂等处理仅补记日志、不回退状态${photoRemark ? `；${photoRemark}` : ''}`, 255),
+          source: logSource, operator: operatorName, photos,
+          remark: cutStr(`提车状态重复回传，幂等处理仅补记日志、不回退状态${photoNote ? `；${photos.length} 张提车照片已同步` : ''}`, 255),
         });
         return { taskNo: task.task_no, status: task.status, message: '提车状态重复回传，幂等处理仅补记日志' };
       }
       throw errState(`当前任务状态不允许提车确认（${task.status}），仅「承运商已接单」可确认提车`);
     }
 
-    /* ---- 司机到达（回填运费/里程，生成 YF 运费单 FOR UPDATE 幂等） ---- */
+    /* ---- 司机到达（回填实际运费/里程/到达时间，生成 YF 运费单 FOR UPDATE 幂等） ---- */
     if (action === 'ARRIVE') {
       if (!['IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
         throw errState(`当前任务状态不允许到达（${task.status}），车辆尚未出库进入在途`);
       }
-      // 实际运费/里程不在状态回传接口（运费相关功能暂未开放），运费单按计划运费生成
-      const finalFreight = Number(task.plan_freight) || 0;
+
+      // 司机到达时填写运费信息（PRD 5）：实际运费/里程/到达时间选填，不传按计划运费与当前时间
+      const reportedFreight = assertAmount(b.actualFreight, { label: '实际运费 actualFreight', required: false });
+      const reportedMileage = assertAmount(b.mileage, { label: '里程 mileage', required: false });
+      const arriveTime = parseDateTime(b.arriveTime, '到达时间 arriveTime');
+      assertNotFuture(arriveTime, '到达时间 arriveTime');
+      assertNotBefore(arriveTime, task.ship_time, { label: '到达时间', prevLabel: '提车发运时间' });
+      assertNotBefore(arriveTime, task.outbound_date, { label: '到达时间', prevLabel: '出库时间' });
+
+      // 逐车实际运费（可选）：[{vin, actualFreight}]，VIN 须属于该任务，合计须与 actualFreight 一致
+      const [vehicleRows] = await conn.query(
+        'SELECT id, vin FROM shipping_task_vehicle WHERE task_id = ? AND deleted = 0',
+        [task.id]
+      );
+      const vinSet = new Set(vehicleRows.map((v) => String(v.vin).toUpperCase()));
+      let vehicleFreights = null;
+      if (b.vehicles !== undefined && b.vehicles !== null) {
+        if (!Array.isArray(b.vehicles) || !b.vehicles.length) throw errParam('车辆运费 vehicles 需为非空数组');
+        vehicleFreights = b.vehicles.map((v, i) => {
+          const vin = String(v?.vin ?? '').trim().toUpperCase();
+          if (!vin) throw errParam(`第 ${i + 1} 台车的 VIN 必填`);
+          if (!vinSet.has(vin)) throw errBiz(`VIN ${vin} 不属于该任务`);
+          return { vin, amount: assertAmount(v?.actualFreight, { label: `第 ${i + 1} 台车实际运费 actualFreight` }) };
+        });
+        if (new Set(vehicleFreights.map((v) => v.vin)).size !== vehicleFreights.length) {
+          throw errBiz('车辆运费明细存在重复 VIN');
+        }
+      }
+
+      const vehicleSum = vehicleFreights
+        ? Number(vehicleFreights.reduce((s, v) => s + v.amount, 0).toFixed(2))
+        : null;
+      if (vehicleSum !== null && reportedFreight !== null && Math.abs(vehicleSum - reportedFreight) > 0.005) {
+        throw errBiz(`车辆运费合计 ${vehicleSum} 与任务实际运费 ${reportedFreight} 不一致`);
+      }
+      const finalFreight = vehicleSum !== null
+        ? vehicleSum
+        : (reportedFreight !== null ? reportedFreight : Number(task.plan_freight) || 0);
 
       let freightNo = null;
       let billCreated = false;
       if (task.status !== 'ARRIVED' && task.status !== 'FINISHED') {
         await conn.query(
-          `UPDATE shipping_task SET status = 'ARRIVED', arrive_time = NOW(), actual_freight = ?,
+          `UPDATE shipping_task SET status = 'ARRIVED', arrive_time = COALESCE(?, NOW()), actual_freight = ?,
                   version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
-          [finalFreight, operatorName, task.id, task.version]
+          [arriveTime, finalFreight, operatorName, task.id, task.version]
         );
-        // 同步回填车辆明细实际运费（多车任务按台数均分至单台展示口径）
-        const [vc] = await conn.query('SELECT COUNT(*) AS n FROM shipping_task_vehicle WHERE task_id = ? AND deleted = 0', [task.id]);
-        const vehicleCount = Number(vc[0].n);
-        if (vehicleCount > 0) {
-          await conn.query(
-            'UPDATE shipping_task_vehicle SET actual_freight = ?, update_name = ? WHERE task_id = ? AND deleted = 0',
-            [Number((finalFreight / vehicleCount).toFixed(2)), operatorName, task.id]
-          );
+        // 车辆明细实际运费：有逐车明细按 VIN 回写，否则按台数均分（多车任务展示口径）
+        if (vehicleRows.length) {
+          if (vehicleFreights) {
+            for (const item of vehicleFreights) {
+              await conn.query(
+                'UPDATE shipping_task_vehicle SET actual_freight = ?, update_name = ? WHERE task_id = ? AND vin = ? AND deleted = 0',
+                [item.amount, operatorName, task.id, item.vin]
+              );
+            }
+          } else {
+            await conn.query(
+              'UPDATE shipping_task_vehicle SET actual_freight = ?, update_name = ? WHERE task_id = ? AND deleted = 0',
+              [Number((finalFreight / vehicleRows.length).toFixed(2)), operatorName, task.id]
+            );
+          }
         }
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: 'ARRIVED',
           source: logSource, operator: operatorName,
-          remark: '司机确认到达',
+          remark: cutStr(`司机确认到达${reportedFreight !== null || vehicleSum !== null ? `，实际运费 ${finalFreight}` : ''}${reportedMileage !== null ? `，里程 ${reportedMileage} km` : ''}${arriveTime ? `，到达时间 ${arriveTime}` : ''}`, 255),
         });
       } else {
         await writeStatusLog(conn, {
@@ -599,22 +656,25 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
           `INSERT INTO freight_bill
             (freight_no, task_id, task_no, carrier_id, driver_id, start_location, end_location, mileage,
              plan_freight, actual_freight, reconcile_status, create_name, update_name)
-           VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
           [freightNo, task.id, task.task_no, task.carrier_id, task.driver_id,
            task.ship_location, task.delivery_address || task.delivery_area,
-           task.plan_freight, finalFreight, operatorName, operatorName]
+           reportedMileage, task.plan_freight, finalFreight, operatorName, operatorName]
         );
         billCreated = true;
       }
       return {
         taskNo: task.task_no, status: task.status === 'ARRIVED' || task.status === 'FINISHED' ? task.status : 'ARRIVED',
-        freightNo, billCreated,
+        freightNo, billCreated, actualFreight: finalFreight, mileage: reportedMileage,
         message: `到达确认成功${billCreated ? `，已生成运费结算单 ${freightNo}（待对账）` : `，运费单 ${freightNo} 已存在（幂等）`}`,
       };
     }
 
     /* ---- 司机完结（同步运费单 finish_time） ---- */
     if (action === 'FINISH') {
+      if (task.arrive_time && String(task.arrive_time) > nowStr()) {
+        throw errBiz(`当前时间（${nowStr()}）早于到达时间（${task.arrive_time}），须到达时间之后才能完结`);
+      }
       if (task.status === 'ARRIVED') {
         await conn.query(
           `UPDATE shipping_task SET status = 'FINISHED', finish_time = NOW(), version = version + 1, update_name = ?
@@ -639,6 +699,27 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
     }
   });
 
+  return result;
+}
+
+/* 按状态拆分的四个回传接口（共用状态机、幂等与时间校验） */
+router.post('/shipping-tasks/accept', wrap(async (req, res) => {
+  const result = await runStatusAction(req, 'ACCEPT');
+  ok(res, result, result.message);
+}));
+
+router.post('/shipping-tasks/pickup', wrap(async (req, res) => {
+  const result = await runStatusAction(req, 'PICKUP');
+  ok(res, result, result.message);
+}));
+
+router.post('/shipping-tasks/arrive', wrap(async (req, res) => {
+  const result = await runStatusAction(req, 'ARRIVE');
+  ok(res, result, result.message);
+}));
+
+router.post('/shipping-tasks/finish', wrap(async (req, res) => {
+  const result = await runStatusAction(req, 'FINISH');
   ok(res, result, result.message);
 }));
 

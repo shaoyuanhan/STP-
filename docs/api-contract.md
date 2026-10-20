@@ -45,11 +45,13 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 
 转换触发：
 - 派单（STP）：WAIT_DISPATCH→DISPATCHED，写 dispatch_record(DISPATCH) + status_log
-- 接单（狮桥 #12 ACCEPT）：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id、plan_pickup_date
-- 提车（#12 PICKUP，=司机提车发运+拍照）：CARRIER_ACCEPTED→PICKED，回填 ship_time（实际提车日期=发运时间，允许早于计划提车日期）；照片 URL 写 status_log.remark；提车后待仓库出库
-- 出库（WMS #8）：PICKED→OUTBOUND→IN_TRANSIT，回填 outbound_date（出库时间不得早于发运时间）；OUTBOUND 为出库瞬时留痕节点，任务当前状态直接置 IN_TRANSIT（PRD：在途=确认发车后、未到达前）
-- 到达（#12 ARRIVE）：→ARRIVED，回填 arrive_time；实际运费/里程不在本接口回传（运费相关功能暂未开放）
-- 完结（#12 FINISH）：ARRIVED→FINISHED，回填 finish_time，同步运费单 finish_time
+- 接单（承运商 #12 POST /shipping-tasks/accept）：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id
+- 提车（#12 POST /shipping-tasks/pickup，=司机提车发运+拍照）：CARRIER_ACCEPTED→PICKED，回填 ship_time（实际提车日期=发运时间，允许早于计划提车日期，不得晚于当前日期）；照片 URL 结构化写 status_log.photos；提车后待仓库出库
+- 出库（WMS #8）：PICKED→OUTBOUND→IN_TRANSIT，回填 outbound_date（出库时间不得早于发运时间，不得晚于当前时间）；OUTBOUND 为出库瞬时留痕节点，任务当前状态直接置 IN_TRANSIT（PRD：在途=确认发车后、未到达前）
+- 到达（#12 POST /shipping-tasks/arrive）：→ARRIVED，回填 arrive_time；可选 actualFreight/mileage/arriveTime 回填实际运费、里程、到达时间，vehicles 逐车回写（合计须与 actualFreight 一致），缺省按计划运费/当前时间/空里程生成待对账运费单；到达时间须晚于提车发运/出库时间且不得晚于当前时间
+- 完结（#12 POST /shipping-tasks/finish）：ARRIVED→FINISHED，回填 finish_time，同步运费单 finish_time；当前时间须晚于到达时间
+
+**时间校验**：各节点时间只能顺着流程往后，且不得回传未来时间（违反返回 A0001/A0002）。
 
 **幂等**：各状态重复回传仅补记日志，不回退已推进状态；不允许跳步（如未提车直接出库返回 D0001）。
 
@@ -126,8 +128,11 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 - `POST /api/shipping-tasks/batch-dispatch` `{task_ids*:[], carrier_id*, remark}` → `{ dispatched:n, total_freight:成功单计划运费合计, skipped:[{task_id, task_no, reason}] }`，每单写 dispatch_record（batch_no 同批相同）
 
 ### 5.5 在途监控
-- `GET /api/tracking/tasks?task_no=&transport_no=&page=&size=` → 未终态任务（不含 FINISHED/CANCELLED），IN_TRANSIT 最优先，含最近一条位置（transport_no/location_desc/longitude/latitude/speed/report_time）
-- `GET /api/tracking/tasks/:id` → `{ task, statusLogs, tracks(时间升序) }`
+- `GET /api/tracking/tasks?scope=&task_no=&transport_no=&page=&size=`
+  - `scope=transit`（默认）→ 仅「在途」任务，用于在途监控页
+  - `scope=history` → 仅「已完结」任务，按完成时间倒序，用于历史轨迹子页面
+  - 行内含 VIN/车型（车辆明细聚合）与最近一条位置 `latest_track:{transport_no,location_desc,longitude,latitude,speed,report_time}`（无回传为 null）
+- `GET /api/tracking/tasks/:id` → `{ task, statusLogs, tracks(时间升序) }`（在途与历史轨迹共用）
 
 ### 5.6 结算管理
 - `GET /api/freight-bills?freight_no=&task_no=&carrier_id=&reconcile_status=&page=&size=` → 含合计 amount
@@ -151,7 +156,10 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | 6 | POST /shipping-tasks/cancel | CRM | applyNo*, cancelReason | 按取消规则校验；关联待签署电子签置 CANCELLED |
 | 8 | POST /wms/outbound-status | WMS | applyNo/taskNo, outboundTime? | PICKED→OUTBOUND→IN_TRANSIT（司机提车在前、仓库出库在后，出库完成即进在途），回填 outbound_date（不得早于发运时间）；未提车返回 D0001；重复回传仅补记日志（幂等） |
 | 10 | POST /drivers/sync | 狮桥 | driverName*, phone*, idCard*, licenseNo, licenseType, licenseValidFrom, licenseValidTo, carrierId? | 身份证号 UPSERT（source=2）+carrier_driver 维护 |
-| 12 | POST /shipping-tasks/status-sync | 承运商通用（狮桥/任意三方物流） | action*:`ACCEPT|PICKUP|ARRIVE|FINISH`, applyNo/taskNo, carrierName?（回传承运商，须与任务承运商一致；不传按狮桥留痕）, driverId?(ACCEPT), planPickupDate?(ACCEPT 可选调整，不传保持 CRM 下发值), actualPickupDate?(PICKUP 实际提车日期=发运时间，允许早于计划提车日期), photos?:[](PICKUP 提车照片) | 按状态机校验推进；PICKUP 仅 CARRIER_ACCEPTED（承运商已接单）可确认，回填 ship_time 并置为 PICKED（已提车，待仓库出库）；ARRIVE 回填 arrive_time（实际运费/里程不在本接口回传，运费功能暂未开放）；日志 source=carrierName 传时记 CARRIER |
+| 12 | POST /shipping-tasks/accept | 承运商通用（狮桥/任意三方物流） | applyNo/taskNo, carrierName?（回传承运商，须与任务承运商一致；不传按狮桥留痕）, driverId* | DISPATCHED→CARRIER_ACCEPTED，回填 driver_id；司机须启用且属于任务承运商；计划提车日期由 ① receive 下发，本接口不接收 |
+| 12 | POST /shipping-tasks/pickup | 承运商通用 | applyNo/taskNo, carrierName?, actualPickupDate?（实际提车日期=发运时间，允许早于计划提车日期，不得晚于当天）, photos?:[](提车照片) | 仅 CARRIER_ACCEPTED→PICKED，回填 ship_time，待仓库出库；重复回传仅补记日志 |
+| 12 | POST /shipping-tasks/arrive | 承运商通用 | applyNo/taskNo, carrierName?, actualFreight?/mileage?/arriveTime?, vehicles?:[{vin*, actualFreight*}] | IN_TRANSIT→ARRIVED，回填 arrive_time 与实际运费/里程并生成待对账运费单；到达时间须晚于提车/出库时间且不得晚于当前时间；逐车合计须与 actualFreight 一致 |
+| 12 | POST /shipping-tasks/finish | 承运商通用 | applyNo/taskNo, carrierName? | ARRIVED→FINISHED，回填 finish_time 并同步运费单；当前时间须晚于到达时间 |
 | 14 | POST /esign/sign-status | 狮桥 | esignId*, signStatus:`SIGNED|CANCELLED` | WAIT_SIGN→SIGNED(回填 sign_time)/CANCELLED |
 
 ## 7. 前端工程结构与分工

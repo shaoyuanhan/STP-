@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>STP 电话校验实现说明（含公共组件）</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --ink: #1f2329;
+    --ink-2: #4e5969;
+    --ink-3: #86909c;
+    --line: #e5e8ef;
+    --brand: #1677ff;
+    --brand-soft: #eaf2ff;
+    --green: #389e0d;
+    --green-soft: #f0f9eb;
+    --orange: #d46b08;
+    --orange-soft: #fff7e6;
+    --red: #cf1322;
+    --red-soft: #fff1f0;
+    --code-bg: #f7f8fa;
+    --radius: 10px;
+    --sidebar: 232px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  code, pre, .mono {
+    font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  /* ---------- 布局 ---------- */
+  .layout {
+    display: grid;
+    grid-template-columns: var(--sidebar) minmax(0, 1fr);
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 32px;
+    gap: 40px;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    padding: 36px 0 40px;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+
+  .sidebar__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 26px;
+  }
+
+  .sidebar__mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #1677ff, #4096ff);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: .5px;
+  }
+
+  .sidebar__name { font-weight: 600; font-size: 14px; line-height: 1.3; }
+  .sidebar__sub { color: var(--ink-3); font-size: 12px; }
+
+  .sidebar nav { border-left: 1px solid var(--line); }
+
+  .sidebar nav a {
+    display: block;
+    padding: 6px 0 6px 14px;
+    margin-left: -1px;
+    border-left: 2px solid transparent;
+    color: var(--ink-2);
+  }
+
+  .sidebar nav a:hover {
+    color: var(--brand);
+    border-left-color: var(--brand);
+    text-decoration: none;
+    background: linear-gradient(90deg, rgba(22,119,255,.06), transparent);
+  }
+
+  .sidebar nav a.sub { padding-left: 28px; font-size: 12.5px; color: var(--ink-3); }
+
+  .main { padding: 36px 0 80px; min-width: 0; }
+
+  /* ---------- 文档头 ---------- */
+  .doc-head {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 34px 38px 30px;
+    margin-bottom: 26px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .doc-head::after {
+    content: "";
+    position: absolute;
+    right: -80px;
+    top: -80px;
+    width: 260px;
+    height: 260px;
+    background: radial-gradient(circle, rgba(22,119,255,.12), transparent 66%);
+    pointer-events: none;
+  }
+
+  .doc-head__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    letter-spacing: .08em;
+    color: var(--brand);
+    background: var(--brand-soft);
+    border-radius: 999px;
+    padding: 2px 12px;
+    margin-bottom: 14px;
+    font-weight: 600;
+  }
+
+  h1 {
+    font-size: 30px;
+    line-height: 1.3;
+    margin: 0 0 10px;
+    letter-spacing: -.01em;
+  }
+
+  .doc-head__desc {
+    color: var(--ink-2);
+    max-width: 760px;
+    margin: 0 0 22px;
+    font-size: 14.5px;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding-top: 18px;
+    border-top: 1px dashed var(--line);
+  }
+
+  .meta__item {
+    font-size: 12.5px;
+    color: var(--ink-2);
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 3px 10px;
+  }
+
+  .meta__item b { font-weight: 600; color: var(--ink); }
+
+  /* ---------- 章节 ---------- */
+  section {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 28px 34px;
+    margin-bottom: 20px;
+  }
+
+  h2 {
+    font-size: 20px;
+    margin: 0 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    letter-spacing: -.01em;
+  }
+
+  h2 .num {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--brand);
+    background: var(--brand-soft);
+    border-radius: 6px;
+    min-width: 26px;
+    height: 24px;
+    display: inline-grid;
+    place-items: center;
+    letter-spacing: 0;
+  }
+
+  h3 {
+    font-size: 15.5px;
+    margin: 26px 0 10px;
+    color: var(--ink);
+  }
+
+  h3:first-of-type { margin-top: 6px; }
+
+  h4 {
+    font-size: 14px;
+    margin: 18px 0 8px;
+    color: var(--ink-2);
+  }
+
+  p { margin: 8px 0 12px; color: var(--ink-2); }
+
+  ul, ol { margin: 8px 0 14px; padding-left: 22px; color: var(--ink-2); }
+  li { margin: 4px 0; }
+  li > b, p > b { color: var(--ink); }
+
+  /* ---------- 表格 ---------- */
+  .table-wrap { overflow-x: auto; margin: 14px 0 18px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: var(--surface);
+  }
+
+  th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--code-bg);
+    border-bottom: 1px solid var(--line);
+    padding: 9px 12px;
+    white-space: nowrap;
+  }
+
+  td {
+    border-bottom: 1px solid var(--line);
+    padding: 9px 12px;
+    color: var(--ink-2);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #fafbfc; }
+
+  td code, p code, li code {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 12px;
+    color: #c7254e;
+    white-space: nowrap;
+  }
+
+  /* ---------- 代码块 ---------- */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #24292f;
+    margin: 12px 0 16px;
+  }
+
+  pre .c { color: #6e7781; }
+  pre .k { color: #cf222e; }
+  pre .s { color: #0a3069; }
+  pre .f { color: #8250df; }
+  pre .n { color: #0550ae; }
+
+  /* ---------- 标签 ---------- */
+  .pill {
+    display: inline-block;
+    font-size: 11.5px;
+    line-height: 1.6;
+    padding: 1px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    font-weight: 500;
+    border: 1px solid transparent;
+  }
+
+  .pill--blue { background: var(--brand-soft); color: var(--brand); }
+  .pill--green { background: var(--green-soft); color: var(--green); }
+  .pill--orange { background: var(--orange-soft); color: var(--orange); }
+  .pill--red { background: var(--red-soft); color: var(--red); }
+  .pill--gray { background: #f2f3f5; color: var(--ink-2); }
+
+  /* ---------- 调用提示 ---------- */
+  .callout {
+    display: grid;
+    grid-template-columns: 3px 1fr;
+    gap: 0 14px;
+    background: #fbfcfe;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 16px 12px 0;
+    margin: 14px 0;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  .callout::before {
+    content: "";
+    background: var(--brand);
+    border-radius: 3px;
+    grid-row: 1 / 3;
+  }
+
+  .callout b { color: var(--ink); }
+
+  .callout--warn { background: #fffdf8; }
+  .callout--warn::before { background: var(--orange); }
+
+  .callout--danger { background: #fffafa; }
+  .callout--danger::before { background: var(--red); }
+
+  /* ---------- 分层架构图 ---------- */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 18px 0 8px;
+  }
+
+  .flow__layer {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: 14px;
+    align-items: stretch;
+  }
+
+  .flow__label {
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: var(--ink-3);
+    font-weight: 600;
+    letter-spacing: .04em;
+    padding: 14px 0;
+  }
+
+  .flow__body {
+    background: #fbfcfe;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .flow__arrow {
+    grid-column: 2;
+    justify-self: center;
+    color: #c2c8d2;
+    font-size: 12px;
+    line-height: 1;
+    padding: 5px 0;
+  }
+
+  .node {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(31,35,41,.04);
+    white-space: nowrap;
+  }
+
+  .node--brand { border-color: #b7d4ff; background: var(--brand-soft); }
+  .node--green { border-color: #c6e8b3; background: var(--green-soft); }
+  .node--orange { border-color: #ffd8a8; background: var(--orange-soft); }
+
+  .node small { color: var(--ink-3); font-size: 11px; }
+
+  .arrow { color: #b8bfc9; font-size: 13px; padding: 0 2px; }
+
+  /* ---------- 卡片网格 ---------- */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    margin: 14px 0 6px;
+  }
+
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: #fff;
+  }
+
+  .card__title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .card__name { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+  .card__path {
+    font-size: 11.5px;
+    color: var(--ink-3);
+    word-break: break-all;
+    margin-bottom: 8px;
+  }
+  .card p { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+  .card ul { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; }
+
+  /* ---------- 步骤 ---------- */
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    padding: 0;
+    margin: 16px 0;
+  }
+
+  .steps li {
+    position: relative;
+    padding: 0 0 18px 42px;
+    margin: 0;
+  }
+
+  .steps li::before {
+    counter-increment: step;
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 2px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 12px;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+  }
+
+  .steps li::after {
+    content: "";
+    position: absolute;
+    left: 12.5px;
+    top: 32px;
+    bottom: 2px;
+    width: 1px;
+    background: var(--line);
+  }
+
+  .steps li:last-child { padding-bottom: 0; }
+  .steps li:last-child::after { display: none; }
+
+  .steps strong { display: block; font-size: 13.5px; color: var(--ink); margin-bottom: 2px; }
+  .steps span { font-size: 12.5px; color: var(--ink-2); }
+
+  .num-badge {
+    display: inline-grid;
+    place-items: center;
+    min-width: 22px;
+    height: 20px;
+    border-radius: 5px;
+    background: #f2f3f5;
+    color: var(--ink-2);
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+
+  footer {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 32px 48px 32px;
+    color: var(--ink-3);
+    font-size: 12px;
+  }
+
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding: 0 18px; }
+    .sidebar { position: static; height: auto; padding: 20px 0 0; }
+    .sidebar nav { display: flex; flex-wrap: wrap; gap: 4px 6px; border: none; }
+    .sidebar nav a { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; margin: 0; font-size: 12px; background: #fff; }
+    .sidebar nav a.sub { display: none; }
+    .sidebar__brand { margin-bottom: 12px; }
+    section { padding: 22px 18px; }
+    .doc-head { padding: 24px 20px; }
+    h1 { font-size: 24px; }
+    .flow__layer { grid-template-columns: 1fr; gap: 4px; }
+    .flow__label { justify-content: start; padding: 0 0 2px 2px; }
+    .flow__arrow { justify-self: start; padding-left: 14px; }
+    footer { padding: 0 18px 32px; }
+  }
+
+  @media print {
+    body { background: #fff; }
+    .sidebar { display: none; }
+    .layout { display: block; padding: 0; }
+    section, .doc-head { break-inside: avoid; border-color: #ddd; }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar__brand">
+      <div class="sidebar__mark">STP</div>
+      <div>
+        <div class="sidebar__name">电话校验实现说明</div>
+        <div class="sidebar__sub">含公共组件清单</div>
+      </div>
+    </div>
+    <nav>
+      <a href="#overview">1. 概述与分层</a>
+      <a href="#rules">2. 校验规则速查</a>
+      <a href="#flow">3. 全链路时序</a>
+      <a href="#frontend">4. 前端实现</a>
+      <a href="#frontend-phoneinput" class="sub">4.1 PhoneInput 控件</a>
+      <a href="#frontend-form" class="sub">4.2 表单规则</a>
+      <a href="#backend">5. 后端强校验</a>
+      <a href="#storage">6. 存储与展示</a>
+      <a href="#migration">7. 存量数据迁移</a>
+      <a href="#components">8. 引用的公共组件</a>
+      <a href="#components-ui" class="sub">8.1 业务组件</a>
+      <a href="#components-lib" class="sub">8.2 工具与服务</a>
+      <a href="#dependency">9. 组件依赖关系</a>
+      <a href="#pitfalls">10. 注意事项</a>
+      <a href="#files">11. 文件清单</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="doc-head">
+      <div class="doc-head__eyebrow">技术说明 · 前端 / 后端</div>
+      <h1>STP 联系电话校验实现说明</h1>
+      <p class="doc-head__desc">
+        本文梳理“联系电话”从输入、前端校验、后端校验到入库与展示的完整实现，
+        并补充该链路中引用到的公共组件、工具函数与接口服务，便于复用与后续维护。
+      </p>
+      <div class="meta">
+        <span class="meta__item"><b>适用范围</b> STP 智能运输管理平台</span>
+        <span class="meta__item"><b>代码基线</b> STP AI测试环境</span>
+        <span class="meta__item"><b>控件版本</b> intl-tel-input v29.5.5</span>
+        <span class="meta__item"><b>校验库</b> libphonenumber-js/max</span>
+        <span class="meta__item"><b>更新日期</b> 2026-10-20</span>
+      </div>
+    </header>
+
+    <!-- 1 -->
+    <section id="overview">
+      <h2><span class="num">1</span>概述与分层</h2>
+      <p>
+        电话校验不是单点正则，而是“控件格式化 + 表单校验 + 后端强校验 + 统一存储”四层配合。
+        核心原则只有两条：<b>前端负责即时反馈，后端负责最终裁决</b>；<b>落库统一为 E.164 格式</b>（如 <code>+8613800138000</code>）。
+      </p>
+
+      <div class="flow">
+        <div class="flow__layer">
+          <div class="flow__label">交互层</div>
+          <div class="flow__body">
+            <span class="node node--brand">PhoneInput<small>国家选择 + 号码输入</small></span>
+            <span class="arrow">+</span>
+            <span class="node">NForm / NFormItem<small>naive-ui</small></span>
+            <span class="arrow">→</span>
+            <span class="node">表单规则<small>required + validator</small></span>
+          </div>
+        </div>
+        <div class="flow__arrow">↓ v-model 输出 E.164</div>
+
+        <div class="flow__layer">
+          <div class="flow__label">服务层</div>
+          <div class="flow__body">
+            <span class="node">services/carriers.ts</span>
+            <span class="arrow">/</span>
+            <span class="node">services/drivers.ts</span>
+            <span class="arrow">→</span>
+            <span class="node">services/http.ts<small>信封拆包 / ApiError</small></span>
+          </div>
+        </div>
+        <div class="flow__arrow">↓ POST / PUT</div>
+
+        <div class="flow__layer">
+          <div class="flow__label">后端</div>
+          <div class="flow__body">
+            <span class="node node--orange">assertPhone()<small>helpers.js</small></span>
+            <span class="arrow">→</span>
+            <span class="node">libphonenumber-js/max<small>parse + isValid + getType</small></span>
+            <span class="arrow">→</span>
+            <span class="node node--green">MySQL<small>VARCHAR(20) / E.164</small></span>
+          </div>
+        </div>
+        <div class="flow__arrow">↓ 查询返回</div>
+
+        <div class="flow__layer">
+          <div class="flow__label">展示层</div>
+          <div class="flow__body">
+            <span class="node">formatPhone()<small>138 0013 8000</small></span>
+            <span class="arrow">→</span>
+            <span class="node">PageTable<small>列表列</small></span>
+            <span class="arrow">/</span>
+            <span class="node">DetailSection<small>详情分区</small></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section id="rules">
+      <h2><span class="num">2</span>校验规则速查</h2>
+      <p>
+        全平台默认国家为中国（+86）。号码类型由 libphonenumber 判定，不使用手写正则做最终校验；
+        只有展示层才用轻量正则做格式化。
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>号码类型</th>
+              <th>规则</th>
+              <th>示例</th>
+              <th>承运商</th>
+              <th>司机</th>
+              <th>CRM 任务</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>国内手机</td>
+              <td>11 位，1 开头，3–9 第二位</td>
+              <td><code>13800138000</code></td>
+              <td><span class="pill pill--green">允许</span></td>
+              <td><span class="pill pill--green">必须</span></td>
+              <td><span class="pill pill--green">允许</span></td>
+            </tr>
+            <tr>
+              <td>国内座机</td>
+              <td>区号（0 开头 3–4 位）+ 7–8 位号码</td>
+              <td><code>0551-63612345</code></td>
+              <td><span class="pill pill--green">允许</span></td>
+              <td><span class="pill pill--red">拒绝</span></td>
+              <td><span class="pill pill--green">允许</span></td>
+            </tr>
+            <tr>
+              <td>400 / 800</td>
+              <td>10 位热线号码</td>
+              <td><code>4001234567</code></td>
+              <td><span class="pill pill--green">允许</span></td>
+              <td><span class="pill pill--red">拒绝</span></td>
+              <td><span class="pill pill--green">允许</span></td>
+            </tr>
+            <tr>
+              <td>国际号码</td>
+              <td>必须带 <code>+</code> 国家区号</td>
+              <td><code>+12025550123</code></td>
+              <td><span class="pill pill--green">允许</span></td>
+              <td><span class="pill pill--gray">仅手机类型</span></td>
+              <td><span class="pill pill--green">允许</span></td>
+            </tr>
+            <tr>
+              <td>空值</td>
+              <td>承运商 / 司机必填；CRM 下发选填</td>
+              <td>—</td>
+              <td><span class="pill pill--red">必填</span></td>
+              <td><span class="pill pill--red">必填</span></td>
+              <td><span class="pill pill--gray">选填</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <div><b>为什么“司机必须是手机号”不写在前端？</b> PhoneInput 的 <code>isValid()</code> 只判断号码本身是否有效，不区分类型；类型约束由后端 <code>assertPhone(..., { mobileOnly: true })</code> 通过 <code>getType()</code> 裁决。前端提示文案仅做提前告知，避免把业务类型规则耦合进通用控件。</div>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section id="flow">
+      <h2><span class="num">3</span>全链路时序</h2>
+      <ol class="steps">
+        <li>
+          <strong>用户输入</strong>
+          <span>PhoneInput 初始化 intl-tel-input，默认 <code>initialCountry: 'cn'</code>，国旗与区号分离展示，占位符按手机号类型生成。</span>
+        </li>
+        <li>
+          <strong>实时产出 E.164</strong>
+          <span><code>input</code> 与 <code>countrychange</code> 事件触发 <code>iti.getNumber()</code>，号码不完整时返回 <code>''</code>，通过 <code>v-model</code> 写回表单。</span>
+        </li>
+        <li>
+          <strong>前端校验</strong>
+          <span>表单 <code>validator</code> 调用 <code>phoneRef.value.isValid()</code>，优先 <code>isValidNumberPrecise()</code>（严格校验），退化到 <code>isValidNumber()</code>，最后兜底判断非空。</span>
+        </li>
+        <li>
+          <strong>提交</strong>
+          <span>校验通过后直接提交 E.164 字符串；服务层经 <code>http.ts</code> 发请求，响应为统一信封，<code>postEnvelope</code> 保留后端 message。</span>
+        </li>
+        <li>
+          <strong>后端裁决</strong>
+          <span><code>assertPhone()</code> 重新解析、严格校验、类型判断，失败抛 <code>A0001</code>（HTTP 400），成功返回标准 E.164。</span>
+        </li>
+        <li>
+          <strong>入库与展示</strong>
+          <span>数据库统一存 E.164；列表与详情通过 <code>formatPhone()</code> 转成人类可读格式，避免直接暴露 <code>+86</code>。</span>
+        </li>
+      </ol>
+    </section>
+
+    <!-- 4 -->
+    <section id="frontend">
+      <h2><span class="num">4</span>前端实现</h2>
+
+      <h3 id="frontend-phoneinput">4.1 PhoneInput 控件</h3>
+      <p>
+        文件：<code>frontend/src/components/PhoneInput.vue</code>，封装本地 vendor 版 intl-tel-input v29.5.5。
+        脚本与样式由 <code>frontend/index.html</code> 引入，控件初始化时读取全局 <code>window.intlTelInput</code> 与中文文案 <code>window.itiZh</code>。
+      </p>
+
+      <h4>初始化参数</h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>modelValue</code></td><td><code>''</code></td><td>E.164 值，支持空值</td></tr>
+            <tr><td><code>placeholder</code></td><td><code>请输入电话号码</code></td><td>页面通常传入“请输入联系电话”等业务文案</td></tr>
+            <tr><td><code>disabled</code></td><td><code>false</code></td><td>提交中禁用</td></tr>
+            <tr><td><code>initialCountry</code></td><td><code>'cn'</code></td><td>默认中国 +86</td></tr>
+            <tr><td><code>separateDialCode</code></td><td><code>true</code></td><td>国旗与区号独立展示</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>事件与暴露方法</h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>类型</th><th>名称</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="pill pill--blue">emit</span></td><td><code>update:modelValue</code></td><td>输出 E.164，未输完为 <code>''</code></td></tr>
+            <tr><td><span class="pill pill--blue">emit</span></td><td><code>change</code></td><td>值变化时同步触发，便于联动</td></tr>
+            <tr><td><span class="pill pill--blue">emit</span></td><td><code>blur</code></td><td>透传原生失焦事件</td></tr>
+            <tr><td><span class="pill pill--green">expose</span></td><td><code>getInstance()</code></td><td>获取 intl-tel-input 实例</td></tr>
+            <tr><td><span class="pill pill--green">expose</span></td><td><code>getNumber()</code></td><td>当前 E.164 值</td></tr>
+            <tr><td><span class="pill pill--green">expose</span></td><td><code>isValid()</code></td><td>严格校验结果，表单规则使用</td></tr>
+            <tr><td><span class="pill pill--green">expose</span></td><td><code>reset()</code></td><td>清空并恢复默认国家</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>关键实现</h4>
+<pre><span class="c">// 1. 初始化：默认中国 + 手机号占位</span>
+iti = window.intlTelInput(input, {
+  initialCountry: props.initialCountry,
+  separateDialCode: props.separateDialCode,
+  placeholderNumberType: <span class="s">'MOBILE'</span>,
+  i18n: window.itiZh ?? undefined,
+})
+<span class="c">// 初始值回显：E.164 自动识别国家</span>
+<span class="k">if</span> (props.modelValue) iti.setNumber(props.modelValue)
+input.addEventListener(<span class="s">'input'</span>, emitValue)
+input.addEventListener(<span class="s">'countrychange'</span>, emitValue)
+
+<span class="c">// 2. 输出 E.164（号码不完整时为 ''）</span>
+<span class="k">function</span> <span class="f">currentE164</span>(): <span class="n">string</span> {
+  <span class="k">if</span> (iti) <span class="k">return</span> iti.getNumber() || <span class="s">''</span>
+  <span class="k">return</span> inputRef.value?.value ?? <span class="s">''</span>
+}
+
+<span class="c">// 3. 严格校验：v29 中 isValidNumber 仅位数校验，必须优先 Precise</span>
+isValid: (): <span class="n">boolean</span> =&gt; {
+  <span class="k">if</span> (!iti) <span class="k">return</span> Boolean(inputRef.value?.value)
+  <span class="k">if</span> (<span class="k">typeof</span> iti.isValidNumberPrecise === <span class="s">'function'</span>) <span class="k">return</span> iti.isValidNumberPrecise()
+  <span class="k">if</span> (<span class="k">typeof</span> iti.isValidNumber === <span class="s">'function'</span>) <span class="k">return</span> iti.isValidNumber()
+  <span class="k">return</span> Boolean(iti.getNumber())
+}</pre>
+
+      <p>其他约定：</p>
+      <ul>
+        <li><b>外部赋值同步</b>：<code>watch(modelValue)</code> 判断与当前值不同后调用 <code>iti.setNumber()</code>；清空时恢复默认国家。</li>
+        <li><b>降级策略</b>：vendor 脚本未加载时退化为普通 <code>&lt;input type="tel"&gt;</code>，<code>isValid()</code> 只判断非空，并输出告警日志。</li>
+        <li><b>资源释放</b>：<code>onBeforeUnmount</code> 移除监听并 <code>iti.destroy()</code>，避免 keep-alive 页签切换造成 DOM/事件泄漏。</li>
+      </ul>
+
+      <h3 id="frontend-form">4.2 表单规则</h3>
+      <p>两个业务页面共用同一套写法：必填规则 + 自定义 validator，校验时机为 <code>input</code> 与 <code>blur</code>。</p>
+
+      <h4>承运商（允许手机 / 座机 / 400）</h4>
+<pre><span class="k">const</span> phoneRef = ref&lt;InstanceType&lt;<span class="k">typeof</span> PhoneInput&gt; | <span class="n">null</span>&gt;(<span class="n">null</span>)
+
+contact_phone: [
+  { required: <span class="k">true</span>, message: <span class="s">'请输入联系电话'</span>, trigger: [<span class="s">'input'</span>, <span class="s">'blur'</span>] },
+  {
+    message: <span class="s">'请输入有效的联系电话（默认中国 +86，支持手机/座机/400）'</span>,
+    trigger: [<span class="s">'input'</span>, <span class="s">'blur'</span>],
+    validator: () =&gt; (formModel.contact_phone ? (phoneRef.value?.isValid() ?? <span class="k">true</span>) : <span class="k">true</span>),
+  },
+]</pre>
+
+      <h4>司机（要求手机号）</h4>
+<pre>phone: [
+  { required: <span class="k">true</span>, message: <span class="s">'请输入手机号'</span>, trigger: [<span class="s">'input'</span>, <span class="s">'blur'</span>] },
+  {
+    message: <span class="s">'请输入有效的手机号（司机需留手机号，座机/400 号码无法通过校验）'</span>,
+    trigger: [<span class="s">'input'</span>, <span class="s">'blur'</span>],
+    validator: () =&gt; (formModel.phone ? (phoneRef.value?.isValid() ?? <span class="k">true</span>) : <span class="k">true</span>),
+  },
+]</pre>
+
+      <div class="callout callout--warn">
+        <div><b>校验分工</b>：前端只保证“号码有效”；“司机必须手机号”由后端 <code>mobileOnly</code> 兜底。因此前端文案写的是提前提示，最终以接口返回的 <code>A0001</code> 为准。</div>
+      </div>
+
+      <h4>模板挂载</h4>
+<pre>&lt;n-form-item label=<span class="s">"联系电话"</span> path=<span class="s">"contact_phone"</span>&gt;
+  &lt;div class=<span class="s">"readonly-field"</span>&gt;
+    &lt;PhoneInput
+      ref=<span class="s">"phoneRef"</span>
+      v-model=<span class="s">"formModel.contact_phone"</span>
+      :disabled=<span class="s">"submitting"</span>
+      placeholder=<span class="s">"请输入联系电话"</span>
+    /&gt;
+    &lt;span class=<span class="s">"field-tip"</span>&gt;默认中国 +86：手机 11 位；座机为区号+8 位号码；400/800 十位，点击国旗可切换国家&lt;/span&gt;
+  &lt;/div&gt;
+&lt;/n-form-item&gt;</pre>
+    </section>
+
+    <!-- 5 -->
+    <section id="backend">
+      <h2><span class="num">5</span>后端强校验</h2>
+      <p>
+        文件：<code>backend/src/helpers.js</code> 的 <code>assertPhone(value, { label, mobileOnly, required })</code>。
+        基于 <code>libphonenumber-js/max</code>，校验失败统一抛 <code>ApiError('A0001')</code>，由 <code>errorHandler</code> 映射为 HTTP 400。
+      </p>
+
+      <ol class="steps">
+        <li>
+          <strong>空值处理</strong>
+          <span><code>String(value ?? '').trim()</code> 后为空：<code>required</code> 为真抛「{label}必填」，否则返回 <code>null</code>。</span>
+        </li>
+        <li>
+          <strong>长度保护</strong>
+          <span>长度大于 25 直接判「{label}长度不正确」，避免异常长串进入解析器。</span>
+        </li>
+        <li>
+          <strong>按前缀选择解析策略</strong>
+          <span>以 <code>+</code> 开头按国际号码解析；否则按 <code>'CN'</code> 解析。因此国外号码必须带国家区号。</span>
+        </li>
+        <li>
+          <strong>严格有效性校验</strong>
+          <span><code>parsePhoneNumberFromString()</code> 结果为空或 <code>isValid()</code> 为假时抛格式错误，文案即界面上的规则说明。</span>
+        </li>
+        <li>
+          <strong>类型校验（可选）</strong>
+          <span><code>mobileOnly</code> 为真时要求 <code>getType()</code> 为 <code>MOBILE</code> 或 <code>FIXED_LINE_OR_MOBILE</code>，否则报「座机/热线号码不可用，请填写手机号」。</span>
+        </li>
+        <li>
+          <strong>归一化返回</strong>
+          <span>返回 <code>p.number</code>，即标准 E.164，上层直接入库，无需再做拼接。</span>
+        </li>
+      </ol>
+
+<pre><span class="k">const</span> { parsePhoneNumberFromString: parsePhone } = require(<span class="s">'libphonenumber-js/max'</span>)
+
+<span class="k">function</span> <span class="f">assertPhone</span>(value, { label = <span class="s">'联系电话'</span>, mobileOnly = <span class="k">false</span>, required = <span class="k">true</span> } = {}) {
+  <span class="k">const</span> v = String(value ?? <span class="s">''</span>).trim()
+  <span class="k">if</span> (!v) {
+    <span class="k">if</span> (required) <span class="k">throw</span> errParam(<span class="s">`${label}必填`</span>)
+    <span class="k">return</span> <span class="n">null</span>
+  }
+  <span class="k">if</span> (v.length &gt; <span class="n">25</span>) <span class="k">throw</span> errParam(<span class="s">`${label}长度不正确`</span>)
+  <span class="k">const</span> p = v.startsWith(<span class="s">'+'</span>) ? parsePhone(v) : parsePhone(v, <span class="s">'CN'</span>)
+  <span class="k">if</span> (!p || !p.isValid()) {
+    <span class="k">throw</span> errParam(<span class="s">`${label}格式不正确：国内支持手机号（11 位）、座机（区号+8 位号码，如 0551-63612345）、400/800 号码（10 位）；国外号码需带国家区号（如 +1 202-555-0123）`</span>)
+  }
+  <span class="k">if</span> (mobileOnly) {
+    <span class="k">const</span> t = p.getType()
+    <span class="k">if</span> (t !== <span class="s">'MOBILE'</span> &amp;&amp; t !== <span class="s">'FIXED_LINE_OR_MOBILE'</span>) {
+      <span class="k">throw</span> errParam(<span class="s">'座机/热线号码不可用，请填写手机号'</span>)
+    }
+  }
+  <span class="k">return</span> p.number
+}</pre>
+
+      <h4>调用点</h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>路由</th><th>字段</th><th>参数</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>routes/carriers.js:51</code></td><td><code>contact_phone</code></td><td><code>mobileOnly: false</code></td><td>承运商新增 / 编辑，必填</td></tr>
+            <tr><td><code>routes/drivers.js:95</code></td><td><code>phone</code></td><td><code>mobileOnly: true</code></td><td>司机新增 / 编辑，必须手机号</td></tr>
+            <tr><td><code>routes/external.js:135</code></td><td><code>salesPhone</code></td><td><code>required: false</code></td><td>CRM 下发任务，销售人员电话选填</td></tr>
+            <tr><td><code>routes/external.js:136</code></td><td><code>receiverPhone</code></td><td><code>required: false</code></td><td>CRM 下发任务，接车人电话选填</td></tr>
+            <tr><td><code>routes/external.js:382</code></td><td><code>phone</code></td><td><code>mobileOnly: true</code></td><td>狮桥同步司机，必须手机号</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section id="storage">
+      <h2><span class="num">6</span>存储与展示</h2>
+
+      <h4>数据库字段</h4>
+      <p>均定义为 <code>VARCHAR(20)</code>，统一存 E.164（E.164 最长 16 字符，字段长度足够）：</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>表</th><th>字段</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>carrier</code></td><td><code>contact_phone</code></td><td>承运商联系电话，NOT NULL</td></tr>
+            <tr><td><code>driver</code></td><td><code>phone</code></td><td>司机手机号，NOT NULL，含索引 <code>idx_phone</code></td></tr>
+            <tr><td><code>shipping_task</code></td><td><code>sales_phone</code></td><td>销售人员联系方式，可空</td></tr>
+            <tr><td><code>shipping_task</code></td><td><code>receiver_phone</code></td><td>接车人联系电话，可空</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>展示格式化</h4>
+      <p>文件：<code>frontend/src/utils/format.ts</code>。仅用于展示，不参与校验。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>输入</th><th>输出</th><th>规则</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>+8613800138000</code></td><td><code>138 0013 8000</code></td><td>国内手机 3-4-4 分隔</td></tr>
+            <tr><td><code>13800138000</code></td><td><code>138 0013 8000</code></td><td>无 +86 前缀同样识别</td></tr>
+            <tr><td><code>055163612345</code></td><td><code>0551-63612345</code></td><td>座机区号-号码</td></tr>
+            <tr><td><code>+12025550123</code></td><td><code>+12025550123</code></td><td>其他国家原样返回</td></tr>
+            <tr><td><code>null</code> / <code>''</code></td><td><code>-</code></td><td>占位符可自定义</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section id="migration">
+      <h2><span class="num">7</span>存量数据迁移</h2>
+      <p>
+        文件：<code>backend/scripts/migrate-phones.js</code>，用于把历史裸号一次性转为 E.164。
+        规则：空值与已带 <code>+</code> 前缀的记录跳过；其余按中国号码解析，成功则更新，失败保留原值并输出清单。
+      </p>
+<pre><span class="k">const</span> TASKS = [
+  { table: <span class="s">'carriers'</span>,     col: <span class="s">'contact_phone'</span>,  pk: <span class="s">'id'</span>, label: <span class="s">'承运商联系电话'</span> },
+  { table: <span class="s">'drivers'</span>,      col: <span class="s">'phone'</span>,          pk: <span class="s">'id'</span>, label: <span class="s">'司机手机号'</span> },
+  { table: <span class="s">'ship_tasks'</span>,   col: <span class="s">'sales_phone'</span>,    pk: <span class="s">'id'</span>, label: <span class="s">'销售电话'</span> },
+  { table: <span class="s">'ship_tasks'</span>,   col: <span class="s">'receiver_phone'</span>, pk: <span class="s">'id'</span>, label: <span class="s">'接车人电话'</span> },
+]</pre>
+      <p>执行方式：<code>node scripts/migrate-phones.js</code>。脚本会打印“已转 E.164 / 已跳过 / 失败”三类统计，失败项需人工确认。</p>
+    </section>
+
+    <!-- 8 -->
+    <section id="components">
+      <h2><span class="num">8</span>引用的公共组件</h2>
+      <p>
+        电话链路并不是孤立实现的，它复用了 <code>frontend/src/components</code> 下的 8 个公共组件，以及若干公共工具与服务。
+        下表先给出全景，再逐项说明职责与复用方式。
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>组件</th><th>路径</th><th>职责</th><th>在电话链路中的角色</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>PhoneInput</b></td>
+              <td><code>components/PhoneInput.vue</code></td>
+              <td>国际电话输入控件</td>
+              <td><span class="pill pill--blue">核心</span> 输入、格式化、前端严格校验</td>
+            </tr>
+            <tr>
+              <td><b>PageTable</b></td>
+              <td><code>components/PageTable.vue</code></td>
+              <td>远程分页表格</td>
+              <td>司机 / 承运商列表，电话列展示与刷新</td>
+            </tr>
+            <tr>
+              <td><b>StatusTag</b></td>
+              <td><code>components/StatusTag.vue</code></td>
+              <td>状态药丸标签</td>
+              <td>列表状态列，与电话同表展示</td>
+            </tr>
+            <tr>
+              <td><b>ConfirmAction</b></td>
+              <td><code>components/ConfirmAction.vue</code></td>
+              <td>二次确认弹窗</td>
+              <td>停用 / 启用确认，与表单提交共用提交态</td>
+            </tr>
+            <tr>
+              <td><b>DetailSection</b></td>
+              <td><code>components/DetailSection.vue</code></td>
+              <td>详情分区描述栅格</td>
+              <td>任务详情展示销售 / 接车人 / 司机电话</td>
+            </tr>
+            <tr>
+              <td><b>MoneyText</b></td>
+              <td><code>components/MoneyText.vue</code></td>
+              <td>金额格式化文本</td>
+              <td>同页复用，非电话字段</td>
+            </tr>
+            <tr>
+              <td><b>PagePlaceholder</b></td>
+              <td><code>components/PagePlaceholder.vue</code></td>
+              <td>页面建设中占位</td>
+              <td>骨架阶段占位，与电话无直接关系</td>
+            </tr>
+            <tr>
+              <td><b>ChinaMap</b></td>
+              <td><code>components/ChinaMap.vue</code></td>
+              <td>中国地图与运输路径</td>
+              <td>轨迹页使用，与电话无直接关系</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="components-ui">8.1 业务组件说明</h3>
+
+      <div class="cards">
+        <div class="card">
+          <div class="card__title">
+            <span class="card__name">PhoneInput</span>
+            <span class="pill pill--blue">核心</span>
+          </div>
+          <div class="card__path">frontend/src/components/PhoneInput.vue</div>
+          <p>intl-tel-input 的 Vue 封装，负责国家选择、号码输入与 E.164 输出，并暴露严格校验方法。</p>
+          <ul>
+            <li><code>v-model</code> 双向绑定 E.164</li>
+            <li><code>ref.isValid()</code> 供表单规则调用</li>
+            <li><code>ref.reset()</code> 清空并恢复默认国家</li>
+            <li>vendor 未加载时自动降级</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card__title">
+            <span class="card__name">PageTable</span>
+            <span class="pill pill--gray">列表</span>
+          </div>
+          <div class="card__path">frontend/src/components/PageTable.vue</div>
+          <p>NDataTable + 远程分页封装，内置 loading、空态、错误态与重试，查询参数变更自动回到第一页。</p>
+          <ul>
+            <li><code>remote({ page, pageSize })</code> 返回 <code>{ list, total }</code></li>
+            <li>暴露 <code>reload()</code> / <code>refresh()</code></li>
+            <li>电话列通过 <code>render</code> 调 <code>formatPhone()</code></li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card__title">
+            <span class="card__name">StatusTag</span>
+            <span class="pill pill--gray">展示</span>
+          </div>
+          <div class="card__path">frontend/src/components/StatusTag.vue</div>
+          <p>统一状态药丸，内置任务 / 承运商 / 司机 / 对账 / 电子签五类映射，未知值回退字典接口。</p>
+          <ul>
+            <li><code>type</code> + <code>value</code> 两个属性即可</li>
+            <li>配色对齐旧版设计系统</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card__title">
+            <span class="card__name">ConfirmAction</span>
+            <span class="pill pill--orange">交互</span>
+          </div>
+          <div class="card__path">frontend/src/components/ConfirmAction.vue</div>
+          <p>危险 / 常规二次确认弹窗，支持异步提交：<code>loading</code> + <code>auto-close=false</code> 由父组件决定关闭时机。</p>
+          <ul>
+            <li>承运商 / 司机停用、启用均复用</li>
+            <li>正文支持字符串或默认插槽</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card__title">
+            <span class="card__name">DetailSection</span>
+            <span class="pill pill--gray">详情</span>
+          </div>
+          <div class="card__path">frontend/src/components/DetailSection.vue</div>
+          <p>详情分区标题 + NDescriptions 栅格，默认 3 列、带边框、浅灰 label 背景。</p>
+          <ul>
+            <li>电话通过 <code>formatPhone()</code> 渲染</li>
+            <li><code>#extra</code> 插槽放编辑按钮</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card__title">
+            <span class="card__name">MoneyText</span>
+            <span class="pill pill--gray">展示</span>
+          </div>
+          <div class="card__path">frontend/src/components/MoneyText.vue</div>
+          <p>金额千分位 + 两位小数，兼容 DECIMAL 字符串，支持前缀与空值占位。</p>
+          <ul>
+            <li>与电话同处详情页 / 列表页</li>
+            <li>复用 <code>utils/format.ts</code> 的 <code>money()</code></li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card__title">
+            <span class="card__name">PagePlaceholder</span>
+            <span class="pill pill--gray">骨架</span>
+          </div>
+          <div class="card__path">frontend/src/components/PagePlaceholder.vue</div>
+          <p>页面建设期占位，保证路由可访问、可编译；页面完成后整体替换，无需保留。</p>
+        </div>
+
+        <div class="card">
+          <div class="card__title">
+            <span class="card__name">ChinaMap</span>
+            <span class="pill pill--gray">地图</span>
+          </div>
+          <div class="card__path">frontend/src/components/ChinaMap.vue</div>
+          <p>包装 <code>lib/china-map.js</code> 渲染器，按起终点自适应视野，支持回传点点击。</p>
+          <ul>
+            <li>用于轨迹页，不在电话链路内</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 id="components-lib">8.2 公共工具与服务</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>模块</th><th>路径</th><th>能力</th><th>电话链路中的用途</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>format</b></td>
+              <td><code>utils/format.ts</code></td>
+              <td><code>money</code> / <code>datetime</code> / <code>dateOnly</code> / <code>formatPhone</code></td>
+              <td>列表与详情的电话展示</td>
+            </tr>
+            <tr>
+              <td><b>http</b></td>
+              <td><code>services/http.ts</code></td>
+              <td>axios 实例、统一信封拆包、<code>ApiError</code>、<code>postEnvelope</code></td>
+              <td>提交电话字段，透传后端校验错误 message</td>
+            </tr>
+            <tr>
+              <td><b>carriers</b></td>
+              <td><code>services/carriers.ts</code></td>
+              <td>列表 / 新增 / 编辑 / 启停</td>
+              <td>新增与编辑携带 E.164 电话</td>
+            </tr>
+            <tr>
+              <td><b>drivers</b></td>
+              <td><code>services/drivers.ts</code></td>
+              <td>列表 / 新增 / 编辑 / 启停 / 下拉选项</td>
+              <td>新增与编辑携带手机号</td>
+            </tr>
+            <tr>
+              <td><b>dictionary store</b></td>
+              <td><code>stores/dictionary.ts</code></td>
+              <td>字典缓存</td>
+              <td>StatusTag 未知状态回退</td>
+            </tr>
+            <tr>
+              <td><b>api 类型</b></td>
+              <td><code>types/api.ts</code></td>
+              <td>Carrier / Driver / ShipTask 等类型</td>
+              <td><code>contact_phone</code>、<code>phone</code>、<code>sales_phone</code> 等字段定义</td>
+            </tr>
+            <tr>
+              <td><b>全局注册</b></td>
+              <td><code>main.ts</code></td>
+              <td>naive-ui 全量注册</td>
+              <td>页面可直接使用 <code>n-form</code> / <code>n-modal</code> 等</td>
+            </tr>
+            <tr>
+              <td><b>vendor 资源</b></td>
+              <td><code>index.html</code> + <code>public/vendor/intl-tel-input</code></td>
+              <td>注入 <code>window.intlTelInput</code> / <code>window.itiZh</code></td>
+              <td>PhoneInput 的运行时依赖</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <div><b>复用建议</b>：<code>envSuccessText()</code> 目前在承运商、司机两个页面各有一份完全相同的实现（优先取后端信封 message，占位 <code>success</code> 时用前端兜底）。若要继续收敛公共代码，可提到 <code>utils/format.ts</code> 或独立 <code>utils/message.ts</code>，避免文案策略分叉。</div>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section id="dependency">
+      <h2><span class="num">9</span>组件依赖关系</h2>
+      <p>按“页面 → 组件 → 服务 → 后端”的方向依赖，公共组件不直接访问接口，保持可复用性。</p>
+
+      <div class="flow">
+        <div class="flow__layer">
+          <div class="flow__label">页面</div>
+          <div class="flow__body">
+            <span class="node">base/carriers/index.vue</span>
+            <span class="node">base/drivers/index.vue</span>
+            <span class="node">dispatch/tasks/TaskDetailDrawer.vue</span>
+          </div>
+        </div>
+        <div class="flow__arrow">↓ import</div>
+
+        <div class="flow__layer">
+          <div class="flow__label">组件</div>
+          <div class="flow__body">
+            <span class="node node--brand">PhoneInput</span>
+            <span class="node">PageTable</span>
+            <span class="node">StatusTag</span>
+            <span class="node">ConfirmAction</span>
+            <span class="node">DetailSection</span>
+            <span class="node">MoneyText</span>
+          </div>
+        </div>
+        <div class="flow__arrow">↓ 调用</div>
+
+        <div class="flow__layer">
+          <div class="flow__label">工具 / 服务</div>
+          <div class="flow__body">
+            <span class="node">utils/format.ts<small>formatPhone</small></span>
+            <span class="node">services/carriers.ts</span>
+            <span class="node">services/drivers.ts</span>
+            <span class="node">services/http.ts</span>
+            <span class="node">stores/dictionary.ts</span>
+          </div>
+        </div>
+        <div class="flow__arrow">↓ HTTP /api</div>
+
+        <div class="flow__layer">
+          <div class="flow__label">后端</div>
+          <div class="flow__body">
+            <span class="node node--orange">routes/*</span>
+            <span class="arrow">→</span>
+            <span class="node node--orange">helpers.assertPhone</span>
+            <span class="arrow">→</span>
+            <span class="node node--green">MySQL</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div><b>为什么 PhoneInput 必须独立成组件：</b>它需要持有 intl-tel-input 实例、监听国家切换、在卸载时销毁 DOM，这些是有状态的命令式逻辑；抽成组件后，业务页面只关心 <code>v-model</code> 与 <code>isValid()</code>，无需重复处理初始化和清理。</div>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="pitfalls">
+      <h2><span class="num">10</span>注意事项</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>问题</th><th>说明与处理</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="num-badge">1</span></td>
+              <td>误用 <code>isValidNumber()</code></td>
+              <td>v29 中该方法仅做位数校验，必须优先调用 <code>isValidNumberPrecise()</code>。</td>
+            </tr>
+            <tr>
+              <td><span class="num-badge">2</span></td>
+              <td>号码未输完就提交</td>
+              <td><code>getNumber()</code> 返回空串，必填规则先命中，不会把半截号码写入表单。</td>
+            </tr>
+            <tr>
+              <td><span class="num-badge">3</span></td>
+              <td>国际号码缺少 <code>+</code></td>
+              <td>无前缀会按中国号码解析，导致校验失败；必须带国家区号。</td>
+            </tr>
+            <tr>
+              <td><span class="num-badge">4</span></td>
+              <td>前端未限制号码类型</td>
+              <td>司机“必须手机号”依赖后端 <code>mobileOnly</code>，前端文案仅为提示。</td>
+            </tr>
+            <tr>
+              <td><span class="num-badge">5</span></td>
+              <td>400 / 800 类型差异</td>
+              <td>libphonenumber 可能判定为 <code>TOLL_FREE</code> / <code>UAN</code>：承运商放行，司机被 <code>mobileOnly</code> 拦截，属预期行为。</td>
+            </tr>
+            <tr>
+              <td><span class="num-badge">6</span></td>
+              <td>长度阈值不一致</td>
+              <td>后端拦截阈值为 25 字符，数据库字段为 <code>VARCHAR(20)</code>；E.164 最长 16 字符，正常数据安全，但阈值建议后续统一为 20。</td>
+            </tr>
+            <tr>
+              <td><span class="num-badge">7</span></td>
+              <td>vendor 脚本加载失败</td>
+              <td>控件降级为普通输入，<code>isValid()</code> 退化为非空判断；上线前需确认本地 vendor 路径可访问。</td>
+            </tr>
+            <tr>
+              <td><span class="num-badge">8</span></td>
+              <td>keep-alive 页签切换</td>
+              <td>组件卸载时必须 <code>iti.destroy()</code>，否则重复进入页面会残留 DOM 与事件监听。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section id="files">
+      <h2><span class="num">11</span>文件清单</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>端</th><th>文件</th><th>内容</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>前端</td><td><code>frontend/src/components/PhoneInput.vue</code></td><td>电话输入控件与前端校验出口</td></tr>
+            <tr><td>前端</td><td><code>frontend/src/views/base/carriers/index.vue</code></td><td>承运商表单与电话规则</td></tr>
+            <tr><td>前端</td><td><code>frontend/src/views/base/drivers/index.vue</code></td><td>司机表单与手机号规则</td></tr>
+            <tr><td>前端</td><td><code>frontend/src/utils/format.ts</code></td><td><code>formatPhone()</code> 展示格式化</td></tr>
+            <tr><td>前端</td><td><code>frontend/src/types/global.d.ts</code></td><td>intl-tel-input 实例类型声明</td></tr>
+            <tr><td>前端</td><td><code>frontend/index.html</code></td><td>vendor 脚本与中文 locale 引入</td></tr>
+            <tr><td>后端</td><td><code>backend/src/helpers.js</code></td><td><code>assertPhone()</code> 强校验</td></tr>
+            <tr><td>后端</td><td><code>backend/src/routes/carriers.js</code></td><td>承运商接口调用点</td></tr>
+            <tr><td>后端</td><td><code>backend/src/routes/drivers.js</code></td><td>司机接口调用点</td></tr>
+            <tr><td>后端</td><td><code>backend/src/routes/external.js</code></td><td>CRM / 狮桥外部接口调用点</td></tr>
+            <tr><td>后端</td><td><code>backend/scripts/migrate-phones.js</code></td><td>存量号码迁移脚本</td></tr>
+            <tr><td>数据库</td><td><code>database/schema.sql</code></td><td>电话字段定义</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  STP 智能运输管理平台 · 电话校验实现说明 · 基于 STP AI测试环境代码整理 · 2026-10-20
+</footer>
+
+</body>
+</html>

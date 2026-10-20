@@ -1915,7 +1915,7 @@
           "08 外部接口·CRM"
         ],
         "summary": "① 发运申请任务接收",
-        "description": "CRM 多车下发：applyNo 幂等（重复 → C0001）；任务单号 STP 自动生成（FY+yyyyMMdd+4 位）；计划提车日期 planPickupDate 必填（CRM 随发运申请直接下发，承运商接单后仅可调整）；head.plan_freight=各车 planFreight 之和；交付地址必填；备注 ≤500 字落任务",
+        "description": "CRM 多车下发：applyNo 幂等（重复 → C0001）；任务单号 STP 自动生成（FY+yyyyMMdd+4 位）；计划提车日期 planPickupDate 必填（CRM 随发运申请直接下发，承运商接单接口不再修改）；head.plan_freight=各车 planFreight 之和；交付地址必填；备注 ≤500 字落任务",
         "requestBody": {
           "required": true,
           "content": {
@@ -1925,59 +1925,73 @@
                 "properties": {
                   "applyNo": {
                     "type": "string",
-                    "description": "发运申请号（必填，唯一，重复返回 C0001）"
+                    "description": "发运申请号（必填，唯一，重复返回 C0001）",
+                    "title": "发运申请号"
                   },
                   "customerName": {
                     "type": "string",
-                    "description": "客户名称（必填）"
+                    "description": "客户名称（必填）",
+                    "title": "客户名称"
                   },
                   "region": {
                     "type": "string",
-                    "description": "大区"
+                    "description": "大区",
+                    "title": "大区"
                   },
                   "salesPerson": {
                     "type": "string",
-                    "description": "销售人员姓名"
+                    "description": "销售人员姓名",
+                    "title": "销售人员"
                   },
                   "salesPhone": {
                     "type": "string",
-                    "description": "销售人员联系方式"
+                    "description": "销售人员联系方式",
+                    "title": "销售人员联系方式"
                   },
                   "deliveryArea": {
                     "type": "string",
-                    "description": "交付地区"
+                    "description": "交付地区",
+                    "title": "交付地区"
                   },
                   "deliveryAddress": {
                     "type": "string",
-                    "description": "交付地址（必填）"
+                    "description": "交付地址（必填）",
+                    "title": "交付地址"
                   },
                   "receiverPhone": {
                     "type": "string",
-                    "description": "接车人联系电话"
+                    "description": "接车人联系电话",
+                    "title": "接车人联系电话"
                   },
                   "factory": {
                     "type": "string",
-                    "description": "生产工厂（必填）"
+                    "description": "生产工厂（必填）",
+                    "title": "生产工厂"
                   },
                   "storageLocation": {
                     "type": "string",
-                    "description": "存放地点（必填）"
+                    "description": "存放地点（必填）",
+                    "title": "存放地点"
                   },
                   "shipMethod": {
                     "type": "string",
-                    "description": "发运方式（送车）"
+                    "description": "发运方式（送车）",
+                    "title": "发运方式"
                   },
                   "shipLocation": {
                     "type": "string",
-                    "description": "提车地点（顶层统一提供或车辆明细单独提供）"
+                    "description": "提车地点（顶层统一提供或车辆明细单独提供）",
+                    "title": "提车地点"
                   },
                   "planPickupDate": {
                     "type": "string",
-                    "description": "计划提车日期（必填，YYYY-MM-DD，主来源）"
+                    "description": "计划提车日期（必填，YYYY-MM-DD，主来源）",
+                    "title": "计划提车日期"
                   },
                   "remark": {
                     "type": "string",
-                    "description": "备注"
+                    "description": "备注",
+                    "title": "备注"
                   },
                   "vehicles": {
                     "type": "array",
@@ -1990,38 +2004,47 @@
                       "properties": {
                         "vin": {
                           "type": "string",
-                          "description": "车架号（必填，唯一）"
+                          "description": "车架号（必填，唯一）",
+                          "title": "车架号"
                         },
                         "orderNo": {
                           "type": "string",
-                          "description": "订单号"
+                          "description": "订单号",
+                          "title": "订单号"
                         },
                         "reportNo": {
                           "type": "string",
-                          "description": "报告号"
+                          "description": "报告号",
+                          "title": "报单号"
                         },
                         "planFreight": {
                           "type": "number",
-                          "description": "计划运费（元/台）"
+                          "description": "计划运费（元/台）",
+                          "title": "计划运费"
                         },
                         "shipLocation": {
                           "type": "string",
-                          "description": "该车提车地点（不传用顶层）"
+                          "description": "该车提车地点（不传用顶层）",
+                          "title": "提车地点"
                         },
                         "vehicleModel": {
                           "type": "string",
-                          "description": "车型"
+                          "description": "车型",
+                          "title": "车型"
                         },
                         "engineConfig": {
                           "type": "string",
-                          "description": "发动机配置"
+                          "description": "发动机配置",
+                          "title": "发动机配置"
                         },
                         "cabinType": {
                           "type": "string",
-                          "description": "驾驶室类型"
+                          "description": "驾驶室类型",
+                          "title": "驾驶室类型"
                         }
                       }
-                    }
+                    },
+                    "title": "车辆明细"
                   }
                 },
                 "required": [
@@ -2113,27 +2136,33 @@
                 "properties": {
                   "esignId": {
                     "type": "string",
-                    "description": "电子签 ID（必填，唯一，重复返回 C0001）"
+                    "description": "电子签 ID（必填，唯一，重复返回 C0001）",
+                    "title": "电子签ID"
                   },
                   "vin": {
                     "type": "string",
-                    "description": "车架号（必填，VIN+申请号匹配任务车辆明细）"
+                    "description": "车架号（必填，VIN+申请号匹配任务车辆明细）",
+                    "title": "车架号"
                   },
                   "applyNo": {
                     "type": "string",
-                    "description": "发运申请号（必填）"
+                    "description": "发运申请号（必填）",
+                    "title": "发运申请号"
                   },
                   "signType": {
                     "type": "string",
-                    "description": "签署类型（物流电子签）"
+                    "description": "签署类型（物流电子签）",
+                    "title": "签署类型"
                   },
                   "triggerNode": {
                     "type": "string",
-                    "description": "触发节点"
+                    "description": "触发节点",
+                    "title": "触发节点"
                   },
                   "signParty": {
                     "type": "string",
-                    "description": "签署方"
+                    "description": "签署方",
+                    "title": "签署方"
                   }
                 },
                 "required": [
@@ -2246,11 +2275,13 @@
                 "properties": {
                   "applyNo": {
                     "type": "string",
-                    "description": "发运申请号（必填）"
+                    "description": "发运申请号（必填）",
+                    "title": "发运申请号"
                   },
                   "cancelReason": {
                     "type": "string",
-                    "description": "取消原因（必填）"
+                    "description": "取消原因（必填）",
+                    "title": "取消原因"
                   }
                 },
                 "required": [
@@ -2305,15 +2336,18 @@
                 "properties": {
                   "applyNo": {
                     "type": "string",
-                    "description": "发运申请号（推荐，与 taskNo 二选一）"
+                    "description": "发运申请号（推荐，与 taskNo 二选一）",
+                    "title": "发运申请号"
                   },
                   "taskNo": {
                     "type": "string",
-                    "description": "任务单号（兼容）"
+                    "description": "任务单号（兼容）",
+                    "title": "任务单号"
                   },
                   "outboundTime": {
                     "type": "string",
-                    "description": "出库时间（YYYY-MM-DD 或 YYYY-MM-DD HH:mm:ss，不传取当前时间）"
+                    "description": "出库时间（YYYY-MM-DD 或 YYYY-MM-DD HH:mm:ss，不传取当前时间）",
+                    "title": "出库时间"
                   }
                 }
               },
@@ -2363,35 +2397,43 @@
                 "properties": {
                   "driverName": {
                     "type": "string",
-                    "description": "司机姓名（必填）"
+                    "description": "司机姓名（必填）",
+                    "title": "司机姓名"
                   },
                   "phone": {
                     "type": "string",
-                    "description": "联系电话（必填）"
+                    "description": "联系电话（必填）",
+                    "title": "联系电话"
                   },
                   "idCard": {
                     "type": "string",
-                    "description": "身份证号（必填，UPSERT 主键，source=2 狮桥）"
+                    "description": "身份证号（必填，UPSERT 主键，source=2 狮桥）",
+                    "title": "身份证号"
                   },
                   "licenseNo": {
                     "type": "string",
-                    "description": "驾驶证号"
+                    "description": "驾驶证号",
+                    "title": "驾驶证号"
                   },
                   "licenseType": {
                     "type": "string",
-                    "description": "准驾车型，如 A2"
+                    "description": "准驾车型，如 A2",
+                    "title": "准驾车型"
                   },
                   "licenseValidFrom": {
                     "type": "string",
-                    "description": "驾驶证有效期起（YYYY-MM-DD）"
+                    "description": "驾驶证有效期起（YYYY-MM-DD）",
+                    "title": "驾驶证有效期起"
                   },
                   "licenseValidTo": {
                     "type": "string",
-                    "description": "驾驶证有效期止（YYYY-MM-DD）"
+                    "description": "驾驶证有效期止（YYYY-MM-DD）",
+                    "title": "驾驶证有效期止"
                   },
                   "carrierId": {
                     "type": "integer",
-                    "description": "关联承运商 ID（不传则不维护 carrier_driver）"
+                    "description": "关联承运商 ID（不传则不维护 carrier_driver）",
+                    "title": "承运商ID"
                   }
                 },
                 "required": [
@@ -2440,93 +2482,11 @@
         }
       }
     },
-    "/api/external/shipping-tasks/status-sync": {
+    "/api/external/shipping-tasks/accept": {
       "post": {
         "tags": [
           "12 外部接口·承运商通用"
         ],
-        "summary": "⑫ 运单状态回传（通用接口，ACCEPT=承运商接单并指派司机）",
-        "description": "承运商通用回传接口：狮桥物流及其他承运商/三方物流供应商均可调用，后续供应商接入复用本接口。可选 carrierName 标识回传承运商（须与任务当前承运商一致防串单，不传按狮桥物流留痕）。action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）；可选 planPickupDate 调整计划提车日期（主来源为 ① receive 随申请下发必填，不传保持原值）；action=PICKUP：司机确认提车（=提车发运+拍照），仅 CARRIER_ACCEPTED（承运商已接单）可确认，CARRIER_ACCEPTED→PICKED，回填 ship_time（发运时间），提车后待仓库出库（⑧ 出库回传后进入在途）；可选 actualPickupDate 实际提车日期（YYYY-MM-DD，即发运时间，允许早于计划提车日期）；photos 提车照片数组写 status_log.remark；已提车及之后重复回传仅补记日志不回退；action=ARRIVE：司机到达，→ARRIVED 回填 arrive_time；实际运费/里程不在本接口回传（运费相关功能暂未开放，运费单以计划运费生成）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "action": {
-                    "type": "string",
-                    "enum": [
-                      "ACCEPT",
-                      "PICKUP",
-                      "ARRIVE",
-                      "FINISH"
-                    ],
-                    "description": "动作（必填）：ACCEPT 接单 / PICKUP 确认提车（=发运）/ ARRIVE 到达 / FINISH 完结"
-                  },
-                  "applyNo": {
-                    "type": "string",
-                    "description": "发运申请号（推荐，与 taskNo 二选一）"
-                  },
-                  "taskNo": {
-                    "type": "string",
-                    "description": "任务单号（兼容）"
-                  },
-                  "carrierName": {
-                    "type": "string",
-                    "description": "回传承运商名称（选填，须与任务当前承运商一致，不传按狮桥物流留痕）"
-                  },
-                  "driverId": {
-                    "type": "integer",
-                    "description": "司机 ID（action=ACCEPT 必填，司机须启用且属于任务承运商）"
-                  },
-                  "planPickupDate": {
-                    "type": "string",
-                    "description": "计划提车日期（action=ACCEPT 可选调整，YYYY-MM-DD，不传保持 CRM 下发值）"
-                  },
-                  "actualPickupDate": {
-                    "type": "string",
-                    "description": "实际提车日期（action=PICKUP 选填，YYYY-MM-DD，即发运时间；允许早于计划提车日期；提车后待仓库出库；不传取当前时间）"
-                  },
-                  "photos": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "提车照片 URL 数组（action=PICKUP 选填，写任务状态日志留痕）"
-                  }
-                },
-                "required": [
-                  "action"
-                ]
-              },
-              "examples": {
-                "accept": {
-                  "summary": "承运商接单并指派司机（带供应商身份，可选调整提车日期）",
-                  "value": {
-                    "action": "ACCEPT",
-                    "applyNo": "APPLY-20261020-001",
-                    "carrierName": "狮桥物流",
-                    "driverId": 3,
-                    "planPickupDate": "2026-10-22"
-                  }
-                },
-                "pickup": {
-                  "summary": "司机确认提车（=发运，实际提车日期即发运时间，照片留痕）",
-                  "value": {
-                    "action": "PICKUP",
-                    "applyNo": "APPLY-20261020-001",
-                    "actualPickupDate": "2026-10-21",
-                    "photos": [
-                      "https://oss.example.com/pickup/30001-1.jpg",
-                      "https://oss.example.com/pickup/30001-2.jpg"
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "状态推进结果（ARRIVE 含生成的运费单号）",
@@ -2539,7 +2499,9 @@
                     "taskNo": "FY202610200001",
                     "status": "ARRIVED",
                     "freightNo": "YF202610200001",
-                    "billCreated": true
+                    "billCreated": true,
+                    "actualFreight": 9500,
+                    "mileage": 412.5
                   }
                 },
                 "description": "状态推进结果（ARRIVE 含生成的运费单号）"
@@ -2547,10 +2509,291 @@
             }
           },
           "400": {
-            "description": "A0001 action 缺失或不合法 / driverId 缺失 / 日期格式错误"
+            "description": "A0001 参数校验失败（driverId 缺失 / 时间格式错误 / 时间晚于当前时间等）"
           },
           "409": {
             "description": "D0001 当前状态不允许该动作（状态机校验）"
+          }
+        },
+        "summary": "⑫ 承运商接单（分配司机）",
+        "description": "承运商确认接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）。计划提车日期由 CRM 在 ① receive 随发运申请下发，本接口不接收。carrierName 可选，须与任务当前承运商一致防串单，不传按狮桥物流留痕。状态不允许返回 D0001。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（推荐，与 taskNo 二选一）",
+                    "title": "发运申请号"
+                  },
+                  "taskNo": {
+                    "type": "string",
+                    "description": "任务单号（兼容）",
+                    "title": "任务单号"
+                  },
+                  "carrierName": {
+                    "type": "string",
+                    "description": "回传承运商名称（选填，须与任务当前承运商一致，不传按狮桥物流留痕）",
+                    "title": "承运商名称"
+                  },
+                  "driverId": {
+                    "type": "integer",
+                    "description": "司机 ID（必填，司机须启用且属于任务承运商）",
+                    "title": "司机ID"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/external/shipping-tasks/pickup": {
+      "post": {
+        "tags": [
+          "12 外部接口·承运商通用"
+        ],
+        "responses": {
+          "200": {
+            "description": "状态推进结果（ARRIVE 含生成的运费单号）",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "到达确认成功，已生成运费结算单 YF202610200001（待对账）",
+                  "data": {
+                    "taskNo": "FY202610200001",
+                    "status": "ARRIVED",
+                    "freightNo": "YF202610200001",
+                    "billCreated": true,
+                    "actualFreight": 9500,
+                    "mileage": 412.5
+                  }
+                },
+                "description": "状态推进结果（ARRIVE 含生成的运费单号）"
+              }
+            }
+          },
+          "400": {
+            "description": "A0001 参数校验失败（driverId 缺失 / 时间格式错误 / 时间晚于当前时间等）"
+          },
+          "409": {
+            "description": "D0001 当前状态不允许该动作（状态机校验）"
+          }
+        },
+        "summary": "⑫ 司机确认提车（=发运，含提车照片）",
+        "description": "司机确认提车并拍照：仅 CARRIER_ACCEPTED 可调，CARRIER_ACCEPTED→PICKED，回填 ship_time（发运时间），提车后待 ⑧ WMS 出库回传进入在途。actualPickupDate 为实际提车日期（YYYY-MM-DD，允许早于计划提车日期，不得晚于当前日期）；photos 提车照片结构化写入 status_log.photos。已提车及之后重复回传仅补记日志、不回退状态。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（推荐，与 taskNo 二选一）",
+                    "title": "发运申请号"
+                  },
+                  "taskNo": {
+                    "type": "string",
+                    "description": "任务单号（兼容）",
+                    "title": "任务单号"
+                  },
+                  "carrierName": {
+                    "type": "string",
+                    "description": "回传承运商名称（选填，须与任务当前承运商一致，不传按狮桥物流留痕）",
+                    "title": "承运商名称"
+                  },
+                  "actualPickupDate": {
+                    "type": "string",
+                    "description": "实际提车日期（action=PICKUP 选填，YYYY-MM-DD，即发运时间；允许早于计划提车日期；提车后待仓库出库；不传取当前时间）",
+                    "title": "实际提车日期"
+                  },
+                  "photos": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "提车照片 URL 数组（action=PICKUP 选填，写任务状态日志留痕）",
+                    "title": "提车照片"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/external/shipping-tasks/arrive": {
+      "post": {
+        "tags": [
+          "12 外部接口·承运商通用"
+        ],
+        "responses": {
+          "200": {
+            "description": "状态推进结果（ARRIVE 含生成的运费单号）",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "到达确认成功，已生成运费结算单 YF202610200001（待对账）",
+                  "data": {
+                    "taskNo": "FY202610200001",
+                    "status": "ARRIVED",
+                    "freightNo": "YF202610200001",
+                    "billCreated": true,
+                    "actualFreight": 9500,
+                    "mileage": 412.5
+                  }
+                },
+                "description": "状态推进结果（ARRIVE 含生成的运费单号）"
+              }
+            }
+          },
+          "400": {
+            "description": "A0001 参数校验失败（driverId 缺失 / 时间格式错误 / 时间晚于当前时间等）"
+          },
+          "409": {
+            "description": "D0001 当前状态不允许该动作（状态机校验）"
+          }
+        },
+        "summary": "⑫ 司机到达（回填实际运费/里程）",
+        "description": "司机到达：仅 IN_TRANSIT 可调，IN_TRANSIT→ARRIVED，回填 arrive_time、实际运费与里程，并生成待对账运费单（缺省取计划运费/当前时间/空里程）。arriveTime 须晚于提车发运时间与出库时间，且不得晚于当前时间；vehicles 逐车实际运费合计须与 actualFreight 一致；到达后重复回传仅补记日志。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（推荐，与 taskNo 二选一）",
+                    "title": "发运申请号"
+                  },
+                  "taskNo": {
+                    "type": "string",
+                    "description": "任务单号（兼容）",
+                    "title": "任务单号"
+                  },
+                  "carrierName": {
+                    "type": "string",
+                    "description": "回传承运商名称（选填，须与任务当前承运商一致，不传按狮桥物流留痕）",
+                    "title": "承运商名称"
+                  },
+                  "actualFreight": {
+                    "type": "number",
+                    "description": "实际运费（action=ARRIVE 选填，不传按任务计划运费；车辆明细无逐车金额时按台数均分）",
+                    "title": "实际运费"
+                  },
+                  "mileage": {
+                    "type": "number",
+                    "description": "里程 km（action=ARRIVE 选填，写入运费单 mileage）",
+                    "title": "里程"
+                  },
+                  "arriveTime": {
+                    "type": "string",
+                    "description": "到达时间（action=ARRIVE 选填，YYYY-MM-DD HH:mm:ss，不传取当前时间）",
+                    "title": "到达时间"
+                  },
+                  "vehicles": {
+                    "type": "array",
+                    "description": "逐车实际运费（action=ARRIVE 选填）：VIN 须属于该任务，合计须与 actualFreight 一致",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "vin",
+                        "actualFreight"
+                      ],
+                      "properties": {
+                        "vin": {
+                          "type": "string",
+                          "description": "VIN（17 位）",
+                          "title": "车架号"
+                        },
+                        "actualFreight": {
+                          "type": "number",
+                          "description": "该车实际运费",
+                          "title": "实际运费"
+                        }
+                      }
+                    },
+                    "title": "逐车实际运费"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/external/shipping-tasks/finish": {
+      "post": {
+        "tags": [
+          "12 外部接口·承运商通用"
+        ],
+        "responses": {
+          "200": {
+            "description": "状态推进结果（ARRIVE 含生成的运费单号）",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "到达确认成功，已生成运费结算单 YF202610200001（待对账）",
+                  "data": {
+                    "taskNo": "FY202610200001",
+                    "status": "ARRIVED",
+                    "freightNo": "YF202610200001",
+                    "billCreated": true,
+                    "actualFreight": 9500,
+                    "mileage": 412.5
+                  }
+                },
+                "description": "状态推进结果（ARRIVE 含生成的运费单号）"
+              }
+            }
+          },
+          "400": {
+            "description": "A0001 参数校验失败（driverId 缺失 / 时间格式错误 / 时间晚于当前时间等）"
+          },
+          "409": {
+            "description": "D0001 当前状态不允许该动作（状态机校验）"
+          }
+        },
+        "summary": "⑫ 司机完结",
+        "description": "司机确认完结：仅 ARRIVED 可调，ARRIVED→FINISHED，回填 finish_time 并同步运费单完结时间；当前时间须晚于到达时间。已完结重复回传仅补记日志。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（推荐，与 taskNo 二选一）",
+                    "title": "发运申请号"
+                  },
+                  "taskNo": {
+                    "type": "string",
+                    "description": "任务单号（兼容）",
+                    "title": "任务单号"
+                  },
+                  "carrierName": {
+                    "type": "string",
+                    "description": "回传承运商名称（选填，须与任务当前承运商一致，不传按狮桥物流留痕）",
+                    "title": "承运商名称"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2571,7 +2814,8 @@
                 "properties": {
                   "esignId": {
                     "type": "string",
-                    "description": "电子签 ID（必填，回执确认幂等）"
+                    "description": "电子签 ID（必填，回执确认幂等）",
+                    "title": "电子签ID"
                   }
                 },
                 "required": [
@@ -2622,7 +2866,8 @@
                 "properties": {
                   "esignId": {
                     "type": "string",
-                    "description": "电子签 ID（必填）"
+                    "description": "电子签 ID（必填）",
+                    "title": "电子签ID"
                   },
                   "signStatus": {
                     "type": "string",
@@ -2630,7 +2875,8 @@
                       "SIGNED",
                       "CANCELLED"
                     ],
-                    "description": "签署结果（必填）：SIGNED 已签署（回填签署时间）/ CANCELLED 已取消"
+                    "description": "签署结果（必填）：SIGNED 已签署（回填签署时间）/ CANCELLED 已取消",
+                    "title": "签署状态"
                   }
                 },
                 "required": [

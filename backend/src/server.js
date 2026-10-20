@@ -4,6 +4,7 @@
  * Node.js + Express + MySQL(库名 tms_vehicle)，端口 3000
  */
 require('./db'); // 先加载 .env 配置
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 
@@ -24,6 +25,9 @@ const PORT = Number(process.env.PORT) || 3000;
 // 前后端分离：允许跨域访问（开发期前端可双击 file:// 直接打开）
 app.use(cors());
 app.use(express.json());
+
+// 提车照片等静态资源（演示环境；生产由 OSS 承载）
+app.use('/static', express.static(path.join(__dirname, '../public')));
 
 // 健康检查（真实探测数据库，MySQL 未启动时返回 500）
 app.get('/api/health', wrap(async (req, res) => {
