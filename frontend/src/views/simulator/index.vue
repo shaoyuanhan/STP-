@@ -469,7 +469,6 @@ const statusSyncForm = reactive({
   taskNo: '',
   carrierName: '',
   driverId: null as number | null,
-  planPickupDate: null as string | null,
   photosText: '',
   actualFreight: null as number | null,
   mileage: null as number | null,
@@ -496,7 +495,6 @@ async function submitStatusSync(): Promise<void> {
     taskNo: statusSyncForm.taskNo.trim(),
     carrierName: statusSyncForm.carrierName.trim(),
     driverId: statusSyncForm.driverId,
-    planPickupDate: statusSyncForm.planPickupDate ?? '',
     actualFreight: statusSyncForm.actualFreight,
     mileage: statusSyncForm.mileage,
   })
@@ -1028,15 +1026,9 @@ onActivated(() => {
                   <n-form-item label="接单司机 driverId（司机管理页可查）" show-require-mark>
                     <n-input-number v-model:value="statusSyncForm.driverId" :min="1" :precision="0" placeholder="司机 ID" />
                   </n-form-item>
-                  <n-form-item label="计划提车日期 planPickupDate">
-                    <n-date-picker
-                      v-model:formatted-value="statusSyncForm.planPickupDate"
-                      type="date"
-                      value-format="yyyy-MM-dd"
-                      clearable
-                      placeholder="YYYY-MM-DD，选填"
-                    />
-                  </n-form-item>
+                  <n-alert type="info" :show-icon="false" size="small" style="grid-column: 1 / -1">
+                    计划提车日期由 CRM 随发运申请下发（#1），接单仅分配司机，不在此处修改
+                  </n-alert>
                 </template>
                 <n-form-item v-else-if="statusSyncForm.action === 'PICKUP'" label="提车照片 photos（多个 URL 换行或逗号分隔）" class="sim-form__wide">
                   <n-input

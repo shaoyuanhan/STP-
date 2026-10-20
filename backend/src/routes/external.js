@@ -426,7 +426,7 @@ router.post('/drivers/sync', wrap(async (req, res) => {
 //   通用运单状态回传接口：狮桥物流及其他承运商/三方物流供应商均可调用。
 //   可选 carrierName 标识回传承运商（须与任务当前承运商一致，防串单）；
 //   不传按狮桥物流留痕（兼容既有对接）。
-//   action=ACCEPT  承运商接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id、plan_pickup_date
+//   action=ACCEPT  承运商接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（计划提车日期由 CRM 下发，此处不改）
 //   action=PICKUP  司机提车：CARRIER_ACCEPTED→PICKED 回填 ship_time，photos 写 status_log.remark；
 //                  已出库及之后重复回传仅补记日志+补 ship_time（时序兜底，不回退状态）
 //   action=ARRIVE  司机到达：→ARRIVED 回填 actual_freight/mileage/arrive_time，生成 YF 运费单（FOR UPDATE 幂等）
@@ -461,9 +461,6 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
     if (action === 'ACCEPT') {
       const driverId = b.driverId === undefined || b.driverId === null || b.driverId === '' ? null : Number(b.driverId);
       if (!driverId) throw errParam('接单必须分配司机 driverId');
-      if (b.planPickupDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.planPickupDate).trim())) {
-        throw errParam('计划提车日期 planPickupDate 格式不正确，应为 YYYY-MM-DD');
-      }
       // 司机校验：存在、启用（停用拦截新分派，既有需求 10）、属于任务承运商（carrier_driver 多对多）
       const [drows] = await conn.query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [driverId]);
       if (!drows.length) throw errNotFound(`司机不存在（ID: ${driverId}）`);
@@ -477,18 +474,18 @@ router.post('/shipping-tasks/status-sync', wrap(async (req, res) => {
         if (!cdrows.length) throw errBiz('该司机不属于任务当前承运商，不可接单');
       }
 
-      const planPickupDate = b.planPickupDate ? String(b.planPickupDate).trim() : null;
+      // 计划提车日期由 CRM 随发运申请下发（#1 必填），接单仅分配司机，不再改动该日期
       if (task.status === 'DISPATCHED') {
         await conn.query(
           `UPDATE shipping_task SET status = 'CARRIER_ACCEPTED', driver_id = ?,
-                  plan_pickup_date = COALESCE(?, plan_pickup_date), version = version + 1, update_name = ?
+                  version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
-          [driverId, planPickupDate, operatorName, task.id, task.version]
+          [driverId, operatorName, task.id, task.version]
         );
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: 'DISPATCHED', toStatus: 'CARRIER_ACCEPTED',
           source: logSource, operator: operatorName,
-          remark: `承运商确认接单，分配司机：${driver.driver_name}${planPickupDate ? `，计划提车 ${planPickupDate}` : ''}`,
+          remark: `承运商确认接单，分配司机：${driver.driver_name}`,
         });
         return { taskNo: task.task_no, status: 'CARRIER_ACCEPTED', message: `接单成功，已分配司机：${driver.driver_name}` };
       }

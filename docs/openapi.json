@@ -864,7 +864,7 @@
       "post": {
         "tags": ["12 外部接口·承运商通用"],
         "summary": "⑫ 运单状态回传（通用接口，ACCEPT=承运商接单并指派司机）",
-        "description": "承运商通用回传接口：狮桥物流及其他承运商/三方物流供应商均可调用，后续供应商接入复用本接口。可选 carrierName 标识回传承运商（须与任务当前承运商一致防串单，不传按狮桥物流留痕）。action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id/plan_pickup_date（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）；action=PICKUP：CARRIER_ACCEPTED→PICKED 回填 ship_time，photos 数组写 status_log.remark，已出库及之后重复回传仅补记日志不回退；action=ARRIVE：→ARRIVED 回填 actual_freight（未传用计划运费）/mileage/arrive_time 并生成 YF 运费单（FOR UPDATE 幂等，车辆明细实际运费按台数均分）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
+        "description": "承运商通用回传接口：狮桥物流及其他承运商/三方物流供应商均可调用，后续供应商接入复用本接口。可选 carrierName 标识回传承运商（须与任务当前承运商一致防串单，不传按狮桥物流留痕）。action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步；计划提车日期由 ① receive 随申请下发，接单不改）；action=PICKUP：CARRIER_ACCEPTED→PICKED 回填 ship_time，photos 数组写 status_log.remark，已出库及之后重复回传仅补记日志不回退；action=ARRIVE：→ARRIVED 回填 actual_freight（未传用计划运费）/mileage/arrive_time 并生成 YF 运费单（FOR UPDATE 幂等，车辆明细实际运费按台数均分）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
         "requestBody": {
           "required": true,
           "content": {
@@ -872,7 +872,7 @@
               "examples": {
                 "accept": {
                   "summary": "承运商接单并指派司机（带供应商身份）",
-                  "value": { "action": "ACCEPT", "applyNo": "APPLY-20261020-001", "carrierName": "狮桥物流", "driverId": 3, "planPickupDate": "2026-10-22" }
+                  "value": { "action": "ACCEPT", "applyNo": "APPLY-20261020-001", "carrierName": "狮桥物流", "driverId": 3 }
                 },
                 "pickup": {
                   "summary": "司机提车（照片留痕）",
