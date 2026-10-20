@@ -862,16 +862,21 @@
     "/api/external/shipping-tasks/status-sync": {
       "post": {
         "tags": ["10 外部接口·狮桥物流"],
-        "summary": "⑫ 发运任务状态同步",
-        "description": "action=ACCEPT：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id/plan_pickup_date（司机须启用且属于任务承运商）；action=PICKUP：CARRIER_ACCEPTED→PICKED 回填 ship_time，photos 数组写 status_log.remark，已出库及之后重复回传仅补记日志不回退；action=ARRIVE：→ARRIVED 回填 actual_freight（未传用计划运费）/mileage/arrive_time 并生成 YF 运费单（FOR UPDATE 幂等，车辆明细实际运费按台数均分）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
+        "summary": "⑫ 发运任务状态同步（ACCEPT=承运商接单并指派司机）",
+        "description": "action=ACCEPT：承运商确认接单并指派司机，DISPATCHED→CARRIER_ACCEPTED，回填 driver_id/plan_pickup_date（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）；action=PICKUP：CARRIER_ACCEPTED→PICKED 回填 ship_time，photos 数组写 status_log.remark，已出库及之后重复回传仅补记日志不回退；action=ARRIVE：→ARRIVED 回填 actual_freight（未传用计划运费）/mileage/arrive_time 并生成 YF 运费单（FOR UPDATE 幂等，车辆明细实际运费按台数均分）；action=FINISH：ARRIVED→FINISHED 回填 finish_time 并同步运费单 finish_time。按状态机校验，非法前置返回 D0001",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "example": {
-                "action": "PICKUP",
-                "applyNo": "APPLY-20261020-001",
-                "photos": ["https://oss.example.com/pickup/30001-1.jpg", "https://oss.example.com/pickup/30001-2.jpg"]
+              "examples": {
+                "accept": {
+                  "summary": "承运商接单并指派司机",
+                  "value": { "action": "ACCEPT", "applyNo": "APPLY-20261020-001", "driverId": 3, "planPickupDate": "2026-10-22" }
+                },
+                "pickup": {
+                  "summary": "司机提车（照片留痕）",
+                  "value": { "action": "PICKUP", "applyNo": "APPLY-20261020-001", "photos": ["https://oss.example.com/pickup/30001-1.jpg", "https://oss.example.com/pickup/30001-2.jpg"] }
+                }
               }
             }
           }
