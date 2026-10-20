@@ -163,6 +163,11 @@ function renderChinaMap(el, opts = {}) {
  * 渲染"整体路径放大界面"：横向串联 起点 → 位置回传点(按时间序) → 终点
  * stops = [{name, time, speed, cur}] cur 标记最新位置
  */
+/**
+ * 路径放大视图
+ * @param {HTMLElement} el
+ * @param {{ originLabel?: string, destLabel?: string, stops?: Array<{ name?: string, meta?: string, cur?: boolean, tip?: string }>, done?: boolean }} opts
+ */
 function renderRouteZoom(el, { originLabel, destLabel, stops = [], done = false }) {
   const item = (name, meta, cls, tip) => `
     <div class="rz-item ${cls}" ${tip ? `title="${tip}"` : ''}>
@@ -178,3 +183,15 @@ function renderRouteZoom(el, { originLabel, destLabel, stops = [], done = false 
     ${item(destLabel || '终点', done ? '已到达' : '目的地', 'end')}
   </div>`;
 }
+
+// ---- ESM 导出（供 Vue3 工程 ChinaMap 组件按需导入；不影响原有全局用法） ----
+export {
+  CHINA_MAP,
+  CITY_GEO,
+  PROV_CITY,
+  matchCityGeo,
+  toXY,
+  smoothPath,
+  renderChinaMap,
+  renderRouteZoom,
+};
