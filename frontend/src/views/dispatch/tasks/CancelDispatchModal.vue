@@ -7,8 +7,8 @@
  * - 校验结论来自后端任务详情 allowedActions（内部规则：DISPATCHED=已派单且司机未接单
  *   才含 CANCEL_DISPATCH）；CRM 侧 cancel-check 是给外部系统用的（如「请先在 STP
  *   取消派单」），内部弹窗不复用；接口异常时显示「校验接口不可用」并禁用提交
- * - 取消原因必填下拉（承运商无法履约/调度调整/其他）+ 补充说明 textarea
- * - 底部红字规则提示 +「返回」+ 红色「确认取消派单」
+ * - 取消原因必填下拉（承运商无法履约/调度调整/其他）+ 补充说明 textarea（非必填）
+ * - 「返回」+ 红色「确认取消派单」
  * - 提交携带列表行 version；D0001 冲突提示并通知父级刷新列表
  */
 import { computed, reactive, ref, watch } from 'vue'
@@ -238,11 +238,6 @@ async function handleSubmit() {
           />
         </n-form-item>
       </n-form>
-
-      <!-- 红字规则提示 -->
-      <div class="cancel-modal__rule">
-        规则：仅「已派单且司机未接单」可取消；司机已接单需线下协调承运商后处理；取消后任务回到「待派单」，并同步通知承运商/三方物流系统。
-      </div>
     </div>
 
     <template #footer>
@@ -309,15 +304,6 @@ async function handleSubmit() {
 
 .cancel-modal__value.is-checking {
   color: #8c8c8c;
-}
-
-.cancel-modal__rule {
-  padding: 8px 12px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: #f5222d;
-  background: #fff1f0;
-  border-radius: 4px;
 }
 
 .cancel-modal__footer {

@@ -63,7 +63,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 - OUTBOUND 及之后：不可，"车辆已出库发运，不可取消"
 - 取消时：任务置 CANCELLED（cancel_reason/cancel_time），关联待签署电子签置 CANCELLED
 
-**取消派单（STP 内部）**：仅 DISPATCHED（司机未接单）→ WAIT_DISPATCH；原因枚举：承运商无法履约/调度调整/其他 + 补充说明；清空 carrier_id/driver_id/plan_pickup_date。
+**取消派单（STP 内部）**：仅 DISPATCHED（司机未接单）→ WAIT_DISPATCH；原因枚举：承运商无法履约/调度调整/其他 + 补充说明（非必填）；清空 carrier_id/driver_id，保留 CRM 下发的 plan_pickup_date。
 
 **版本控制（多人冲突）**：shipping_task.version，每次 UPDATE +1。派单/取消派单/改派请求必须携带 `version`，不匹配返回 D0001"任务状态已变化，请刷新后重试"。列表/详情返回 version。allowedActions 由状态计算：
 - WAIT_DISPATCH：`["DISPATCH","BATCH_DISPATCH"]`

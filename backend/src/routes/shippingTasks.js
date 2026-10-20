@@ -248,7 +248,7 @@ router.post('/dispatch/cancel', wrap(async (req, res) => {
 
     await conn.query(
       `UPDATE shipping_task
-         SET status = 'WAIT_DISPATCH', carrier_id = NULL, driver_id = NULL, plan_pickup_date = NULL,
+         SET status = 'WAIT_DISPATCH', carrier_id = NULL, driver_id = NULL,
              version = version + 1, update_name = '系统管理员'
        WHERE id = ? AND version = ?`,
       [task.id, task.version]

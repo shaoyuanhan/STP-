@@ -427,7 +427,7 @@
       "post": {
         "tags": ["04 运输调度·发运任务"],
         "summary": "取消派单",
-        "description": "仅「已派单」（司机未接单）可取消，回退待派单并清空 carrier_id/driver_id/plan_pickup_date；原因枚举：承运商无法履约/调度调整/其他；写 dispatch_record(CANCEL_DISPATCH) 留痕含原因与补充说明",
+        "description": "仅「已派单」（司机未接单）可取消，回退待派单并清空 carrier_id/driver_id，保留 CRM 下发的 plan_pickup_date；原因枚举：承运商无法履约/调度调整/其他；写 dispatch_record(CANCEL_DISPATCH) 留痕含原因与补充说明（非必填）",
         "requestBody": {
           "required": true,
           "content": {
