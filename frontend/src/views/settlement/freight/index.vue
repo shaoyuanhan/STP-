@@ -17,6 +17,7 @@ import { useMessage, NButton } from 'naive-ui'
 import type { DataTableColumns, FormInst, FormItemRule, PaginationProps, SelectOption } from 'naive-ui'
 import {
   listFreightBillRows,
+  exportFreightBills,
   getFreightBillDetail,
   adjustFreightBill,
   reconcileFreightBill,
@@ -25,6 +26,7 @@ import type { FreightBillRow, FreightBillRowListResult } from '@/services/freigh
 import { listCarriers } from '@/services/carriers'
 import type {
   FreightBillDetail,
+  FreightBillQuery,
   FreightAdjustLog,
   ReconcileStatus,
 } from '@/types/api'
@@ -77,18 +79,23 @@ const summary = ref<Pick<FreightBillRowListResult, 'amount' | 'plan_amount'>>({
 /** 每行调整信息：原始实际运费（首条调整记录 before）与是否调整过 */
 const adjustInfo = ref<Record<number, { original: number; adjusted: boolean }>>({})
 
+/** 最近一次查询条件（导出复用，保证与列表口径一致） */
+const lastQuery = ref<FreightBillQuery>({})
+
 async function loadPage() {
   loading.value = true
   loadError.value = null
   try {
-    const result = await listFreightBillRows({
+    const query: FreightBillQuery = {
       page: page.value,
       size: pageSize.value,
       freight_no: filters.freight_no.trim() || undefined,
       task_no: filters.task_no.trim() || undefined,
       carrier_id: filters.carrier_id ?? undefined,
       reconcile_status: filters.reconcile_status ?? undefined,
-    })
+    }
+    lastQuery.value = { ...query }
+    const result = await listFreightBillRows(query)
     rows.value = result?.list ?? []
     total.value = result?.total ?? 0
     summary.value = { amount: result?.amount ?? null, plan_amount: result?.plan_amount ?? null }
@@ -146,6 +153,22 @@ function handlePageSizeChange(next: number) {
   loadPage()
 }
 
+// ---- 导出（按最近一次查询条件导出全量，不受分页影响） ----
+const exporting = ref(false)
+
+async function handleExport() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const filename = await exportFreightBills(lastQuery.value)
+    message.success(`已导出：${filename}`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导出失败，请稍后重试')
+  } finally {
+    exporting.value = false
+  }
+}
+
 /** 行 key */
 function rowKey(row: FreightBillRow): number {
   return row.id
@@ -194,13 +217,28 @@ function askReconcile(bill: FreightBillRow) {
 }
 
 const columns = computed<DataTableColumns<FreightBillRow>>(() => [
-  { title: '运费单号', key: 'freight_no', width: 150, fixed: 'left', ellipsis: { tooltip: true } },
-  { title: '任务单号', key: 'task_no', width: 150, ellipsis: { tooltip: true } },
-  { title: '客户', key: 'customer_name', minWidth: 130, ellipsis: { tooltip: true } },
+  {
+    title: '运费单号',
+    key: 'freight_no',
+    width: 150,
+    resizable: true,
+    fixed: 'left',
+    ellipsis: { tooltip: true },
+  },
+  { title: '任务单号', key: 'task_no', width: 150, resizable: true, ellipsis: { tooltip: true } },
+  {
+    title: '客户',
+    key: 'customer_name',
+    width: 140,
+    minWidth: 130,
+    resizable: true,
+    ellipsis: { tooltip: true },
+  },
   {
     title: '承运商',
     key: 'carrier_name',
     width: 140,
+    resizable: true,
     ellipsis: { tooltip: true },
     render: (row) => row.carrier_name || '-',
   },
@@ -208,12 +246,14 @@ const columns = computed<DataTableColumns<FreightBillRow>>(() => [
     title: '计划运费',
     key: 'plan_freight',
     width: 110,
+    resizable: true,
     render: (row) => h(MoneyText, { value: row.plan_freight, prefix: '¥' }),
   },
   {
     title: '实际运费',
     key: 'original_freight',
     width: 110,
+    resizable: true,
     render: (row) =>
       h(MoneyText, {
         value: adjustInfo.value[row.id]?.original ?? row.actual_freight ?? null,
@@ -224,6 +264,7 @@ const columns = computed<DataTableColumns<FreightBillRow>>(() => [
     title: '调整后金额',
     key: 'actual_freight',
     width: 120,
+    resizable: true,
     render: (row) => {
       const adjusted = adjustInfo.value[row.id]?.adjusted ?? false
       return h(
@@ -239,24 +280,28 @@ const columns = computed<DataTableColumns<FreightBillRow>>(() => [
     title: '对账状态',
     key: 'reconcile_status',
     width: 92,
+    resizable: true,
     render: (row) => h(StatusTag, { type: 'reconcile', value: row.reconcile_status }),
   },
   {
     title: '到达时间',
     key: 'create_time',
     width: 145,
+    resizable: true,
     render: (row) => datetime(row.create_time),
   },
   {
     title: '完结时间',
     key: 'finish_time',
     width: 145,
+    resizable: true,
     render: (row) => datetime(row.finish_time),
   },
   {
     title: '操作',
     key: 'actions',
     width: 190,
+    resizable: true,
     fixed: 'right',
     render: (row) => {
       const buttons = [
@@ -472,6 +517,7 @@ onActivated(() => {
           />
         </div>
         <div class="freight-filter__actions">
+          <n-button size="small" :loading="exporting" @click="handleExport">导出</n-button>
           <n-button size="small" @click="handleReset">重置</n-button>
           <n-button size="small" type="primary" :loading="loading" @click="handleSearch">查询</n-button>
         </div>
@@ -496,7 +542,7 @@ onActivated(() => {
         :loading="loading"
         :pagination="pagination"
         :row-key="rowKey"
-        :scroll-x="1560"
+        :scroll-x="1492"
         :bordered="false"
       >
         <template #empty>

@@ -5,12 +5,20 @@
  * 页面优先用后端 message 作为成功提示，message 为空或占位（'success'）时才用前端兜底文案。
  */
 
-import { get, postEnvelope, request } from './http'
+import { download, get, postEnvelope, request } from './http'
 import type { ApiEnvelope, Carrier, CarrierPayload, CarrierQuery, PageResult } from '@/types/api'
 
 /** 承运商分页列表（list 含 driver_count 关联启用司机数） */
 export function listCarriers(query: CarrierQuery = {}): Promise<PageResult<Carrier>> {
   return get<PageResult<Carrier>>('/carriers', query as Record<string, unknown>)
+}
+
+/** 导出 Excel：按当前筛选条件导出全量（不分页） */
+export function exportCarriers(query: CarrierQuery = {}): Promise<string> {
+  const params = { ...query } as Record<string, unknown>
+  delete params.page
+  delete params.size
+  return download('/carriers/export', params)
 }
 
 /** 新增承运商（编码 CAR-XXX 自动生成；名称去重 A0002） */

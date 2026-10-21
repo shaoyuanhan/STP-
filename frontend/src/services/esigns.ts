@@ -2,7 +2,7 @@
  * 电子签台账接口（契约 5.7，/api/esign-records，snake_case）
  */
 
-import { get } from './http'
+import { download, get } from './http'
 import type { EsignQuery, EsignRecord, PageResult, TaskStatus } from '@/types/api'
 
 /** 台账联查行：后端列表额外联查 shipping_task 的任务状态与客户名称 */
@@ -16,4 +16,12 @@ export interface EsignRow extends EsignRecord {
 /** 电子签台账分页列表（签 ID/任务号/VIN/申请号/签署状态筛选，行含任务状态/客户名称联查字段） */
 export function listEsignRecords(query: EsignQuery = {}): Promise<PageResult<EsignRow>> {
   return get<PageResult<EsignRow>>('/esign-records', query as Record<string, unknown>)
+}
+
+/** 导出 Excel：按当前筛选条件导出全量（不分页） */
+export function exportEsignRecords(query: EsignQuery = {}): Promise<string> {
+  const params = { ...query } as Record<string, unknown>
+  delete params.page
+  delete params.size
+  return download('/esign-records/export', params)
 }

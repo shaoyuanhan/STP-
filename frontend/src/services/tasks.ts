@@ -7,7 +7,7 @@
  * 不在前端拼接提示语。
  */
 
-import { get, getEnvelope, postEnvelope } from './http'
+import { download, get, getEnvelope, postEnvelope } from './http'
 import type {
   ApiEnvelope,
   BatchDispatchPayload,
@@ -50,6 +50,14 @@ export function listShippingTasks(
 /** 任务详情（head 全字段 + vehicles/dispatchRecords/statusLogs/tracks/esigns/allowedActions） */
 export function getShippingTask(id: number | string): Promise<ShippingTaskDetail> {
   return get<ShippingTaskDetail>(`/shipping-tasks/${id}`)
+}
+
+/** 导出 Excel：按当前筛选条件导出全量（不分页） */
+export function exportShippingTasks(query: ShippingTaskQuery = {}): Promise<string> {
+  const params = { ...query } as Record<string, unknown>
+  delete params.page
+  delete params.size
+  return download('/shipping-tasks/export', params)
 }
 
 /** 派单（WAIT_DISPATCH→DISPATCHED；信封 message 为狮桥同步说明文案） */

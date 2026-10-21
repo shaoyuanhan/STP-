@@ -51,6 +51,17 @@ const loading = ref(false)
 const data = ref<T[]>([])
 // NDataTable 的 data 收 RowData[]，泛型 T 需桥接一次
 const tableData = computed(() => data.value as unknown as DataTableRowData[])
+
+// 列宽拖动统一在封装层开启；选择/展开列与 __ 开头的辅助列不参与（无实际内容宽度可调）
+const tableColumns = computed<DataTableColumns<T>>(() =>
+  props.columns.map((column) => {
+    const key = 'key' in column ? String(column.key) : ''
+    const isAuxiliary =
+      column.type === 'selection' || column.type === 'expand' || key.startsWith('__')
+    return isAuxiliary ? column : { ...column, resizable: true }
+  }),
+)
+
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(props.initPageSize)
@@ -139,7 +150,7 @@ defineExpose({
     <n-data-table
       remote
       :size="tableSize"
-      :columns="columns"
+      :columns="tableColumns"
       :data="tableData"
       :loading="loading"
       :pagination="pagination"

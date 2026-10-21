@@ -5,7 +5,7 @@
  * 页面优先用后端 message 作为成功提示，message 为空或占位（'success'）时才用前端兜底文案。
  */
 
-import { get, postEnvelope, request } from './http'
+import { download, get, postEnvelope, request } from './http'
 import type {
   ApiEnvelope,
   Driver,
@@ -52,4 +52,12 @@ export function getDriverOptions(carrierId?: number | string): Promise<DriverOpt
     params.carrier_id = carrierId
   }
   return get<DriverOption[]>('/drivers/options', params)
+}
+
+/** 导出 Excel：按当前筛选条件导出全量（不分页） */
+export function exportDrivers(query: DriverQuery = {}): Promise<string> {
+  const params = { ...query } as Record<string, unknown>
+  delete params.page
+  delete params.size
+  return download('/drivers/export', params)
 }

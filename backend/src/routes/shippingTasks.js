@@ -11,6 +11,7 @@ const {
   wrap, ok, errParam, errBiz, errDup, errState, errNotFound,
   pageOf, pageData, cutStr,
 } = require('../helpers');
+const { sendXlsx, text, dateOnly, dateTime } = require('../exporter');
 
 const router = Router();
 
@@ -74,10 +75,9 @@ async function resolveCarrierDispatchable(conn, { carrierId, externalCarrierId }
   return rows[0];
 }
 
-// ============ 列表：多条件筛选（契约 5.4） ============
-router.get('/', wrap(async (req, res) => {
-  const { page, size, offset } = pageOf(req.query);
-  const { task_no = '', apply_no = '', vin = '', customer_name = '', status = '', carrier_id = '', start_date = '', end_date = '' } = req.query;
+// ============ 列表 / 导出共用筛选（契约 5.4） ============
+function taskWhere(q) {
+  const { task_no = '', apply_no = '', vin = '', customer_name = '', status = '', carrier_id = '', start_date = '', end_date = '' } = q;
   const where = ['t.deleted = 0'];
   const params = [];
   if (task_no) where.push('t.task_no LIKE ?'), params.push(`%${task_no}%`);
@@ -91,25 +91,79 @@ router.get('/', wrap(async (req, res) => {
   if (carrier_id) where.push('t.carrier_id = ?'), params.push(Number(carrier_id));
   if (start_date) where.push('t.create_time >= ?'), params.push(`${start_date} 00:00:00`);
   if (end_date) where.push('t.create_time <= ?'), params.push(`${end_date} 23:59:59`);
-  const whereSql = `WHERE ${where.join(' AND ')}`;
+  return { whereSql: `WHERE ${where.join(' AND ')}`, params };
+}
+
+const TASK_SELECT = `
+  SELECT t.id, t.task_no, t.apply_no, t.customer_name,
+         (SELECT GROUP_CONCAT(v.vin ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vins,
+         (SELECT GROUP_CONCAT(v.vehicle_model ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vehicle_models,
+         t.ship_location, t.delivery_address, t.plan_freight, c.carrier_name, d.driver_name,
+         t.plan_pickup_date, t.outbound_date, t.ship_time, t.arrive_time,
+         t.status, t.create_time, t.version
+  FROM shipping_task t
+  LEFT JOIN carrier c ON c.id = t.carrier_id
+  LEFT JOIN driver d ON d.id = t.driver_id`;
+
+const TASK_STATUS_LABELS = {
+  WAIT_DISPATCH: '待派单',
+  DISPATCHED: '已派单',
+  CARRIER_ACCEPTED: '承运商已接单',
+  OUTBOUND: '已出库',
+  PICKED: '已提车',
+  IN_TRANSIT: '在途',
+  ARRIVED: '已到达',
+  FINISHED: '已完结',
+  CANCELLED: '已取消',
+};
+
+/** 导出列（与列表展示一致） */
+const TASK_EXPORT_COLUMNS = [
+  { header: '任务单号', value: (r) => r.task_no, width: 20 },
+  { header: '发运申请号', value: (r) => text(r.apply_no), width: 20 },
+  { header: '客户名称', value: (r) => text(r.customer_name), width: 20 },
+  { header: 'VIN', value: (r) => text(r.vins), width: 22 },
+  { header: '车型', value: (r) => text(r.vehicle_models), width: 24 },
+  { header: '发运地点', value: (r) => text(r.ship_location), width: 20 },
+  { header: '交付地址', value: (r) => text(r.delivery_address), width: 34 },
+  { header: '计划运费', value: (r) => r.plan_freight, type: 'number', width: 12 },
+  { header: '承运商', value: (r) => text(r.carrier_name), width: 24 },
+  { header: '司机', value: (r) => text(r.driver_name), width: 12 },
+  { header: '计划提车日期', value: (r) => dateOnly(r.plan_pickup_date), width: 14 },
+  { header: '发运时间', value: (r) => dateTime(r.ship_time), width: 18 },
+  { header: '出库日期', value: (r) => dateTime(r.outbound_date), width: 18 },
+  { header: '到达日期', value: (r) => dateTime(r.arrive_time), width: 18 },
+  { header: '状态', value: (r) => TASK_STATUS_LABELS[r.status] || r.status, width: 14 },
+  { header: '创建时间', value: (r) => dateTime(r.create_time), width: 18 },
+];
+
+// ============ 列表：多条件筛选（契约 5.4） ============
+router.get('/', wrap(async (req, res) => {
+  const { page, size, offset } = pageOf(req.query);
+  const { whereSql, params } = taskWhere(req.query);
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM shipping_task t ${whereSql}`, params);
   const list = await query(
-    `SELECT t.id, t.task_no, t.apply_no, t.customer_name,
-            (SELECT GROUP_CONCAT(v.vin ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vins,
-            (SELECT GROUP_CONCAT(v.vehicle_model ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vehicle_models,
-            t.ship_location, t.delivery_address, t.plan_freight, c.carrier_name, d.driver_name,
-            t.plan_pickup_date, t.outbound_date, t.ship_time, t.arrive_time,
-            t.status, t.create_time, t.version
-     FROM shipping_task t
-     LEFT JOIN carrier c ON c.id = t.carrier_id
-     LEFT JOIN driver d ON d.id = t.driver_id
+    `${TASK_SELECT}
      ${whereSql}
      ORDER BY t.create_time DESC, t.id DESC
      LIMIT ? OFFSET ?`,
     [...params, size, offset]
   );
   ok(res, pageData(list, Number(totalRows[0].n), page, size));
+}));
+
+// ============ 导出：按当前筛选条件导出全部（不分页） ============
+router.get('/export', wrap(async (req, res) => {
+  const { whereSql, params } = taskWhere(req.query);
+  const rows = await query(
+    `${TASK_SELECT}
+     ${whereSql}
+     ORDER BY t.create_time DESC, t.id DESC
+     LIMIT 50000`,
+    params
+  );
+  sendXlsx(res, { prefix: '发运任务', sheetName: '发运任务', columns: TASK_EXPORT_COLUMNS, rows });
 }));
 
 // ============ 详情：head + 车辆 + 派单记录 + 状态日志 + 轨迹 + 电子签 ============

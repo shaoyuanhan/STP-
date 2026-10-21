@@ -6,16 +6,16 @@
 const { Router } = require('express');
 const { query, nextSeq } = require('../db');
 const { wrap, ok, errParam, errBiz, errNotFound, pageOf, pageData, assertPhone } = require('../helpers');
+const { sendXlsx, text, dateTime, phoneText } = require('../exporter');
 
 const router = Router();
 
-/** 列表：按字段分项筛选（名称/编码/联系人/电话/第三方ID/状态）+ 在册（关联且启用的）司机数 */
-router.get('/', wrap(async (req, res) => {
-  const { page, size, offset } = pageOf(req.query);
+/** 列表与导出共用的筛选条件（名称/编码/联系人/电话/第三方ID/状态） */
+function carrierWhere(q) {
   const {
     carrier_name = '', carrier_code = '', contact_person = '', contact_phone = '',
     external_carrier_id = '', status = '',
-  } = req.query;
+  } = q;
   const where = ['c.deleted = 0'];
   const params = [];
   const kw = (v) => `%${String(v).trim()}%`;
@@ -28,22 +28,58 @@ router.get('/', wrap(async (req, res) => {
     where.push('c.status = ?');
     params.push(Number(status));
   }
-  const whereSql = `WHERE ${where.join(' AND ')}`;
+  return { whereSql: `WHERE ${where.join(' AND ')}`, params };
+}
+
+const CARRIER_SELECT = `
+  SELECT c.*,
+         (SELECT COUNT(*)
+            FROM carrier_driver cd
+            JOIN driver d ON d.id = cd.driver_id AND d.deleted = 0
+           WHERE cd.carrier_id = c.id AND cd.deleted = 0 AND d.status = 1) AS driver_count
+  FROM carrier c`;
+
+/** 导出列（与列表展示一致） */
+const CARRIER_EXPORT_COLUMNS = [
+  { header: '承运商编码', value: (r) => r.carrier_code, width: 14 },
+  { header: '第三方承运商ID', value: (r) => text(r.external_carrier_id), width: 20 },
+  { header: '承运商名称', value: (r) => r.carrier_name, width: 28 },
+  { header: '联系人', value: (r) => r.contact_person, width: 12 },
+  { header: '联系电话', value: (r) => phoneText(r.contact_phone), width: 16 },
+  { header: '合作路线', value: (r) => text(r.cooperation_routes), width: 30 },
+  { header: '在册司机', value: (r) => Number(r.driver_count) || 0, type: 'number', width: 10 },
+  { header: '状态', value: (r) => (Number(r.status) === 1 ? '合作中' : '已停用'), width: 10 },
+  { header: '备注', value: (r) => text(r.remark), width: 30 },
+  { header: '创建时间', value: (r) => dateTime(r.create_time), width: 20 },
+];
+
+/** 列表：按字段分项筛选 + 在册（关联且启用的）司机数 */
+router.get('/', wrap(async (req, res) => {
+  const { page, size, offset } = pageOf(req.query);
+  const { whereSql, params } = carrierWhere(req.query);
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM carrier c ${whereSql}`, params);
   const list = await query(
-    `SELECT c.*,
-            (SELECT COUNT(*)
-               FROM carrier_driver cd
-               JOIN driver d ON d.id = cd.driver_id AND d.deleted = 0
-              WHERE cd.carrier_id = c.id AND cd.deleted = 0 AND d.status = 1) AS driver_count
-     FROM carrier c
+    `${CARRIER_SELECT}
      ${whereSql}
      ORDER BY c.create_time DESC, c.id DESC
      LIMIT ? OFFSET ?`,
     [...params, size, offset]
   );
   ok(res, pageData(list, Number(totalRows[0].n), page, size));
+}));
+
+/** 导出：按当前筛选条件导出全部（不分页） */
+router.get('/export', wrap(async (req, res) => {
+  const { whereSql, params } = carrierWhere(req.query);
+  const rows = await query(
+    `${CARRIER_SELECT}
+     ${whereSql}
+     ORDER BY c.create_time DESC, c.id DESC
+     LIMIT 50000`,
+    params
+  );
+  sendXlsx(res, { prefix: '承运商管理', sheetName: '承运商', columns: CARRIER_EXPORT_COLUMNS, rows });
 }));
 
 /** 校验并归一化承运商入参（新增/编辑共用） */

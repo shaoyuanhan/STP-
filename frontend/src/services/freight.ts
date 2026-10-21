@@ -2,7 +2,7 @@
  * 应付运费接口（契约 5.6，/api/freight-bills，snake_case）
  */
 
-import { get, put, postEnvelope } from './http'
+import { download, get, put, postEnvelope } from './http'
 import type {
   ApiEnvelope,
   FreightAdjustPayload,
@@ -48,6 +48,14 @@ export function listFreightBills(
   query: FreightBillQuery = {},
 ): Promise<FreightBillListResult> {
   return get<FreightBillListResult>('/freight-bills', query as Record<string, unknown>)
+}
+
+/** 导出 Excel：按当前筛选条件导出全量（不分页） */
+export function exportFreightBills(query: FreightBillQuery = {}): Promise<string> {
+  const params = { ...query } as Record<string, unknown>
+  delete params.page
+  delete params.size
+  return download('/freight-bills/export', params)
 }
 
 /** 运费明细（bill + adjustLogs，无修改则空数组） */

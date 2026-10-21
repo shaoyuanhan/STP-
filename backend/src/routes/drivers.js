@@ -9,6 +9,7 @@ const {
   wrap, ok, errParam, errBiz, errNotFound, pageOf, pageData,
   assertPhone, assertIdCard,
 } = require('../helpers');
+const { sendXlsx, text, dateOnly, dateTime, phoneText } = require('../exporter');
 
 const router = Router();
 
@@ -22,13 +23,12 @@ function decorateDriver(row) {
   };
 }
 
-/** 列表：按字段分项筛选（姓名/手机号/身份证号/驾驶证号/第三方ID/承运商/状态），含所属承运商（逗号连接） */
-router.get('/', wrap(async (req, res) => {
-  const { page, size, offset } = pageOf(req.query);
+/** 列表与导出共用的筛选条件（姓名/手机号/身份证号/驾驶证号/第三方ID/承运商/状态） */
+function driverWhere(q) {
   const {
     driver_name = '', phone = '', id_card = '', license_no = '',
     external_driver_id = '', carrier_id = '', status = '',
-  } = req.query;
+  } = q;
   const where = ['d.deleted = 0'];
   const params = [];
   const kw = (v) => `%${String(v).trim()}%`;
@@ -45,7 +45,33 @@ router.get('/', wrap(async (req, res) => {
     where.push('d.status = ?');
     params.push(Number(status));
   }
-  const whereSql = `WHERE ${where.join(' AND ')}`;
+  return { whereSql: `WHERE ${where.join(' AND ')}`, params };
+}
+
+/** 导出列（与列表展示一致） */
+const DRIVER_EXPORT_COLUMNS = [
+  { header: '姓名', value: (r) => r.driver_name, width: 12 },
+  { header: '第三方司机ID', value: (r) => text(r.external_driver_id), width: 20 },
+  { header: '手机号', value: (r) => phoneText(r.phone), width: 16 },
+  { header: '身份证号', value: (r) => r.id_card, width: 22 },
+  { header: '驾驶证号', value: (r) => text(r.license_no), width: 22 },
+  { header: '准驾车型', value: (r) => text(r.license_type), width: 10 },
+  { header: '有效期自', value: (r) => dateOnly(r.license_valid_from), width: 12 },
+  { header: '有效期至', value: (r) => dateOnly(r.license_valid_to), width: 12 },
+  {
+    header: '所属承运商',
+    value: (r) => (r.carriers ? String(r.carriers).split(',').filter(Boolean).join('、') : '散单'),
+    width: 28,
+  },
+  { header: '来源', value: (r) => ({ 1: '系统录入', 2: '狮桥同步' }[Number(r.source)] || '-'), width: 12 },
+  { header: '状态', value: (r) => (Number(r.status) === 1 ? '启用' : '停用'), width: 8 },
+  { header: '创建时间', value: (r) => dateTime(r.create_time), width: 20 },
+];
+
+/** 列表：按字段分项筛选，含所属承运商（逗号连接） */
+router.get('/', wrap(async (req, res) => {
+  const { page, size, offset } = pageOf(req.query);
+  const { whereSql, params } = driverWhere(req.query);
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM driver d ${whereSql}`, params);
   const rows = await query(
@@ -62,6 +88,30 @@ router.get('/', wrap(async (req, res) => {
     [...params, size, offset]
   );
   ok(res, pageData(rows.map(decorateDriver), Number(totalRows[0].n), page, size));
+}));
+
+/** 导出：按当前筛选条件导出全部（不分页） */
+router.get('/export', wrap(async (req, res) => {
+  const { whereSql, params } = driverWhere(req.query);
+  const rows = await query(
+    `SELECT d.*,
+            GROUP_CONCAT(c.carrier_name ORDER BY c.id SEPARATOR ',') AS carriers,
+            GROUP_CONCAT(c.id ORDER BY c.id SEPARATOR ',') AS carrier_id_list
+     FROM driver d
+     LEFT JOIN carrier_driver cd ON cd.driver_id = d.id AND cd.deleted = 0
+     LEFT JOIN carrier c ON c.id = cd.carrier_id AND c.deleted = 0
+     ${whereSql}
+     GROUP BY d.id
+     ORDER BY d.create_time DESC, d.id DESC
+     LIMIT 50000`,
+    params
+  );
+  sendXlsx(res, {
+    prefix: '司机管理',
+    sheetName: '司机',
+    columns: DRIVER_EXPORT_COLUMNS,
+    rows: rows.map(decorateDriver),
+  });
 }));
 
 /** 可选司机下拉（狮桥接单模拟用）：该承运商关联且启用的司机 */

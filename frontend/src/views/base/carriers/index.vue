@@ -15,9 +15,9 @@ import PageTable from '@/components/PageTable.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import ConfirmAction from '@/components/ConfirmAction.vue'
 import PhoneInput from '@/components/PhoneInput.vue'
-import { createCarrier, listCarriers, updateCarrier, updateCarrierStatus } from '@/services/carriers'
+import { createCarrier, exportCarriers, listCarriers, updateCarrier, updateCarrierStatus } from '@/services/carriers'
 import { dateOnly, formatPhone } from '@/utils/format'
-import type { Carrier, CarrierPayload, CarrierStatus } from '@/types/api'
+import type { Carrier, CarrierPayload, CarrierQuery, CarrierStatus } from '@/types/api'
 
 /** PageTable 实例句柄（refresh=保持当前页刷新，reload=回第一页） */
 interface PageTableHandle {
@@ -98,6 +98,24 @@ function handleReset() {
   applied.value = buildAppliedQuery()
 }
 
+// ---------------- 导出（当前筛选条件下的全量数据） ----------------
+const exporting = ref(false)
+
+async function handleExport() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const query = { ...applied.value } as Record<string, unknown>
+    delete query._t
+    const filename = await exportCarriers(query as CarrierQuery)
+    message.success(`已导出：${filename}`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导出失败，请稍后重试')
+  } finally {
+    exporting.value = false
+  }
+}
+
 // ---------------- 列表 ----------------
 const tableRef = ref<PageTableHandle | null>(null)
 
@@ -144,6 +162,7 @@ const columns: DataTableColumns<Carrier> = [
   {
     title: '备注',
     key: 'remark',
+    width: 160,
     minWidth: 140,
     ellipsis: { tooltip: true },
     render: (row) => row.remark || '-',
@@ -368,6 +387,7 @@ async function confirmStatusChange() {
           <n-select v-model:value="filter.status" class="page-card__select" :options="statusOptions" />
         </div>
         <div class="page-card__actions">
+          <n-button :loading="exporting" @click="handleExport">导出</n-button>
           <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
         </div>
@@ -389,7 +409,7 @@ async function confirmStatusChange() {
         :columns="columns"
         :remote="fetchCarriers"
         :query="applied"
-        :scroll-x="1320"
+        :scroll-x="1342"
       />
     </n-card>
 

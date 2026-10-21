@@ -106,4 +106,47 @@ export function getEnvelope<T>(url: string, params?: Record<string, unknown>): P
     .then((r) => r.data)
 }
 
+/**
+ * 文件下载（Excel 导出）：
+ * - responseType=blob，避免 axios 把二进制当 JSON 解析
+ * - 后端出错时返回 JSON blob，这里还原成 ApiError，保证页面能提示后端文案
+ * - 文件名优先取 Content-Disposition 的 filename*（UTF-8），否则退回 filename
+ */
+export async function download(url: string, params?: Record<string, unknown>): Promise<string> {
+  const response = await http.get<Blob>(url, { params, responseType: 'blob' })
+  const blob = response.data
+  if (blob.type.includes('application/json')) {
+    const raw = await blob.text()
+    let message = '导出失败，请稍后重试'
+    let code = 'EXPORT_FAILED'
+    try {
+      const body = JSON.parse(raw) as Partial<ApiEnvelope<unknown>>
+      if (body?.message) message = body.message
+      if (body?.code) code = body.code
+    } catch {
+      // 非 JSON 错误体，保留兜底文案
+    }
+    throw new ApiError(message, code, response.status)
+  }
+
+  const disposition = String(response.headers['content-disposition'] ?? '')
+  const utf8Name = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  const plainName = /filename="?([^";]+)"?/i.exec(disposition)
+  const filename = utf8Name
+    ? decodeURIComponent(utf8Name[1])
+    : plainName
+      ? plainName[1]
+      : 'export.xlsx'
+
+  const objectUrl = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+  return filename
+}
+
 export default http

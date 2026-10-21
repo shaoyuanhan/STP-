@@ -10,9 +10,9 @@
 import { computed, h, onActivated, onMounted, reactive, ref } from 'vue'
 import { useMessage, NButton } from 'naive-ui'
 import type { DataTableColumns, PaginationProps, SelectOption } from 'naive-ui'
-import { listEsignRecords } from '@/services/esigns'
+import { exportEsignRecords, listEsignRecords } from '@/services/esigns'
 import type { EsignRow } from '@/services/esigns'
-import type { EsignStatus } from '@/types/api'
+import type { EsignQuery, EsignStatus } from '@/types/api'
 import { datetime } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
 import DetailSection from '@/components/DetailSection.vue'
@@ -47,11 +47,14 @@ const waitSignCount = computed(
   () => rows.value.filter((row) => row.sign_status === 'WAIT_SIGN').length,
 )
 
+/** 最近一次查询条件（导出复用，保证与列表口径一致） */
+const lastQuery = ref<EsignQuery>({})
+
 async function loadPage() {
   loading.value = true
   loadError.value = null
   try {
-    const result = await listEsignRecords({
+    const query: EsignQuery = {
       page: page.value,
       size: pageSize.value,
       esign_id: filters.esign_id.trim() || undefined,
@@ -59,7 +62,9 @@ async function loadPage() {
       vin: filters.vin.trim() || undefined,
       apply_no: filters.apply_no.trim() || undefined,
       sign_status: filters.sign_status ?? undefined,
-    })
+    }
+    lastQuery.value = { ...query }
+    const result = await listEsignRecords(query)
     rows.value = result?.list ?? []
     total.value = result?.total ?? 0
   } catch (error) {
@@ -101,6 +106,22 @@ function handlePageSizeChange(next: number) {
   loadPage()
 }
 
+// ---- 导出（按最近一次查询条件导出全量，不受分页影响） ----
+const exporting = ref(false)
+
+async function handleExport() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const filename = await exportEsignRecords(lastQuery.value)
+    message.success(`已导出：${filename}`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导出失败，请稍后重试')
+  } finally {
+    exporting.value = false
+  }
+}
+
 /** 行 key（后端返回主键 id） */
 function rowKey(row: EsignRow): number {
   return row.id ?? 0
@@ -130,11 +151,12 @@ function openDetail(row: EsignRow) {
 }
 
 const columns = computed<DataTableColumns<EsignRow>>(() => [
-  { title: '电子签 ID', key: 'esign_id', width: 165, fixed: 'left', ellipsis: { tooltip: true } },
+  { title: '电子签 ID', key: 'esign_id', width: 165, resizable: true, fixed: 'left', ellipsis: { tooltip: true } },
   {
     title: '任务单号',
     key: 'task_no',
     width: 155,
+    resizable: true,
     ellipsis: { tooltip: true },
     render: (row) => row.task_no || '-',
   },
@@ -142,57 +164,67 @@ const columns = computed<DataTableColumns<EsignRow>>(() => [
     title: '发运申请号',
     key: 'apply_no',
     width: 145,
+    resizable: true,
     ellipsis: { tooltip: true },
     render: (row) => row.apply_no || '-',
   },
   {
     title: '客户',
     key: 'customer_name',
+    width: 130,
     minWidth: 110,
+    resizable: true,
     ellipsis: { tooltip: true },
     render: (row) => row.customer_name || '-',
   },
-  { title: 'VIN', key: 'vin', width: 185, ellipsis: { tooltip: true } },
+  { title: 'VIN', key: 'vin', width: 185, resizable: true, ellipsis: { tooltip: true } },
   {
     title: '签署类型',
     key: 'sign_type',
     width: 105,
+    resizable: true,
     render: (row) => row.sign_type || '-',
   },
   {
     title: '触发节点',
     key: 'trigger_node',
     width: 105,
+    resizable: true,
     render: (row) => row.trigger_node || '-',
   },
   {
     title: '签署方',
     key: 'sign_party',
     width: 100,
+    resizable: true,
     render: (row) => row.sign_party || '-',
   },
   {
     title: '发起时间',
     key: 'initiate_time',
     width: 150,
+    resizable: true,
     render: (row) => datetime(row.initiate_time),
   },
   {
     title: '签署状态',
     key: 'sign_status',
     width: 92,
+    resizable: true,
     render: (row) => h(StatusTag, { type: 'esign', value: row.sign_status }),
   },
   {
     title: '签署时间',
     key: 'sign_time',
     width: 150,
+    resizable: true,
     render: (row) => datetime(row.sign_time),
   },
   {
     title: '任务状态',
     key: 'task_status',
     width: 112,
+    resizable: true,
     render: (row) =>
       row.task_status
         ? h(StatusTag, { type: 'task', value: row.task_status })
@@ -202,6 +234,7 @@ const columns = computed<DataTableColumns<EsignRow>>(() => [
     title: '操作',
     key: 'actions',
     width: 155,
+    resizable: true,
     fixed: 'right',
     render: (row) => {
       return h(
@@ -279,6 +312,7 @@ onActivated(loadPage)
           />
         </div>
         <div class="esign-filter__actions">
+          <n-button size="small" :loading="exporting" @click="handleExport">导出</n-button>
           <n-button size="small" @click="handleReset">重置</n-button>
           <n-button size="small" type="primary" :loading="loading" @click="handleSearch">查询</n-button>
         </div>
@@ -304,7 +338,7 @@ onActivated(loadPage)
         :loading="loading"
         :pagination="pagination"
         :row-key="rowKey"
-        :scroll-x="1720"
+        :scroll-x="1750"
         :bordered="false"
       >
         <template #empty>

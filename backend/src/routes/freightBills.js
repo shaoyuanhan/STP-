@@ -9,8 +9,42 @@ const {
   wrap, ok, errParam, errBiz, errState, errNotFound,
   pageOf, pageData, assertAmount,
 } = require('../helpers');
+const { sendXlsx, text, dateTime } = require('../exporter');
 
 const router = Router();
+
+/** 列表与导出共用的筛选条件 */
+function freightWhere(q) {
+  const { freight_no = '', task_no = '', carrier_id = '', reconcile_status = '' } = q;
+  const where = ['f.deleted = 0'];
+  const params = [];
+  if (freight_no) where.push('f.freight_no LIKE ?'), params.push(`%${freight_no}%`);
+  if (task_no) where.push('f.task_no LIKE ?'), params.push(`%${task_no}%`);
+  if (carrier_id) where.push('f.carrier_id = ?'), params.push(Number(carrier_id));
+  if (reconcile_status !== '' && reconcile_status !== undefined && reconcile_status !== null) {
+    where.push('f.reconcile_status = ?');
+    params.push(Number(reconcile_status));
+  }
+  return { whereSql: `WHERE ${where.join(' AND ')}`, params };
+}
+
+/** 导出列（与列表展示一致） */
+const FREIGHT_EXPORT_COLUMNS = [
+  { header: '运费单号', value: (r) => r.freight_no, width: 20 },
+  { header: '任务单号', value: (r) => r.task_no, width: 20 },
+  { header: '客户', value: (r) => text(r.customer_name), width: 20 },
+  { header: '承运商', value: (r) => text(r.carrier_name), width: 24 },
+  { header: '起点', value: (r) => text(r.start_location), width: 20 },
+  { header: '终点', value: (r) => text(r.end_location), width: 20 },
+  { header: '里程(km)', value: (r) => r.mileage, type: 'number', width: 12 },
+  { header: '计划运费', value: (r) => r.plan_freight, type: 'number', width: 12 },
+  { header: '实际运费', value: (r) => r.actual_freight, type: 'number', width: 12 },
+  { header: '对账状态', value: (r) => (Number(r.reconcile_status) === 1 ? '已对账' : '待对账'), width: 10 },
+  { header: '对账人', value: (r) => text(r.reconciler), width: 12 },
+  { header: '对账时间', value: (r) => dateTime(r.reconcile_time), width: 18 },
+  { header: '到达时间', value: (r) => dateTime(r.create_time), width: 18 },
+  { header: '完结时间', value: (r) => dateTime(r.finish_time), width: 18 },
+];
 
 const BILL_SELECT = `
   SELECT f.*,
@@ -25,17 +59,7 @@ const BILL_SELECT = `
 /** 运费单列表：多条件筛选 + 合计金额 */
 router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
-  const { freight_no = '', task_no = '', carrier_id = '', reconcile_status = '' } = req.query;
-  const where = ['f.deleted = 0'];
-  const params = [];
-  if (freight_no) where.push('f.freight_no LIKE ?'), params.push(`%${freight_no}%`);
-  if (task_no) where.push('f.task_no LIKE ?'), params.push(`%${task_no}%`);
-  if (carrier_id) where.push('f.carrier_id = ?'), params.push(Number(carrier_id));
-  if (reconcile_status !== '' && reconcile_status !== undefined && reconcile_status !== null) {
-    where.push('f.reconcile_status = ?');
-    params.push(Number(reconcile_status));
-  }
-  const whereSql = `WHERE ${where.join(' AND ')}`;
+  const { whereSql, params } = freightWhere(req.query);
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM freight_bill f ${whereSql}`, params);
   const sumRows = await query(
@@ -48,6 +72,16 @@ router.get('/', wrap(async (req, res) => {
     amount: Number(sumRows[0].amount),       // 实际运费合计
     plan_amount: Number(sumRows[0].plan_amount), // 计划运费合计
   }));
+}));
+
+/** 导出：按当前筛选条件导出全部（不分页） */
+router.get('/export', wrap(async (req, res) => {
+  const { whereSql, params } = freightWhere(req.query);
+  const rows = await query(
+    `${BILL_SELECT} ${whereSql} ORDER BY f.create_time DESC, f.id DESC LIMIT 50000`,
+    params
+  );
+  sendXlsx(res, { prefix: '应付运费对账', sheetName: '运费单', columns: FREIGHT_EXPORT_COLUMNS, rows });
 }));
 
 /** 费用明细：运费单 + 调整记录（无修改则空数组） */

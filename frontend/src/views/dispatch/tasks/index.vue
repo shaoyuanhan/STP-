@@ -19,10 +19,10 @@ import CancelDispatchModal from './CancelDispatchModal.vue'
 import TaskDetailDrawer from './TaskDetailDrawer.vue'
 import { splitVins } from './shared'
 import { listCarriers } from '@/services/carriers'
-import { listShippingTasks } from '@/services/tasks'
+import { exportShippingTasks, listShippingTasks } from '@/services/tasks'
 import { useDictionaryStore } from '@/stores/dictionary'
 import { dateOnly, dateShort, datetime } from '@/utils/format'
-import type { ShippingTaskListItem, TaskStatus } from '@/types/api'
+import type { ShippingTaskListItem, ShippingTaskQuery, TaskStatus } from '@/types/api'
 
 /** PageTable 实例句柄 */
 interface PageTableHandle {
@@ -112,6 +112,24 @@ function handleReset() {
   filter.carrier_id = null
   filter.range = null
   applied.value = buildAppliedQuery()
+}
+
+// ---------------- 导出（当前筛选条件下的全量数据） ----------------
+const exporting = ref(false)
+
+async function handleExport() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const query = { ...applied.value } as Record<string, unknown>
+    delete query._t
+    const filename = await exportShippingTasks(query as ShippingTaskQuery)
+    message.success(`已导出：${filename}`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导出失败，请稍后重试')
+  } finally {
+    exporting.value = false
+  }
 }
 
 // ---------------- 列表 ----------------
@@ -292,6 +310,7 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
   {
     title: '承运商',
     key: 'carrier_name',
+    width: 150,
     minWidth: 130,
     ellipsis: { tooltip: true },
     render: (row) => renderCarrier(row),
@@ -450,6 +469,7 @@ function refreshList() {
           />
         </div>
         <div class="page-card__actions">
+          <n-button :loading="exporting" @click="handleExport">导出</n-button>
           <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
         </div>
@@ -477,7 +497,7 @@ function refreshList() {
         :columns="columns"
         :remote="fetchTasks"
         :query="applied"
-        :scroll-x="1900"
+        :scroll-x="2020"
         :init-page-size="20"
       />
     </n-card>
