@@ -2,7 +2,7 @@
 
 **Smart Transport Management Platform（简称 STP）**
 
-基于《TMS-整车发运系统 PRD》实现的**前后端分离**企业级运输管理系统，覆盖承运商/司机基础数据、发运任务派单调度、在途监控、应付运费对账、电子签台账，并内置 CRM / WMS / 狮桥物流 / 司机端的外部系统模拟接口，支持完整业务流程端到端演示。
+基于《TMS-整车发运系统 PRD》实现的**前后端分离**企业级运输管理系统，覆盖承运商/司机基础数据、发运任务派单调度、在途监控、应付运费对账、电子签台账，并提供 CRM / WMS / 狮桥物流 / 承运商端的 12 个外部对接接口，支持完整业务流程端到端联调。
 
 ## 技术栈
 
@@ -17,26 +17,28 @@
 ```
 tms-vehicle-shipping/
 ├── database/
-│   ├── schema.sql          # 建表语句
-│   ├── seed.sql            # 演示种子数据
+│   ├── schema.sql          # 建表语句（含第三方 ID 字段与唯一索引）
+│   └── seed.sql            # 演示种子数据
 ├── docs/
-│   └── openapi.json        # OpenAPI 3.0 接口文档（37 个接口，可导入 APIfox）
+│   ├── openapi.json        # OpenAPI 3.0 接口文档（35 个路径，可导入 APIfox）
+│   └── api-contract.md     # 前后端统一契约（状态机/表结构/接口清单）
 ├── backend/
 │   ├── package.json
 │   ├── .env.example        # 配置模板（复制为 .env 按需修改）
+│   ├── scripts/            # 数据迁移与演示数据脚本
 │   └── src/
 │       ├── server.js       # 应用入口
 │       ├── db.js           # 连接池 + 单据序列号引擎
 │       ├── helpers.js      # 统一错误/分页工具
 │       └── routes/
-│           ├── stats.js     # 工作台统计
-│           ├── carriers.js  # 承运商管理
-│           ├── drivers.js   # 司机管理
-│           ├── shipTasks.js # 发运任务
-│           ├── tracking.js  # 在途监控
-│           ├── freight.js   # 应付运费对账
-│           ├── esigns.js    # 电子签台账
-│           └── mock.js      # 外部系统模拟接口
+│           ├── stats.js         # 工作台统计
+│           ├── carriers.js      # 承运商管理
+│           ├── drivers.js       # 司机管理
+│           ├── shippingTasks.js # 发运任务（派单/批量派单/取消派单/改派）
+│           ├── tracking.js      # 运输监控
+│           ├── freightBills.js  # 应付运费对账
+│           ├── esigns.js        # 电子签台账
+│           └── external.js      # 外部对接（CRM/WMS/狮桥/承运商）
 └── frontend/                  # Vue3 + Vite + TypeScript + Pinia + Naive UI 工程
     ├── package.json           # 依赖与脚本（dev / build / preview）
     ├── vite.config.ts         # dev 端口 5173，/api 代理到 http://localhost:3000
@@ -48,15 +50,15 @@ tms-vehicle-shipping/
     └── src/
         ├── main.ts            # 应用入口（Pinia + Router + NaiveUI 全量注册）
         ├── App.vue            # NConfigProvider（zhCN 中文 locale + 品牌主题）
-        ├── router/index.ts    # 8 个业务路由（懒加载），/ → /dashboard
+        ├── router/index.ts    # 7 个业务路由（懒加载），/ → /dashboard
         ├── layouts/BasicLayout.vue  # 侧边分组菜单 + 顶栏 + 面包屑
         ├── stores/            # dictionary（字典缓存）/ session（演示用户）
-        ├── services/          # http 拦截器 + carriers/drivers/tasks/tracking/freight/esigns/external/stats/dict
+        ├── services/          # http 拦截器 + carriers/drivers/tasks/tracking/freight/esigns/stats/dict
         ├── types/api.ts       # 契约实体与枚举类型
         ├── components/        # StatusTag/MoneyText/PageTable/DetailSection/ConfirmAction/PhoneInput/ChinaMap
         ├── lib/china-map.js   # 中国地图数据与渲染器（零依赖离线）
         ├── utils/format.ts    # 金额/日期/电话格式化
-        └── views/             # 8 个页面：工作台/承运商/司机/发运任务/在途监控/结算/电子签/外部系统模拟
+        └── views/             # 7 个页面：工作台/承运商/司机/发运任务/运输监控/结算/电子签
 ```
 
 ## 部署步骤
@@ -111,9 +113,9 @@ npm run build      # 先 vue-tsc 类型检查，再 vite 构建到 dist/
 npm run preview    # 本地预览构建产物
 ```
 
-> 8 个业务路由：`/dashboard` 工作台、`/carriers` 承运商管理、`/drivers` 司机管理、
-> `/tasks` 发运任务、`/tracking` 在途监控、`/freight` 结算管理、`/esigns` 电子签台账、
-> `/simulator` 外部系统模拟。开发环境所有 `/api` 请求由 Vite 代理转发到后端 3000 端口，
+> 7 个业务路由：`/dashboard` 工作台、`/carriers` 承运商管理、`/drivers` 司机管理、
+> `/tasks` 发运任务、`/tracking` 运输监控（含历史运单）、`/freight` 结算管理、`/esigns` 电子签台账。
+> 开发环境所有 `/api` 请求由 Vite 代理转发到后端 3000 端口，
 > 前后端可分开部署；生产环境建议用 Nginx 将 `/api` 反代到后端即可，无需修改前端代码。
 
 ## 功能模块
@@ -121,71 +123,119 @@ npm run preview    # 本地预览构建产物
 | 模块 | 能力 |
 |---|---|
 | 工作台 | 待办统计卡、任务状态分布、最新任务列表 |
-| 承运商管理 | 新增/编辑、自动编码（CAR-001）、名称去重、启用/停用 |
-| 司机管理 | 新增/编辑、身份证/手机号校验去重、驾驶证有效期、启用/停用 |
-| 发运任务 | 多条件筛选、派单/取消派单/改派/批量派单、任务详情时间轴、外部系统操作面板 |
-| 在途监控 | 在途运单列表、运输进度、节点时间轴、位置回传记录、运输地图（整体路径放大界面 + 中国地图展示起始地/目的地/位置点/路径动画） |
+| 承运商管理 | 新增/编辑、自动编码（CAR-001）、名称与第三方承运商ID 去重、启用/停用 |
+| 司机管理 | 新增/编辑、身份证/手机号/第三方司机ID 校验去重、驾驶证有效期、所属承运商多选、启用/停用 |
+| 发运任务 | 多条件筛选、派单/取消派单/改派/批量派单（支持 STP 内部ID 或第三方ID 定位承运商）、任务详情（客户/销售/发运/物料/承运信息分模块） |
+| 运输监控 | 在途与历史运单统一列表、运输进度、节点时间轴、位置回传记录、运单详情面板（运单/物料/司机/回传）、中国地图线路展示与异常线路标识 |
 | 应付运费对账 | 筛选、合计金额、费用明细、修改运费（留痕原因与前后金额）、确认对账 |
 | 电子签台账 | 多条件筛选、按任务跳转详情 |
 
 ## 业务状态机
 
 ```
-待派单 PENDING
+待派单 WAIT_DISPATCH
   └─ 派单 → 已派单 DISPATCHED
-       ├─ 承运商接单（分配司机）→ ACCEPTED
-       │    ├─ WMS 出库回传 → OUT_BOUND
-       │    └─ 司机提车发运 → PICKED_UP
-       │         └─ 位置回传（首条自动置在途）→ IN_TRANSIT
-       │              └─ 司机到达（生成运费单）→ ARRIVED
-       │                   └─ 司机完结 → FINISHED
-       └─ 取消派单 → 回到 PENDING
+       ├─ 承运商接单（分配司机）→ CARRIER_ACCEPTED
+       │    └─ 司机提车发运（拍照）→ PICKED
+       │         └─ WMS 出库回传 → 已出库 OUTBOUND（瞬时留痕）→ 在途 IN_TRANSIT
+       │              └─ 承运商到达回传（生成运费单）→ ARRIVED
+       │                   └─ 承运商完结回传 → FINISHED
+       └─ 取消派单 → 回到 WAIT_DISPATCH
   └─ CRM 同步取消（仅待派单可取消）→ CANCELLED
 ```
 
+已确认的流程顺序：**司机先提车（发运）、仓库后出库，出库完成即进入在途**，各节点必须逐步流转。
 任务完结后自动生成运费单（状态 `待对账`），确认对账后置为 `已对账`。
 
 ## 核心接口一览
 
-完整接口定义见 `docs/openapi.json`（OpenAPI 3.0，可直接导入 APIfox / Postman / Apifox），含全部 37 个接口的参数、请求体结构与响应示例。
+完整接口定义见 `docs/openapi.json`（OpenAPI 3.0，可直接导入 APIfox / Postman），含全部 35 个路径的参数、请求体结构与响应示例；字段与错误码约定见 `docs/api-contract.md`。
+
+### 内部管理接口
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/health` | 健康检查 |
+| GET | `/api/health` | 健康检查（真实探测数据库） |
 | GET | `/api/stats` | 工作台统计 |
-| GET/POST | `/api/carriers` | 承运商列表/新增 |
+| GET | `/api/dictionaries` | 字典（准驾车型、大区等） |
+| GET/POST | `/api/carriers` | 承运商列表/新增（支持 `external_carrier_id` 第三方ID） |
 | PUT | `/api/carriers/:id` | 编辑承运商 |
-| PUT | `/api/carriers/:id/status` | 启用/停用（body: `{"status":"COOPERATING"}` 或 `"DISABLED"`） |
-| GET/POST | `/api/drivers` | 司机列表/新增 |
+| PUT | `/api/carriers/:id/status` | 启用/停用 |
+| GET/POST | `/api/drivers` | 司机列表/新增（支持 `external_driver_id` 第三方ID） |
 | PUT | `/api/drivers/:id` | 编辑司机 |
-| PUT | `/api/drivers/:id/status` | 启用/停用（body: `{"status":"ENABLED"}` 或 `"DISABLED"`） |
+| PUT | `/api/drivers/:id/status` | 启用/停用 |
 | GET | `/api/drivers/options` | 可选司机（启用中） |
-| GET | `/api/ship-tasks` | 任务列表（筛选/分页） |
-| GET | `/api/ship-tasks/:id` | 任务详情 + 节点时间轴 |
-| POST | `/api/ship-tasks/:id/dispatch` | 派单 |
-| POST | `/api/ship-tasks/:id/cancel-dispatch` | 取消派单 |
-| POST | `/api/ship-tasks/:id/reassign` | 改派 |
-| POST | `/api/ship-tasks/dispatch-batch` | 批量派单 |
-| GET | `/api/tracking` | 在途运单列表 |
-| GET | `/api/tracking/:taskId` | 运单详情（进度/时间轴/位置） |
-| GET | `/api/freight-orders` | 运费单列表（含合计） |
-| GET | `/api/freight-orders/:id` | 费用明细 + 修改记录 |
-| POST | `/api/freight-orders/:id/adjust` | 修改运费 |
-| POST | `/api/freight-orders/:id/recon` | 确认对账 |
-| GET | `/api/esigns` | 电子签台账 |
+| GET | `/api/shipping-tasks` | 任务列表（筛选/分页） |
+| GET | `/api/shipping-tasks/:id` | 任务详情（客户/发运/物料/承运/时间轴） |
+| POST | `/api/shipping-tasks/dispatch` | 派单（`carrier_id` 或 `external_carrier_id`） |
+| POST | `/api/shipping-tasks/batch-dispatch` | 批量派单 |
+| POST | `/api/shipping-tasks/dispatch/cancel` | 取消派单 |
+| POST | `/api/shipping-tasks/dispatch/reassign` | 改派 |
+| GET | `/api/tracking/tasks` | 运输监控列表（在途/历史） |
+| GET | `/api/tracking/tasks/:id` | 运单详情（进度/时间轴/位置回传） |
+| GET | `/api/freight-bills` | 运费单列表（含合计） |
+| GET | `/api/freight-bills/:id/detail` | 费用明细 + 修改记录 |
+| PUT | `/api/freight-bills/:id/freight` | 修改运费 |
+| POST | `/api/freight-bills/:id/reconcile` | 确认对账 |
+| GET | `/api/esign-records` | 电子签台账 |
+
+### 外部对接接口（`/api/external/*`，camelCase）
+
+| 方法 | 路径 | 来源 | 说明 |
+|---|---|---|---|
+| POST | `/shipping-tasks/receive` | CRM | 下发发运申请（生成任务单号） |
+| GET | `/shipping-tasks/cancel-check` | CRM | 取消前置校验 |
+| POST | `/shipping-tasks/cancel` | CRM | 取消任务（仅待派单） |
+| POST | `/wms/outbound-status` | WMS | 出库回传（PICKED→IN_TRANSIT） |
+| POST | `/drivers/sync` | 狮桥 | 司机同步（`externalDriverId` 优先，其次身份证号） |
+| POST | `/shipping-tasks/accept` | 承运商 | 接单并指派司机（`driverId` 或 `externalDriverId`） |
+| POST | `/shipping-tasks/pickup` | 承运商 | 提车发运（含照片） |
+| POST | `/shipping-tasks/arrive` | 承运商 | 到达回传（生成运费单） |
+| POST | `/shipping-tasks/finish` | 承运商 | 完结回传 |
+| POST | `/esign/sync` | 狮桥 | 电子签下发同步 |
+| POST | `/esign/receipt-sync` | 狮桥 | 电子签回执同步 |
+| POST | `/esign/sign-status` | 狮桥 | 签署状态回传 |
 
 ## 关键设计
 
-- **编号规则引擎**：承运商 `CAR-001`；任务单号 `FY+YYYYMMDD+4位序列`；运费单号 `YF+YYYYMMDD+4位序列`。基于 `UPDATE ... SET seq_val = LAST_INSERT_ID(seq_val + 1)` 的原子机制，多连接并发下不重号，任务/运费序列按日重置。
-- **统一响应与错误**：业务错误返回 `{ message }` + 对应 HTTP 状态码；所有列表接口支持 `page/size` 分页。
-- **幂等与去重**：发运申请号、电子签 ID、司机身份证号均做唯一性校验，重复下发会被拒绝或安全更新。
-- **留痕**：任务每次状态流转写入 `task_events` 时间轴；运费修改写入 `freight_adjustments`（前后金额 + 原因）。
+- **编号规则引擎**：承运商 `CAR-001`；任务单号 `FY+YYYYMMDD+4位序列`；运费单号 `YF+YYYYMMDD+4位序列`；批量派单批次号 `PD+YYYYMMDD+4位序列`。基于 `UPDATE ... SET seq_val = LAST_INSERT_ID(seq_val + 1)` 的原子机制，多连接并发下不重号，任务/运费序列按日重置。
+- **统一响应与错误**：统一信封 `{ code, message, data }`，成功 `00000`，参数 `A0001`、业务 `A0002`、重复请求 `C0001`、状态/版本冲突 `D0001`、不存在 `D0002`；列表统一 `page/size` 分页。
+- **幂等与去重**：发运申请号、电子签 ID、司机身份证号、承运商名称、第三方承运商/司机 ID 均做唯一性校验，重复下发会被拒绝或安全更新。
+- **ID 定位优先**：派单/接单/回传均以 STP 内部 ID 或第三方 ID 定位承运商与司机，名称仅作旧字段兼容。
+- **乐观锁**：派单/取消派单/改派须携带 `version`，不匹配返回 `D0001「任务状态已变化，请刷新后重试」`。
+- **留痕**：任务每次状态流转写入 `task_status_log`，派单/改派/取消派单写入 `dispatch_record`，运费修改写入 `freight_adjust_log`（前后金额 + 原因）。
 
 ## 验证状态
 
-已完成 21 步全链路测试与浏览器全页面验证：CRM 下发 → 派单 → 接单 → 出库 → 提车 → 在途回传 → 到达 → 完结 → 运费修改/对账，以及取消链路，全部通过。
+已完成全链路测试与浏览器全页面验证：CRM 下发 → 派单 → 接单 → 提车 → 出库 → 在途回传 → 到达 → 完结 → 运费修改/对账，以及取消链路，全部通过；第三方承运商 ID 派单 → 第三方司机 ID 接单链路已验证通过。
 
 ## 更新记录
+
+### V2.3（2026-10-21）第三方承运商 / 司机 ID 全链路支持
+
+外部系统主键进入系统，派单与接单不再依赖名称：
+
+- **表结构**：`carrier.external_carrier_id`、`driver.external_driver_id` 新增，均建唯一索引保证全局不重复；本地库已执行 ALTER 并为存量演示数据回填
+- **基础数据**：承运商、司机新增/编辑可填写第三方 ID，列表新增列并支持关键词搜索；重复时返回 A0002
+- **派单 / 批量派单 / 改派**：承运商可用 `carrier_id`（STP 内部ID）或 `external_carrier_id`（第三方ID），二选一即可派单，仍校验承运商存在且合作中
+- **接单**：司机支持 `driverId`（内部）或 `externalDriverId`（第三方）；承运商支持 `carrierId` / `externalCarrierId`，`carrierName` 仅兼容保留
+- **司机同步**：优先按 `externalDriverId` UPSERT，未命中退回身份证号匹配；`carrierId` / `externalCarrierId` 维护司机-承运商关联
+- **文档**：`docs/openapi.json` 升至 2.2.0，`docs/api-contract.md` 同步表结构与定位规则
+
+### V2.2（2026-10-21）发运任务详情字段与运输监控详情重构
+
+- **任务详情抽屉**：按「基础信息 / 发运信息 / 物料明细 / 承运信息」分区展示，补齐发运申请单号、创建人、创建日期、客户名称（合同主体）、大区、销售人员及联系方式、备注、出库仓库/储位、交付地区与地址、发运方式、计划提车日期、接车联系人及电话、发运/出库/到达时间、计划/实际运费；移除详情内的轨迹记录表（轨迹归运输监控）
+- **运输监控详情面板**：取消旧版「正常/异常线路」提示条，改为「运单 / 物料」分组展示，物料按 VIN 逐台列出车型，超时线路保留异常标识
+- 物料明细多车场景按 VIN 与车型一一对应拆分展示
+
+### V2.1（2026-10-20 ～ 10-21）状态机调整、状态回传拆分与运输监控合并
+
+- **状态机**：明确「司机先提车、仓库后出库」，出库完成即进入在途；状态枚举统一为 `WAIT_DISPATCH / DISPATCHED / CARRIER_ACCEPTED / PICKED / OUTBOUND / IN_TRANSIT / ARRIVED / FINISHED / CANCELLED`
+- **状态回传拆分**：单一状态同步接口拆为 `accept / pickup / arrive / finish` 四个承运商通用接口，补充节点时间先后校验（不得回传未来时间、不得跳步）
+- **提车照片**：照片 URL 结构化写入状态日志
+- **运输监控**：原「在途监控 / 历史运单 / 运输地图」三页合并为统一运输监控，异常线路（超 1 小时未上报）标识，重新上报后自动恢复正常
+- **清理**：移除外部系统模拟页面及接口；状态回传不再接收实际运费/里程入参
+- **契约**：`openapi.json` 补全请求体 schema 并修正状态机描述
 
 ### V2.0（2026-10-20）前端整体重构为 Vue3 工程
 

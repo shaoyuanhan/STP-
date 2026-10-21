@@ -23,9 +23,8 @@ import type {
   ShippingTaskDetail,
   ShippingTaskVehicle,
   TaskStatusLog,
-  TransportTrack,
 } from '@/types/api'
-import { describeApiError, splitVins, TASK_STATUS_LABELS } from './shared'
+import { describeApiError, TASK_STATUS_LABELS } from './shared'
 
 /**
  * 详情 head 扩展：后端详情 SQL 返回 c.carrier_code，
@@ -86,7 +85,6 @@ function close() {
 const task = computed<TaskHeadExt | null>(() => (detail.value?.task ?? null) as TaskHeadExt | null)
 const vehicles = computed<ShippingTaskVehicle[]>(() => detail.value?.vehicles ?? [])
 const statusLogs = computed<TaskStatusLog[]>(() => detail.value?.statusLogs ?? [])
-const tracks = computed<TransportTrack[]>(() => detail.value?.tracks ?? [])
 
 /** 派单备注：取最近一次派单/改派记录的 remark（契约：派单备注存 dispatch_record.remark） */
 const dispatchRemark = computed(() => {
@@ -111,12 +109,7 @@ const cancelRecords = computed<string[]>(() => {
   return list
 })
 
-const vinText = computed(() => {
-  const list = splitVins(task.value?.vins)
-  return list.length > 1 ? `${list[0]} 等 ${list.length} 台` : list[0] ?? '-'
-})
-
-// ---------------- 车辆明细表 ----------------
+// ---------------- 物料明细表 ----------------
 const vehicleColumns: DataTableColumns<ShippingTaskVehicle> = [
   {
     title: 'VIN',
@@ -224,35 +217,6 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
   return log.to_status === 'CANCELLED' ? 'error' : 'success'
 }
 
-// ---------------- 轨迹记录 ----------------
-const trackColumns: DataTableColumns<TransportTrack> = [
-  {
-    title: '回传时间',
-    key: 'report_time',
-    width: 150,
-    render: (row) => (row.report_time ? datetimeFull(row.report_time) : '-'),
-  },
-  {
-    title: '位置描述',
-    key: 'location_desc',
-    minWidth: 180,
-    ellipsis: { tooltip: true },
-    render: (row) => row.location_desc || '-',
-  },
-  {
-    title: '经纬度',
-    key: 'lng_lat',
-    width: 170,
-    render: (row) => `${row.longitude}, ${row.latitude}`,
-  },
-  {
-    title: '时速（km/h）',
-    key: 'speed',
-    width: 110,
-    render: (row) => (row.speed != null && row.speed !== '' ? String(row.speed) : '-'),
-  },
-]
-
 </script>
 
 <template>
@@ -285,39 +249,25 @@ const trackColumns: DataTableColumns<TransportTrack> = [
             <n-descriptions-item label="任务状态">
               <StatusTag type="task" :value="task.status" />
             </n-descriptions-item>
-            <n-descriptions-item label="发运申请号">{{ task.apply_no }}</n-descriptions-item>
-            <n-descriptions-item label="客户名称">{{ task.customer_name || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="发运申请单号">{{ task.apply_no || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="客户名称（合同主体）">{{ task.customer_name || '-' }}</n-descriptions-item>
             <n-descriptions-item label="大区">{{ task.region || '-' }}</n-descriptions-item>
-            <n-descriptions-item label="销售人员">{{ task.sales_person || '-' }}</n-descriptions-item>
-            <n-descriptions-item label="销售电话">
+            <n-descriptions-item label="销售人员姓名">{{ task.sales_person || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="销售人员联系方式">
               {{ task.sales_phone ? formatPhone(task.sales_phone) : '-' }}
             </n-descriptions-item>
             <n-descriptions-item label="创建人">{{ task.create_name || '-' }}</n-descriptions-item>
-            <n-descriptions-item label="创建时间">
-              {{ task.create_time ? datetime(task.create_time) : '-' }}
+            <n-descriptions-item label="创建日期">
+              {{ task.create_time ? dateOnly(task.create_time) : '-' }}
             </n-descriptions-item>
-            <n-descriptions-item label="备注（CRM）" :span="3">
+            <n-descriptions-item label="备注" :span="3">
               <span class="pre-wrap">{{ task.remark || '-' }}</span>
             </n-descriptions-item>
           </DetailSection>
 
-          <!-- 车辆信息：仓库/库位 + 运费合计 + 多车明细表 -->
-          <DetailSection title="车辆信息">
-            <n-descriptions-item label="仓库">{{ task.factory || '-' }}</n-descriptions-item>
-            <n-descriptions-item label="库位">{{ task.storage_location || '-' }}</n-descriptions-item>
-            <n-descriptions-item label="VIN">{{ vinText }}</n-descriptions-item>
-            <n-descriptions-item label="计划运费合计">
-              <MoneyText :value="task.plan_freight" prefix="¥" bold />
-            </n-descriptions-item>
-            <n-descriptions-item label="实际运费合计">
-              <span v-if="task.actual_freight !== null && task.actual_freight !== undefined && task.actual_freight !== ''">
-                <MoneyText :value="task.actual_freight" prefix="¥" bold />
-              </span>
-              <span v-else class="muted">司机到达后回填</span>
-            </n-descriptions-item>
-          </DetailSection>
+          <!-- 物料明细：仓库/库位与运费已并入发运信息，此处只保留多物料清单 -->
           <div class="drawer-section__table">
-            <div class="drawer-section__caption">车辆明细（{{ vehicles.length }} 台）</div>
+            <div class="drawer-section__caption">物料明细</div>
             <n-data-table
               :columns="vehicleColumns"
               :data="vehicles"
@@ -330,9 +280,12 @@ const trackColumns: DataTableColumns<TransportTrack> = [
 
           <!-- 发运信息：未回传节点显示「待回传」灰字 -->
           <DetailSection title="发运信息">
-            <n-descriptions-item label="运输方式">{{ task.ship_method || '-' }}</n-descriptions-item>
-            <n-descriptions-item label="发运地点">{{ task.ship_location || '-' }}</n-descriptions-item>
-            <n-descriptions-item label="收车人电话">
+            <n-descriptions-item label="出库仓库">{{ task.factory || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="出库储位">{{ task.storage_location || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="发运方式">{{ task.ship_method || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="交付地区">{{ task.delivery_area || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="接车联系人">{{ task.receiver_name || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="接车联系人电话">
               {{ task.receiver_phone ? formatPhone(task.receiver_phone) : '-' }}
             </n-descriptions-item>
             <n-descriptions-item label="交付地址" :span="3">
@@ -346,13 +299,22 @@ const trackColumns: DataTableColumns<TransportTrack> = [
               <span v-if="task.ship_time">{{ datetime(task.ship_time) }}</span>
               <span v-else class="muted">待回传</span>
             </n-descriptions-item>
-            <n-descriptions-item label="出库日期">
+            <n-descriptions-item label="出库时间">
               <span v-if="task.outbound_date">{{ datetime(task.outbound_date) }}</span>
               <span v-else class="muted">待回传</span>
             </n-descriptions-item>
             <n-descriptions-item label="到达时间">
               <span v-if="task.arrive_time">{{ datetime(task.arrive_time) }}</span>
               <span v-else class="muted">待回传</span>
+            </n-descriptions-item>
+            <n-descriptions-item label="计划运费">
+              <MoneyText :value="task.plan_freight" prefix="¥" bold />
+            </n-descriptions-item>
+            <n-descriptions-item label="实际运费">
+              <span v-if="task.actual_freight !== null && task.actual_freight !== undefined && task.actual_freight !== ''">
+                <MoneyText :value="task.actual_freight" prefix="¥" bold />
+              </span>
+              <span v-else class="muted">司机到达后回填</span>
             </n-descriptions-item>
           </DetailSection>
 
@@ -430,22 +392,6 @@ const trackColumns: DataTableColumns<TransportTrack> = [
               </n-timeline>
               <div v-else class="drawer-section__empty">暂无执行节点</div>
             </div>
-          </section>
-
-          <!-- 轨迹记录（若有） -->
-          <section v-if="tracks.length" class="drawer-section">
-            <div class="drawer-section__header">
-              <span class="drawer-section__bar"></span>
-              <h3 class="drawer-section__title">轨迹记录（{{ tracks.length }} 条）</h3>
-            </div>
-            <n-data-table
-              :columns="trackColumns"
-              :data="tracks"
-              :row-key="(row: TransportTrack) => row.id ?? row.report_time ?? row.longitude"
-              size="small"
-              :bordered="true"
-              :scroll-x="610"
-            />
           </section>
 
         </div>

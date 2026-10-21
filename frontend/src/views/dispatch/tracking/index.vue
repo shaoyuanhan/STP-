@@ -388,16 +388,22 @@ const selectedAbnormal = computed(() => {
   return metaList.value.find((meta) => meta.task.id === selectedId.value)?.abnormal ?? false
 })
 
-const focusStateText = computed(() => {
-  const task = focusTask.value
-  if (!task || task.status !== 'IN_TRANSIT') return ''
-  const last = focusTracks.value[focusTracks.value.length - 1]
-  const age = reportAgeMs(last?.report_time)
-  if (age === null) return '在途后还没有位置上报，按异常线路显示。司机上报后会自动变为正常线路。'
-  if (age > REPORT_TIMEOUT_MS) {
-    return `最近一次上报已过去 ${durationText(age)}。超过 1 小时未上报，线路标为异常；再次上报后自动恢复。`
-  }
-  return `最近一次上报在 ${durationText(age)}前，未超过 1 小时，线路正常。`
+const focusLastTrack = computed<TransportTrack | null>(
+  () => focusTracks.value[focusTracks.value.length - 1] ?? null,
+)
+
+/** 物料明细：VIN 与车型按顿号聚合且顺序一一对应，拆成每台车一行 */
+const vehicleRows = computed(() => {
+  const vins = String(focusTask.value?.vins ?? '').split('、').filter(Boolean)
+  const models = String(focusTask.value?.vehicle_models ?? '').split('、').filter(Boolean)
+  return vins.map((vin, index) => ({ vin, model: models[index] || '-' }))
+})
+
+/** 异常超时时长：最后上报距今减去 1 小时规定间隔 */
+const overdueText = computed(() => {
+  const age = reportAgeMs(focusLastTrack.value?.report_time)
+  if (age === null) return '在途后尚未上报位置'
+  return durationText(Math.max(0, age - REPORT_TIMEOUT_MS))
 })
 
 const mapLegend = computed(() => {
@@ -786,15 +792,6 @@ function onMapHover(id: number | null) {
             </div>
 
             <template v-else-if="focusTask">
-              <div
-                v-if="!isHistory && focusTask.status === 'IN_TRANSIT'"
-                class="ov-state"
-                :class="selectedAbnormal ? 'is-alert' : 'is-ok'"
-              >
-                <b>{{ selectedAbnormal ? '异常线路' : '正常线路' }}</b>
-                <span>{{ focusStateText }}</span>
-              </div>
-
               <!-- 进度 -->
               <div class="ov-progress">
                 <div class="ov-progress__line">
@@ -822,26 +819,90 @@ function onMapHover(id: number | null) {
                 </div>
               </div>
 
-              <!-- 基本信息 -->
-              <div class="ov-desc">
-                <div><label>运输单号</label><span>{{ focusTracks[0]?.transport_no || '-' }}</span></div>
-                <div><label>VIN</label><span>{{ focusTask.vins || '-' }}</span></div>
-                <div><label>车型</label><span>{{ focusTask.vehicle_models || '-' }}</span></div>
-                <div><label>客户</label><span>{{ focusTask.customer_name || '-' }}</span></div>
-                <div><label>承运商</label><span>{{ focusTask.carrier_name || '-' }}</span></div>
-                <div><label>司机</label><span>{{ focusTask.driver_name || '-' }}</span></div>
-                <div><label>司机电话</label><span>{{ formatPhone(focusTask.driver_phone) }}</span></div>
-                <div v-if="!isHistory">
-                  <label>预计提车</label><span>{{ dateOnly(focusTask.plan_pickup_date) }}</span>
+              <!-- 运单 -->
+              <div class="ov-block">
+                <div class="ov-block__head">
+                  <span>运单</span>
+                  <em>{{ focusTask.customer_name || '—' }}</em>
                 </div>
-                <div><label>发运时间</label><span>{{ datetime(focusTask.ship_time) }}</span></div>
-                <div><label>到达时间</label><span>{{ datetime(focusTask.arrive_time) }}</span></div>
-                <div v-if="isHistory">
-                  <label>完成时间</label><span>{{ datetime(focusTask.finish_time) }}</span>
+                <div class="ov-fields">
+                  <div class="wide">
+                    <label>运输单号</label><span>{{ focusTracks[0]?.transport_no || '-' }}</span>
+                  </div>
+                  <div><label>客户</label><span>{{ focusTask.customer_name || '-' }}</span></div>
+                  <div><label>计划运费</label><span>¥{{ money(focusTask.plan_freight) }}</span></div>
+                  <div v-if="!isHistory">
+                    <label>预计提车</label><span>{{ dateOnly(focusTask.plan_pickup_date) }}</span>
+                  </div>
+                  <div v-if="isHistory">
+                    <label>完成时间</label><span>{{ datetime(focusTask.finish_time) }}</span>
+                  </div>
+                  <div><label>发运时间</label><span>{{ datetime(focusTask.ship_time) }}</span></div>
+                  <div><label>到达时间</label><span>{{ datetime(focusTask.arrive_time) }}</span></div>
+                  <div class="wide">
+                    <label>交付地址</label><span>{{ focusTask.delivery_address || '-' }}</span>
+                  </div>
                 </div>
-                <div><label>计划运费</label><span>¥{{ money(focusTask.plan_freight) }}</span></div>
-                <div class="wide">
-                  <label>交付地址</label><span>{{ focusTask.delivery_address || '-' }}</span>
+              </div>
+
+              <!-- 物料 -->
+              <div class="ov-block">
+                <div class="ov-block__head">
+                  <span>物料</span>
+                  <em>{{ vehicleRows.length }} 台</em>
+                </div>
+                <div class="ov-table-scroll">
+                  <table class="ov-table ov-table--static">
+                    <thead>
+                      <tr><th>序号</th><th>VIN</th><th>车型</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(item, index) in vehicleRows" :key="item.vin">
+                        <td>{{ index + 1 }}</td>
+                        <td class="ov-table__vin">{{ item.vin }}</td>
+                        <td>{{ item.model }}</td>
+                      </tr>
+                      <tr v-if="!vehicleRows.length">
+                        <td colspan="3" class="ov-block__empty">暂无物料信息</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- 承运商信息 -->
+              <div class="ov-block">
+                <div class="ov-block__head">
+                  <span>承运商信息</span>
+                  <em>{{ focusTask.carrier_name || '未指派' }}</em>
+                </div>
+                <div class="ov-fields">
+                  <div class="wide"><label>承运商</label><span>{{ focusTask.carrier_name || '-' }}</span></div>
+                  <div><label>司机</label><span>{{ focusTask.driver_name || '-' }}</span></div>
+                  <div><label>司机电话</label><span>{{ formatPhone(focusTask.driver_phone) }}</span></div>
+                </div>
+              </div>
+
+              <!-- 异常提示：仅在出现异常时展示并填充数据 -->
+              <div v-if="selectedAbnormal" class="ov-block ov-block--alert">
+                <div class="ov-block__head">
+                  <span>异常提示</span>
+                  <em>超时未上报</em>
+                </div>
+                <div class="ov-fields">
+                  <div class="wide">
+                    <label>异常原因</label><span>司机超过 1 小时未上传位置</span>
+                  </div>
+                  <div class="wide">
+                    <label>最近上报</label>
+                    <span>{{ focusLastTrack ? datetimeFull(focusLastTrack.report_time) : '暂无上报记录' }}</span>
+                  </div>
+                  <div class="wide">
+                    <label>已超时</label><span class="ov-fields__alert">{{ overdueText }}</span>
+                  </div>
+                  <div class="wide">
+                    <label>处理建议</label><span>联系司机补报位置，上报后线路自动恢复正常</span>
+                  </div>
                 </div>
               </div>
 
@@ -1328,36 +1389,47 @@ function onMapHover(id: number | null) {
   opacity: 0;
 }
 
-.ov-state {
+/* ---- 抽屉信息列表 ---- */
+.ov-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+.ov-fields > div {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: 5px 0;
+  border-bottom: 1px dashed #e8edf5;
   font-size: 12px;
-  line-height: 1.5;
 }
 
-.ov-state b {
+.ov-fields > div.wide {
+  grid-column: 1 / -1;
+}
+
+.ov-fields label {
+  width: 64px;
   flex: none;
+  color: #8c8c8c;
 }
 
-.ov-state.is-ok {
-  background: #f6ffed;
-  color: #389e0d;
+.ov-fields span {
+  color: #262626;
+  word-break: break-all;
 }
 
-.ov-state.is-ok span {
-  color: #135200;
-}
-
-.ov-state.is-alert {
-  background: #fff1f0;
+.ov-fields__alert {
   color: #cf1322;
+  font-weight: 600;
 }
 
-.ov-state.is-alert span {
-  color: #5c0011;
+.ov-block--alert {
+  border-color: #ffccc7;
+  background: #fff8f7;
+}
+
+.ov-block--alert .ov-block__head em {
+  color: #cf1322;
 }
 
 /* ---- 进度条 ---- */
@@ -1429,43 +1501,6 @@ function onMapHover(id: number | null) {
   left: auto;
   right: -40px;
   transform: none;
-}
-
-/* ---- 基本信息 ---- */
-.ov-desc {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.ov-desc > div {
-  display: flex;
-  padding: 8px 12px;
-  border-bottom: 1px solid #f0f0f0;
-  border-right: 1px solid #f0f0f0;
-  font-size: 12px;
-}
-
-.ov-desc > div:nth-child(2n) {
-  border-right: none;
-}
-
-.ov-desc > div.wide {
-  grid-column: 1 / -1;
-  border-right: none;
-}
-
-.ov-desc label {
-  width: 72px;
-  flex: none;
-  color: #8c8c8c;
-}
-
-.ov-desc span {
-  color: #262626;
-  word-break: break-all;
 }
 
 /* ---- 上报点 / 记录 ---- */
@@ -1610,6 +1645,20 @@ function onMapHover(id: number | null) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 只读表格（物料明细）：不显示可点击手型与悬停高亮 */
+.ov-table--static tbody tr {
+  cursor: default;
+}
+
+.ov-table--static tbody tr:hover {
+  background: transparent;
+}
+
+.ov-table__vin {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- 窄屏 ---- */
