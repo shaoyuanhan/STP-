@@ -3,7 +3,7 @@
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
     "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
-    "version": "2.3.1"
+    "version": "2.4.0"
   },
   "servers": [
     {
@@ -2527,15 +2527,24 @@
         "tags": [
           "10 外部接口·狮桥物流"
         ],
-        "summary": "⑩ 司机信息同步",
-        "description": "按第三方司机ID（externalDriverId，推荐）优先 UPSERT，未传时退回身份证号（source=2 狮桥同步，更新时姓名以狮桥为准、未传字段保留原值）；carrierId / externalCarrierId 存在时维护 carrier_driver 多对多关联；重复推送同一第三方ID或身份证号为更新不新增。",
+        "summary": "⑩ 司机信息同步（支持单条 / 批量）",
+        "description": "按第三方司机ID（externalDriverId，推荐）优先 UPSERT，未传时退回身份证号（source=2 狮桥同步，更新时姓名以狮桥为准、未传字段保留原值）；carrierId / externalCarrierId 存在时维护 carrier_driver 多对多关联；重复推送同一第三方ID或身份证号为更新不新增。\n\n**支持批量**：请求体可直接传司机对象数组，或 {\"drivers\":[...]}，单次最多 200 条；每条独立事务，单条失败不影响其余，data 返回 { total, success, created, updated, failed, results[] }，results 按入参顺序给出每条的成功/失败与原因。",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "description": "单条传司机对象；批量传司机对象数组或 {\"drivers\":[...]}（最多 200 条，元素字段同下）",
                 "properties": {
+                  "drivers": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "description": "批量同步时的司机列表（元素字段与本对象一致，driverName/phone/idCard 必填）",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
                   "externalDriverId": {
                     "type": "string",
                     "maxLength": 64,
@@ -2611,7 +2620,7 @@
         },
         "responses": {
           "200": {
-            "description": "同步结果（created=true 新增 / false 更新）",
+            "description": "单条返回同步结果（created=true 新增 / false 更新）；批量返回汇总 { total, success, created, updated, failed, results[] }，整体仍为 00000（存在部分失败时看 failed）",
             "content": {
               "application/json": {
                 "example": {

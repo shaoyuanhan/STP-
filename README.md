@@ -187,7 +187,7 @@ npm run preview    # 本地预览构建产物
 | GET | `/shipping-tasks/cancel-check` | CRM | 取消前置校验 |
 | POST | `/shipping-tasks/cancel` | CRM | 取消任务（仅待派单） |
 | POST | `/wms/outbound-status` | WMS | 出库回传（PICKED→IN_TRANSIT） |
-| POST | `/drivers/sync` | 狮桥 | 司机同步（`externalDriverId` 优先，其次身份证号） |
+| POST | `/drivers/sync` | 狮桥 | 司机同步（`externalDriverId` 优先，其次身份证号；支持数组批量，≤200 条） |
 | POST | `/tracking/report` | 狮桥 | 在途点位上报（写轨迹，不改任务状态） |
 | POST | `/shipping-tasks/accept` | 承运商 | 接单并指派司机（`driverId` 或 `externalDriverId`） |
 | POST | `/shipping-tasks/pickup` | 承运商 | 提车发运（含照片） |
@@ -211,6 +211,14 @@ npm run preview    # 本地预览构建产物
 已完成全链路测试与浏览器全页面验证：CRM 下发 → 派单 → 接单 → 提车 → 出库 → 在途回传 → 到达 → 完结 → 运费修改/对账，以及取消链路，全部通过；第三方承运商 ID 派单 → 第三方司机 ID 接单链路已验证通过。
 
 ## 更新记录
+
+### V2.6（2026-10-21）司机同步接口支持批量
+
+- **接口**：`POST /api/external/drivers/sync` 支持单条与批量两种形态，原单条请求体与响应完全兼容
+- **批量入参**：直接传司机对象数组，或 `{ "drivers": [...] }`，单次上限 200 条
+- **事务粒度**：逐条独立事务，单条校验/写入失败不影响其余记录
+- **批量返回**：`{ total, success, created, updated, failed, results[] }`，`results` 按入参顺序给出每条 `index / success / code / message / driverId`
+- OpenAPI 升至 2.4.0，契约文档同步第 ⑩ 号接口
 
 ### V2.5（2026-10-21）列表筛选改为按字段分项
 

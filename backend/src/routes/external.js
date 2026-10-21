@@ -8,7 +8,7 @@
  *   狮桥 ④ POST /esign/receipt-sync             物流电子签签收回执确认（幂等）
  *   CRM  ⑥ POST /shipping-tasks/cancel          送车发运申请取消（按取消规则，关联待签署电子签置 CANCELLED）
  *   WMS  ⑧ POST /wms/outbound-status            WMS 出库状态同步（PICKED→OUTBOUND→IN_TRANSIT，司机提车在前、仓库出库在后）
- *   狮桥 ⑩ POST /drivers/sync                   司机信息同步（身份证号 UPSERT，source=2，维护 carrier_driver）
+ *   狮桥 ⑩ POST /drivers/sync                   司机信息同步（支持单条/批量，身份证号 UPSERT，source=2，维护 carrier_driver）
  *   狮桥 ⑪ POST /tracking/report                在途点位上报（写 transport_track，仅记录轨迹不改状态）
  *   狮桥 ⑫ POST /shipping-tasks/accept          承运商接单（DISPATCHED→CARRIER_ACCEPTED，分配司机）
  *   狮桥 ⑫ POST /shipping-tasks/pickup          司机提车（CARRIER_ACCEPTED→PICKED，含提车照片）
@@ -376,10 +376,12 @@ router.post('/wms/outbound-status', wrap(async (req, res) => {
   ok(res, result, result.message);
 }));
 
-/* ======================= ⑩ 狮桥：司机信息同步（身份证号 UPSERT） ======================= */
-// POST /api/external/drivers/sync （source=2 狮桥同步；维护 carrier_driver 多对多关联）
-router.post('/drivers/sync', wrap(async (req, res) => {
-  const b = req.body || {};
+/* ======================= ⑩ 狮桥：司机信息同步（身份证号 UPSERT，支持单条/批量） ======================= */
+/**
+ * 单条司机同步：校验 + UPSERT + 承运商关联，调用方需提供事务连接
+ * 匹配优先级：externalDriverId（第三方ID）→ idCard（身份证号）
+ */
+async function syncOneDriver(conn, b) {
   const driverName = String(b.driverName ?? '').trim();
   if (!driverName) throw errParam('司机姓名 driverName 必填');
   const phone = assertPhone(b.phone, { label: '手机号 phone', mobileOnly: true });
@@ -391,75 +393,136 @@ router.post('/drivers/sync', wrap(async (req, res) => {
   // 第三方司机ID（外部系统主键）：UPSERT 优先按它匹配，未传时退回身份证号（兼容既有对接）
   const externalDriverId = b.externalDriverId ? cutStr(String(b.externalDriverId).trim(), 64) : null;
 
-  const result = await withTransaction(async (conn) => {
-    // 优先按第三方司机ID匹配，其次按身份证号（新增时驾驶证有效期必填）
-    let rows = [];
-    if (externalDriverId) {
-      [rows] = await conn.query('SELECT * FROM driver WHERE external_driver_id = ? AND deleted = 0 FOR UPDATE', [externalDriverId]);
+  // 优先按第三方司机ID匹配，其次按身份证号（新增时驾驶证有效期必填）
+  let rows = [];
+  if (externalDriverId) {
+    [rows] = await conn.query('SELECT * FROM driver WHERE external_driver_id = ? AND deleted = 0 FOR UPDATE', [externalDriverId]);
+  }
+  if (!rows.length) {
+    [rows] = await conn.query('SELECT * FROM driver WHERE id_card = ? AND deleted = 0 FOR UPDATE', [idCard]);
+  }
+  let driverId;
+  let created;
+  if (rows.length) {
+    // 更新：姓名以狮桥为准，身份证号不变；未传的驾驶证有效期保留原值
+    driverId = rows[0].id;
+    created = false;
+    // 第三方ID与其他司机冲突时拦截（唯一索引兜底）
+    if (externalDriverId && rows[0].external_driver_id && rows[0].external_driver_id !== externalDriverId) {
+      throw errBiz(`第三方司机ID ${externalDriverId} 已被其他司机占用`);
     }
-    if (!rows.length) {
-      [rows] = await conn.query('SELECT * FROM driver WHERE id_card = ? AND deleted = 0 FOR UPDATE', [idCard]);
-    }
-    let driverId;
-    let created;
-    if (rows.length) {
-      // 更新：姓名以狮桥为准，身份证号不变；未传的驾驶证有效期保留原值
-      driverId = rows[0].id;
-      created = false;
-      // 第三方ID与其他司机冲突时拦截（唯一索引兜底）
-      if (externalDriverId && rows[0].external_driver_id && rows[0].external_driver_id !== externalDriverId) {
-        throw errBiz(`第三方司机ID ${externalDriverId} 已被其他司机占用`);
-      }
-      await conn.query(
-        `UPDATE driver SET driver_name = ?, phone = ?, license_no = COALESCE(?, license_no), license_type = COALESCE(?, license_type),
-                license_valid_from = COALESCE(?, license_valid_from), license_valid_to = COALESCE(?, license_valid_to),
-                external_driver_id = COALESCE(?, external_driver_id), source = 2, update_name = '狮桥物流'
-          WHERE id = ?`,
-        [cutStr(driverName, 64), phone, licenseNo, licenseType, validFrom, validTo, externalDriverId, driverId]
-      );
-    } else {
-      if (!validFrom) throw errParam('新增司机时驾驶证有效期自 licenseValidFrom 必填');
-      if (!validTo) throw errParam('新增司机时驾驶证有效期至 licenseValidTo 必填');
-      if (validFrom > validTo) throw errParam('驾驶证有效期起不能晚于有效期至');
-      const [r] = await conn.query(
-        `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, license_no, license_type, license_valid_from, license_valid_to, source, status, create_name, update_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2, 1, '狮桥物流', '狮桥物流')`,
-        [cutStr(driverName, 64), externalDriverId, phone, idCard, licenseNo, licenseType, validFrom, validTo]
-      );
-      driverId = r.insertId;
-      created = true;
-    }
+    await conn.query(
+      `UPDATE driver SET driver_name = ?, phone = ?, license_no = COALESCE(?, license_no), license_type = COALESCE(?, license_type),
+              license_valid_from = COALESCE(?, license_valid_from), license_valid_to = COALESCE(?, license_valid_to),
+              external_driver_id = COALESCE(?, external_driver_id), source = 2, update_name = '狮桥物流'
+        WHERE id = ?`,
+      [cutStr(driverName, 64), phone, licenseNo, licenseType, validFrom, validTo, externalDriverId, driverId]
+    );
+  } else {
+    if (!validFrom) throw errParam('新增司机时驾驶证有效期自 licenseValidFrom 必填');
+    if (!validTo) throw errParam('新增司机时驾驶证有效期至 licenseValidTo 必填');
+    if (validFrom > validTo) throw errParam('驾驶证有效期起不能晚于有效期至');
+    const [r] = await conn.query(
+      `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, license_no, license_type, license_valid_from, license_valid_to, source, status, create_name, update_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2, 1, '狮桥物流', '狮桥物流')`,
+      [cutStr(driverName, 64), externalDriverId, phone, idCard, licenseNo, licenseType, validFrom, validTo]
+    );
+    driverId = r.insertId;
+    created = true;
+  }
 
-    // 维护司机-承运商关联（多对多；carrierId / externalCarrierId 任选其一）
-    let carrierBound = null;
-    let carrierId = b.carrierId === undefined || b.carrierId === null || b.carrierId === '' ? null : Number(b.carrierId);
-    const externalCarrierId = b.externalCarrierId ? String(b.externalCarrierId).trim() : null;
-    if (carrierId === null && externalCarrierId) {
-      const [crows] = await conn.query('SELECT id FROM carrier WHERE external_carrier_id = ? AND deleted = 0', [externalCarrierId]);
-      if (!crows.length) throw errNotFound(`第三方承运商ID ${externalCarrierId} 对应的承运商不存在`);
-      carrierId = Number(crows[0].id);
-    }
-    if (carrierId !== null) {
-      const [crows] = await conn.query('SELECT id, carrier_name FROM carrier WHERE id = ? AND deleted = 0', [carrierId]);
-      if (!crows.length) throw errNotFound(`承运商不存在（ID: ${carrierId}）`);
-      await conn.query(
-        `INSERT INTO carrier_driver (carrier_id, driver_id, create_name, update_name)
-         VALUES (?, ?, '狮桥物流', '狮桥物流')
-         ON DUPLICATE KEY UPDATE deleted = 0, update_name = VALUES(update_name)`,
-        [carrierId, driverId]
-      );
-      carrierBound = crows[0].carrier_name;
-    }
-    return { driverId, idCard, externalDriverId, created, carrierBound };
-  });
+  // 维护司机-承运商关联（多对多；carrierId / externalCarrierId 任选其一）
+  let carrierBound = null;
+  let carrierId = b.carrierId === undefined || b.carrierId === null || b.carrierId === '' ? null : Number(b.carrierId);
+  const externalCarrierId = b.externalCarrierId ? String(b.externalCarrierId).trim() : null;
+  if (carrierId === null && externalCarrierId) {
+    const [crows] = await conn.query('SELECT id FROM carrier WHERE external_carrier_id = ? AND deleted = 0', [externalCarrierId]);
+    if (!crows.length) throw errNotFound(`第三方承运商ID ${externalCarrierId} 对应的承运商不存在`);
+    carrierId = Number(crows[0].id);
+  }
+  if (carrierId !== null) {
+    const [crows] = await conn.query('SELECT id, carrier_name FROM carrier WHERE id = ? AND deleted = 0', [carrierId]);
+    if (!crows.length) throw errNotFound(`承运商不存在（ID: ${carrierId}）`);
+    await conn.query(
+      `INSERT INTO carrier_driver (carrier_id, driver_id, create_name, update_name)
+       VALUES (?, ?, '狮桥物流', '狮桥物流')
+       ON DUPLICATE KEY UPDATE deleted = 0, update_name = VALUES(update_name)`,
+      [carrierId, driverId]
+    );
+    carrierBound = crows[0].carrier_name;
+  }
+  return { driverId, idCard, externalDriverId, created, carrierBound };
+}
 
+const DRIVER_SYNC_BATCH_MAX = 200;
+
+// POST /api/external/drivers/sync
+//   单条：body 为司机对象（兼容原结构）
+//   批量：body 为数组，或 { drivers: [...] }；逐条独立事务，单条失败不影响其余
+router.post('/drivers/sync', wrap(async (req, res) => {
+  const b = req.body || {};
+  const batch = Array.isArray(b) ? b : (Array.isArray(b.drivers) ? b.drivers : null);
+
+  if (!batch) {
+    const result = await withTransaction((conn) => syncOneDriver(conn, b));
+    return ok(res, {
+      driverId: result.driverId,
+      externalDriverId: result.externalDriverId,
+      idCard: result.idCard,
+      created: result.created,
+      carrierBound: result.carrierBound,
+    }, result.created ? '司机同步成功，已新增' : '司机同步成功，已更新');
+  }
+
+  if (!batch.length) throw errParam('批量同步 drivers 不能为空');
+  if (batch.length > DRIVER_SYNC_BATCH_MAX) throw errParam(`单次批量同步最多 ${DRIVER_SYNC_BATCH_MAX} 条`);
+
+  const results = [];
+  for (let i = 0; i < batch.length; i += 1) {
+    const item = batch[i];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      results.push({ index: i + 1, success: false, code: 'A0001', message: `第 ${i + 1} 条数据格式不正确，应为司机对象` });
+      continue;
+    }
+    try {
+      const r = await withTransaction((conn) => syncOneDriver(conn, item));
+      results.push({
+        index: i + 1,
+        success: true,
+        code: '00000',
+        message: r.created ? '新增成功' : '更新成功',
+        driverId: r.driverId,
+        externalDriverId: r.externalDriverId,
+        idCard: r.idCard,
+        created: r.created,
+        carrierBound: r.carrierBound,
+      });
+    } catch (err) {
+      const dup = err.code === 'ER_DUP_ENTRY';
+      const bizCode = dup ? 'A0002' : (/^[A-D]\d{4}$/.test(String(err.code ?? '')) ? err.code : 'B0001');
+      const msg = dup ? '第三方司机ID或身份证号已存在' : (err.message || '同步失败');
+      results.push({
+        index: i + 1,
+        success: false,
+        code: bizCode,
+        message: msg,
+        externalDriverId: item.externalDriverId ?? null,
+        idCard: item.idCard ?? null,
+      });
+    }
+  }
+
+  const success = results.filter((r) => r.success).length;
+  const created = results.filter((r) => r.success && r.created).length;
+  const failed = results.length - success;
   ok(res, {
-    driverId: result.driverId,
-    externalDriverId: result.externalDriverId,
-    idCard: result.idCard,
-    created: result.created,
-    carrierBound: result.carrierBound,
-  }, result.created ? '司机同步成功，已新增' : '司机同步成功，已更新');
+    total: results.length,
+    success,
+    created,
+    updated: success - created,
+    failed,
+    results,
+  }, `批量司机同步完成：成功 ${success} 条，失败 ${failed} 条`);
 }));
 
 /* ======================= ⑪ 狮桥：在途点位上报 ======================= */
