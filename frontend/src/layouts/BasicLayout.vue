@@ -4,11 +4,11 @@
  * 200px 深色侧栏（#1c2433，选中 #0e6e64）+ 44px 白色顶栏（面包屑 + 用户）
  * + 多页签栏（可关闭，工作台常驻）+ 内容区（keep-alive 缓存页面状态）。
  */
-import { computed, h, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
-import { clearSession, getProfile } from '@/services/portal'
+import { clearSession, fetchMe, updateProfile } from '@/services/portal'
 
 interface PageTab {
   path: string
@@ -150,17 +150,35 @@ const CARRIER_MENU: Array<{ group: string; items: MenuLeaf[] }> = [
   },
 ]
 
-const profile = getProfile()
-const isCarrier = profile?.type === 'CARRIER'
-const granted = profile?.permissions
-function allowed(item: MenuLeaf) {
+const isCarrierAccount = computed(() => String(session.user.role).startsWith('CARRIER'))
+const homePath = isCarrierAccount.value ? '/portal/carrier/dashboard' : '/dashboard'
+
+function allowed(item: MenuLeaf, granted?: string[] | null) {
   if (!granted || !item.perm) return true
   return granted.includes(item.perm)
 }
-const MENU = (isCarrier ? CARRIER_MENU : ADMIN_MENU)
-  .map((section) => ({ ...section, items: section.items.filter(allowed) }))
-  .filter((section) => section.items.length)
-const homePath = isCarrier ? '/portal/carrier/dashboard' : '/dashboard'
+
+const menu = computed(() => {
+  const granted = session.permissions
+  if (isCarrierAccount.value) {
+    return CARRIER_MENU
+      .map((section) => ({ ...section, items: section.items.filter((item) => allowed(item, granted)) }))
+      .filter((section) => section.items.length)
+  }
+  const sections = ADMIN_MENU
+    .map((section) => ({ ...section, items: section.items.filter((item) => allowed(item, granted)) }))
+    .filter((section) => section.items.length)
+  const carrierTitles: Record<string, string> = {
+    '/portal/carrier/dashboard': '承运商工作台',
+    '/portal/carrier/drivers': '承运商司机',
+  }
+  const carrierItems = CARRIER_MENU
+    .flatMap((section) => section.items)
+    .filter((item) => granted?.includes(item.perm || ''))
+    .map((item) => ({ ...item, title: carrierTitles[item.path] || item.title }))
+  if (carrierItems.length) sections.push({ group: '承运商后台', items: carrierItems })
+  return sections
+})
 
 function renderIcon(svgBody: string) {
   return h('span', {
@@ -209,6 +227,16 @@ const breadcrumb = computed(() => {
 
 const avatarText = computed(() => (session.userName || '用').slice(0, 1))
 
+onMounted(async () => {
+  try {
+    const profile = await fetchMe()
+    updateProfile(profile)
+    session.applyProfile()
+  } catch {
+    // 登录态失效时由请求层跳转登录页
+  }
+})
+
 function logout() {
   clearSession()
   session.clearSession()
@@ -229,7 +257,7 @@ function itemActive(path: string) {
         <img class="side__logo-brand" src="@/assets/brand-deepway.png" alt="DEEP WAY" />
       </div>
       <nav class="side__menu">
-        <div v-for="section in MENU" :key="section.group" class="side__group">
+        <div v-for="section in menu" :key="section.group" class="side__group">
           <div class="side__group-title">{{ section.group }}</div>
           <a
             v-for="item in section.items"

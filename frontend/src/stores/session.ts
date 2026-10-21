@@ -25,6 +25,7 @@ function userFromProfile(): SessionUser {
 export const useSessionStore = defineStore('session', {
   state: () => ({
     user: userFromProfile(),
+    permissions: getProfile()?.permissions ?? null as string[] | null,
     demoMode: false,
   }),
   getters: {
@@ -35,6 +36,7 @@ export const useSessionStore = defineStore('session', {
   actions: {
     applyProfile() {
       this.user = userFromProfile()
+      this.permissions = getProfile()?.permissions ?? null
       this.demoMode = false
     },
     setUser(user: SessionUser) {

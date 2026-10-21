@@ -7,16 +7,18 @@ import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { NButton, useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
 import {
-  createRole, getRole, listRoles, roleCatalog, saveRolePermissions, updateRole,
+  createRole, fetchMe, getProfile, getRole, listRoles, roleCatalog, saveRolePermissions, updateProfile, updateRole,
 } from '@/services/portal'
 import type { PermModule, RoleRow } from '@/services/portal'
 import { datetimeFull } from '@/utils/format'
+import { useSessionStore } from '@/stores/session'
 
 interface PageTableHandle {
   refresh: () => Promise<void>
 }
 
 const message = useMessage()
+const session = useSessionStore()
 const tableRef = ref<PageTableHandle | null>(null)
 const keyword = ref('')
 const applied = ref({ keyword: '', _t: 0 })
@@ -53,7 +55,14 @@ const carrierIds = ref<number[]>([])
 const materials = ref<string[]>(['FINISHED', 'LOOSE'])
 const permSaving = ref(false)
 
-const visibleModules = computed(() => modules.value.filter((item) => item.kind === permRole.value?.role_kind))
+const kindOrder = ['PLATFORM', 'CARRIER', 'DRIVER'] as const
+const groupedModules = computed(() => kindOrder
+  .map((kind) => ({
+    kind,
+    label: kindText[kind],
+    modules: modules.value.filter((item) => item.kind === kind),
+  }))
+  .filter((group) => group.modules.length))
 
 function search() {
   applied.value = { keyword: keyword.value.trim(), _t: Date.now() }
@@ -149,7 +158,12 @@ async function savePerm() {
       carrier_ids: carrierIds.value,
       materials: materials.value,
     })
-    message.success('权限已保存，相关账号重新登录后生效')
+    if (getProfile()?.role_id === permRole.value.id) {
+      const profile = await fetchMe()
+      updateProfile(profile)
+      session.applyProfile()
+    }
+    message.success('权限已保存，当前账号已立即生效，其他账号重新登录后生效')
     permOpen.value = false
   } catch (e) {
     message.error(e instanceof Error ? e.message : '保存失败')
@@ -226,22 +240,26 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
     <n-drawer v-model:show="permOpen" :width="640" placement="right">
       <n-drawer-content :title="`配置权限 · ${permRole?.role_name || ''}`" closable>
         <h3 class="perm__title">功能权限</h3>
-        <div v-for="mod in visibleModules" :key="mod.code" class="perm__mod">
-          <n-checkbox
-            :checked="moduleOn(mod)"
-            :indeterminate="moduleHalf(mod)"
-            @update:checked="(on: boolean) => toggleModule(mod, on)"
-          >
-            {{ mod.name }}
-          </n-checkbox>
-          <div class="perm__actions">
-            <n-checkbox-group v-model:value="checked">
-              <n-checkbox v-for="action in mod.actions" :key="action.code" :value="action.code">
-                {{ action.name }}
-              </n-checkbox>
-            </n-checkbox-group>
+        <p class="perm__hint">平台后台、承运商后台、司机小程序的模块和按钮都在这里勾选。账号登录哪个端，由角色类型决定。</p>
+        <section v-for="group in groupedModules" :key="group.kind" class="perm__group">
+          <h4 class="perm__group-title">{{ group.label }}</h4>
+          <div v-for="mod in group.modules" :key="mod.code" class="perm__mod">
+            <n-checkbox
+              :checked="moduleOn(mod)"
+              :indeterminate="moduleHalf(mod)"
+              @update:checked="(on: boolean) => toggleModule(mod, on)"
+            >
+              {{ mod.name }}
+            </n-checkbox>
+            <div class="perm__actions">
+              <n-checkbox-group v-model:value="checked">
+                <n-checkbox v-for="action in mod.actions" :key="action.code" :value="action.code">
+                  {{ action.name }}
+                </n-checkbox>
+              </n-checkbox-group>
+            </div>
           </div>
-        </div>
+        </section>
 
         <h3 class="perm__title">数据权限</h3>
         <div class="perm__block">
@@ -295,6 +313,15 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
 .perm__title {
   margin: 4px 0 10px;
   font-size: 14px;
+}
+.perm__group { margin-bottom: 8px; }
+.perm__group-title {
+  margin: 12px 0 0;
+  padding: 6px 8px;
+  background: #f5f7fa;
+  color: #1c2433;
+  font-size: 13px;
+  font-weight: 600;
 }
 .perm__mod {
   padding: 8px 0;

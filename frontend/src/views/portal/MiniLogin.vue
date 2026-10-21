@@ -39,7 +39,6 @@ async function onSubmit() {
 <template>
   <div class="mini">
     <div class="mini__phone">
-      <div class="mini__hero"></div>
       <div class="mini__sheet">
         <div class="mini__brand">
           <svg viewBox="0 0 36 36" aria-hidden="true">
@@ -82,14 +81,9 @@ async function onSubmit() {
   background: #fff;
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12);
 }
-.mini__hero {
-  height: 34%;
-  flex: none;
-  background: #9ec4ea url('@/assets/login-truck.jpg') left center / cover no-repeat;
-}
 .mini__sheet {
   flex: 1;
-  padding: 28px 28px 20px;
+  padding: 56px 28px 20px;
 }
 .mini__brand {
   display: flex;

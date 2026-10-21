@@ -198,12 +198,22 @@ router.beforeEach((to) => {
   }
   if (!loggedIn || !profile) return '/login'
   if (profile.type === 'DRIVER') return '/m/tasks'
-  if (profile.type === 'CARRIER' && !to.path.startsWith('/portal/carrier')) {
-    return '/portal/carrier/dashboard'
+  if (to.path.startsWith('/portal/carrier')) {
+    const need = portalPermOf(to.path)
+    if (need && profile.permissions && !profile.permissions.includes(need)) return homeOf(profile.type)
+    return true
   }
-  if (profile.type === 'ADMIN' && to.path.startsWith('/portal')) return '/dashboard'
+  if (profile.type === 'CARRIER') return '/portal/carrier/dashboard'
   return true
 })
+
+function portalPermOf(path: string) {
+  if (path.startsWith('/portal/carrier/tasks')) return 'portal.tasks:view'
+  if (path.startsWith('/portal/carrier/drivers')) return 'portal.drivers:view'
+  if (path.startsWith('/portal/carrier/messages')) return 'portal.messages:view'
+  if (path.startsWith('/portal/carrier/dashboard')) return 'portal.dashboard:view'
+  return ''
+}
 
 router.afterEach((to) => {
   document.title = to.meta.title ? `${to.meta.title} · ${APP_TITLE}` : APP_TITLE

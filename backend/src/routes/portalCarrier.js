@@ -5,7 +5,7 @@
 const { Router } = require('express');
 const { query, withTransaction } = require('../db');
 const {
-  wrap, ok, pageOf, pageData, errParam, errBiz, errNotFound,
+  wrap, ok, pageOf, pageData, errParam, errBiz, errAuth, errNotFound,
   assertPhone, assertIdCard, localDateStr,
 } = require('../helpers');
 const { requireAuth } = require('../services/security');
@@ -13,7 +13,39 @@ const { loadAccess, applyTaskScope } = require('../services/access');
 const { assignDriver } = require('../services/taskFlow');
 
 const router = Router();
-router.use(requireAuth(['CARRIER']));
+router.use(requireAuth(['CARRIER', 'ADMIN']));
+
+/** 承运商账号只看自己；平台账号按角色里勾选的承运商范围看承运商后台。 */
+async function carrierScope(req) {
+  const access = await loadAccess(req.auth.sub);
+  if (req.auth.type === 'ADMIN') {
+    if (!access.permissions.some((code) => code.startsWith('portal.'))) {
+      throw errAuth('当前账号无权访问承运商后台');
+    }
+    if (access.carriers === 'ALL') return { access, mode: 'all', ids: [] };
+    return { access, mode: 'list', ids: access.carriers };
+  }
+  return { access, mode: 'one', ids: [Number(req.auth.carrierId)] };
+}
+
+function inScope(scope, carrierId) {
+  if (scope.mode === 'all') return true;
+  return scope.ids.includes(Number(carrierId));
+}
+
+function carrierFilter(scope, column) {
+  if (scope.mode === 'all') return { sql: '1 = 1', params: [] };
+  if (!scope.ids.length) return { sql: '1 = 0', params: [] };
+  if (scope.ids.length === 1) return { sql: `${column} = ?`, params: [scope.ids[0]] };
+  return { sql: `${column} IN (${scope.ids.map(() => '?').join(',')})`, params: [...scope.ids] };
+}
+
+async function ownCarrierId(req) {
+  if (req.auth.type === 'CARRIER') return Number(req.auth.carrierId);
+  const scope = await carrierScope(req);
+  if (scope.ids.length === 1) return scope.ids[0];
+  throw errBiz('当前账号可查看多家承运商，新增和改派请使用对应承运商账号');
+}
 
 const TASK_STATUS_LABELS = {
   WAIT_DISPATCH: '待派单',
@@ -40,11 +72,13 @@ const TASK_SELECT = `
   FROM shipping_task t
   LEFT JOIN driver d ON d.id = t.driver_id`;
 
-function taskWhere(req, access) {
+async function taskWhere(req) {
   const { status = '', keyword = '' } = req.query;
-  const where = ['t.deleted = 0', 't.carrier_id = ?', "t.status <> 'WAIT_DISPATCH'"];
-  const params = [Number(req.auth.carrierId)];
-  if (access) applyTaskScope(where, params, { ...access, carriers: 'ALL' });
+  const scope = await carrierScope(req);
+  const filter = carrierFilter(scope, 't.carrier_id');
+  const where = ['t.deleted = 0', filter.sql, "t.status <> 'WAIT_DISPATCH'"];
+  const params = [...filter.params];
+  applyTaskScope(where, params, { ...scope.access, carriers: 'ALL' });
   if (status) { where.push('t.status = ?'); params.push(String(status)); }
   if (keyword) {
     const kw = `%${String(keyword).trim()}%`;
@@ -59,7 +93,7 @@ function taskWhere(req, access) {
 /** 任务列表 */
 router.get('/tasks', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
-  const { whereSql, params } = taskWhere(req, await loadAccess(req.auth.sub));
+  const { whereSql, params } = await taskWhere(req);
   const totalRows = await query(`SELECT COUNT(*) AS n FROM shipping_task t ${whereSql}`, params);
   const rows = await query(
     `${TASK_SELECT} ${whereSql} ORDER BY t.create_time DESC, t.id DESC LIMIT ? OFFSET ?`,
@@ -70,11 +104,13 @@ router.get('/tasks', wrap(async (req, res) => {
 
 /** 各状态数量（工作台） */
 router.get('/tasks/counts', wrap(async (req, res) => {
+  const scope = await carrierScope(req);
+  const filter = carrierFilter(scope, 'carrier_id');
   const rows = await query(
     `SELECT status, COUNT(*) AS n FROM shipping_task
-     WHERE deleted = 0 AND carrier_id = ? AND status <> 'WAIT_DISPATCH'
+     WHERE deleted = 0 AND ${filter.sql} AND status <> 'WAIT_DISPATCH'
      GROUP BY status`,
-    [req.auth.carrierId]
+    filter.params
   );
   const counts = {
     DISPATCHED: 0, CARRIER_ACCEPTED: 0, PICKED: 0, IN_TRANSIT: 0, ARRIVED: 0, FINISHED: 0, CANCELLED: 0,
@@ -97,7 +133,8 @@ router.get('/tasks/:id', wrap(async (req, res) => {
     [id]
   );
   if (!task) throw errNotFound('任务不存在');
-  if (Number(task.carrier_id) !== Number(req.auth.carrierId)) throw errBiz('该任务不属于当前承运商');
+  const scope = await carrierScope(req);
+  if (!inScope(scope, task.carrier_id)) throw errBiz('该任务不属于当前承运商');
 
   const [vehicles, logs, files, dispatchRecords] = await Promise.all([
     query('SELECT * FROM shipping_task_vehicle WHERE task_id = ? AND deleted = 0 ORDER BY id', [id]),
@@ -122,13 +159,18 @@ router.post('/tasks/:id/assign', wrap(async (req, res) => {
   const driverId = Number(req.body.driver_id);
   if (!driverId) throw errParam('请选择司机');
 
-  const carrierRows = await query('SELECT * FROM carrier WHERE id = ?', [req.auth.carrierId]);
+  const [taskRow] = await query('SELECT carrier_id FROM shipping_task WHERE id = ? AND deleted = 0', [taskId]);
+  if (!taskRow) throw errNotFound('任务不存在');
+  const scope = await carrierScope(req);
+  if (!inScope(scope, taskRow.carrier_id)) throw errBiz('该任务不属于当前承运商');
+  const carrierId = req.auth.type === 'CARRIER' ? Number(req.auth.carrierId) : Number(taskRow.carrier_id);
+  const carrierRows = await query('SELECT * FROM carrier WHERE id = ?', [carrierId]);
   if (!carrierRows.length) throw errNotFound('承运商不存在');
   if (Number(carrierRows[0].status) !== 1) throw errBiz('承运商已停用，不可接单');
 
   const result = await assignDriver({
     taskId,
-    carrierId: req.auth.carrierId,
+    carrierId,
     carrierName: carrierRows[0].carrier_name,
     driverId,
     version: req.body.version,
@@ -141,7 +183,9 @@ router.post('/tasks/:id/assign', wrap(async (req, res) => {
 /** 本承运商司机列表 */
 router.get('/drivers', wrap(async (req, res) => {
   const keyword = String(req.query.keyword ?? '').trim();
-  const params = [Number(req.auth.carrierId)];
+  const scope = await carrierScope(req);
+  const filter = carrierFilter(scope, 'cd.carrier_id');
+  const params = [...filter.params];
   let kwSql = '';
   if (keyword) {
     kwSql = 'AND (d.driver_name LIKE ? OR d.phone LIKE ? OR d.license_no LIKE ?)';
@@ -158,7 +202,7 @@ router.get('/drivers', wrap(async (req, res) => {
               WHERE a.driver_id = d.id AND a.account_type = 'DRIVER' AND a.deleted = 0 LIMIT 1) AS account_status
      FROM driver d
      JOIN carrier_driver cd ON cd.driver_id = d.id AND cd.deleted = 0
-     WHERE d.deleted = 0 AND cd.carrier_id = ? ${kwSql}
+     WHERE d.deleted = 0 AND ${filter.sql} ${kwSql}
      ORDER BY d.status DESC, d.id`,
     params
   );
@@ -186,6 +230,7 @@ router.post('/drivers', wrap(async (req, res) => {
   const licenseNo = String(req.body.license_no ?? '').trim() || null;
   const licenseType = String(req.body.license_type ?? '').trim() || null;
   const remark = String(req.body.remark ?? '').trim() || null;
+  const carrierId = await ownCarrierId(req);
   const operator = req.auth.name;
 
   const result = await withTransaction(async (conn) => {
@@ -214,7 +259,7 @@ router.post('/drivers', wrap(async (req, res) => {
       `INSERT INTO carrier_driver (carrier_id, driver_id, create_name, update_name)
        VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE deleted = 0, update_name = VALUES(update_name)`,
-      [req.auth.carrierId, driverId, operator, operator]
+      [carrierId, driverId, operator, operator]
     );
 
     const [accounts] = await conn.query(
@@ -242,9 +287,11 @@ router.post('/drivers', wrap(async (req, res) => {
 /** 编辑司机（姓名、身份证不可改） */
 router.put('/drivers/:id', wrap(async (req, res) => {
   const id = Number(req.params.id);
+  const scope = await carrierScope(req);
+  const filter = carrierFilter(scope, 'carrier_id');
   const links = await query(
-    'SELECT id FROM carrier_driver WHERE carrier_id = ? AND driver_id = ? AND deleted = 0',
-    [req.auth.carrierId, id]
+    `SELECT id FROM carrier_driver WHERE driver_id = ? AND deleted = 0 AND ${filter.sql}`,
+    [id, ...filter.params]
   );
   if (!links.length) throw errNotFound('该司机不属于当前承运商');
   const [driver] = await query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [id]);
@@ -287,9 +334,11 @@ router.put('/drivers/:id/status', wrap(async (req, res) => {
   const id = Number(req.params.id);
   const status = Number(req.body.status);
   if (![0, 1].includes(status)) throw errParam('状态值仅支持 1（启用）或 0（停用）');
+  const scope = await carrierScope(req);
+  const filter = carrierFilter(scope, 'carrier_id');
   const links = await query(
-    'SELECT id FROM carrier_driver WHERE carrier_id = ? AND driver_id = ? AND deleted = 0',
-    [req.auth.carrierId, id]
+    `SELECT id FROM carrier_driver WHERE driver_id = ? AND deleted = 0 AND ${filter.sql}`,
+    [id, ...filter.params]
   );
   if (!links.length) throw errNotFound('该司机不属于当前承运商');
   await withTransaction(async (conn) => {
@@ -304,20 +353,24 @@ router.put('/drivers/:id/status', wrap(async (req, res) => {
 
 /** 消息中心 */
 router.get('/notifications', wrap(async (req, res) => {
+  const scope = await carrierScope(req);
+  const filter = carrierFilter(scope, 'receiver_id');
   const rows = await query(
     `SELECT * FROM notification
-     WHERE receiver_type = 'CARRIER' AND receiver_id = ? AND deleted = 0
+     WHERE receiver_type = 'CARRIER' AND deleted = 0 AND ${filter.sql}
      ORDER BY id DESC LIMIT 100`,
-    [req.auth.carrierId]
+    filter.params
   );
   ok(res, rows);
 }));
 
 router.post('/notifications/:id/read', wrap(async (req, res) => {
+  const scope = await carrierScope(req);
+  const filter = carrierFilter(scope, 'receiver_id');
   await query(
     `UPDATE notification SET read_status = 1
-     WHERE id = ? AND receiver_type = 'CARRIER' AND receiver_id = ?`,
-    [Number(req.params.id), req.auth.carrierId]
+     WHERE id = ? AND receiver_type = 'CARRIER' AND ${filter.sql}`,
+    [Number(req.params.id), ...filter.params]
   );
   ok(res, null);
 }));

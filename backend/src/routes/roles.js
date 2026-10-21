@@ -113,8 +113,7 @@ router.put('/:id/permissions', wrap(async (req, res) => {
   const rows = await query('SELECT * FROM sys_role WHERE id = ? AND deleted = 0', [id]);
   if (!rows.length) throw errNotFound('角色不存在');
   const role = rows[0];
-  const allowed = new Set(MODULES.filter((mod) => mod.kind === role.role_kind).flatMap((mod) => mod.actions.map((action) => action.code)));
-  const permissions = [...new Set((req.body.permissions || []).map((code) => String(code)))].filter((code) => allowed.has(code) && ALL_CODES.includes(code));
+  const permissions = [...new Set((req.body.permissions || []).map((code) => String(code)))].filter((code) => ALL_CODES.includes(code));
   const carrierAll = Boolean(req.body.carrier_all);
   const carrierIds = [...new Set((req.body.carrier_ids || []).map((value) => Number(value)).filter((value) => value > 0))];
   const materials = [...new Set((req.body.materials || []).map((value) => String(value)))].filter((value) => value === 'FINISHED' || value === 'LOOSE');
