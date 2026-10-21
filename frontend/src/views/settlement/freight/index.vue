@@ -5,7 +5,7 @@
  * - 筛选：运费单号 / 任务单号 / 承运商 / 对账状态；列表含计划运费合计与实际运费合计
  * - 列表：运费单号(YF)/任务单号/客户/承运商/司机/计划运费/实际运费/调整后金额/
  *         对账状态/到达时间(运费单于任务到达时生成，取生成时间)/完结时间/操作
- * - 详情抽屉：基本信息 + 调整记录时间线（原金额 → 新金额 / 原因 / 操作人 / 时间）
+ * - 详情抽屉：基本信息 + 调整记录列表（时间 / 原金额 → 新金额 / 原因 / 操作人）
  * - 修改运费：仅「待对账」可改，新运费 + 调整原因必填，每次修改写调整记录留痕
  * - 确认对账：0→1（reconciler=系统管理员）；已对账二次操作前端拦截提示
  *
@@ -355,7 +355,52 @@ const drawerBill = computed<FreightBillRow | null>(() => {
   return detail ? (detail.bill as FreightBillRow) : null
 })
 
-const adjustLogs = computed<FreightAdjustLog[]>(() => drawerDetail.value?.adjustLogs ?? [])
+const adjustLogs = computed<FreightAdjustLog[]>(() =>
+  [...(drawerDetail.value?.adjustLogs ?? [])].sort(
+    (a, b) => new Date(b.create_time ?? 0).getTime() - new Date(a.create_time ?? 0).getTime(),
+  ),
+)
+
+/** 调整记录列表列定义（按时间倒序展示，最近一次在最上） */
+const adjustColumns = computed<DataTableColumns<FreightAdjustLog>>(() => [
+  {
+    title: '调整时间',
+    key: 'create_time',
+    width: 138,
+    render: (row) => datetime(row.create_time),
+  },
+  {
+    title: '原运费',
+    key: 'before_freight',
+    width: 96,
+    align: 'right',
+    render: (row) => `¥${money(row.before_freight)}`,
+  },
+  {
+    title: '调整后',
+    key: 'after_freight',
+    width: 96,
+    align: 'right',
+    render: (row) =>
+      h('span', { class: 'freight-adjust-cell' }, `¥${money(row.after_freight)}`),
+  },
+  {
+    title: '调整原因',
+    key: 'adjust_reason',
+    minWidth: 160,
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: '操作人',
+    key: 'operator',
+    width: 88,
+    render: (row) => row.operator || '-',
+  },
+])
+
+function adjustRowKey(row: FreightAdjustLog): number | string {
+  return row.id ?? `${row.create_time ?? ''}-${row.after_freight}`
+}
 
 /** 抽屉内对已对账单据的拦截提示 */
 function drawerAdjust() {
@@ -556,7 +601,7 @@ onActivated(() => {
     </n-card>
 
     <!-- 详情抽屉 -->
-    <n-drawer v-model:show="showDrawer" :width="560" placement="right">
+    <n-drawer v-model:show="showDrawer" :width="680" placement="right">
       <n-drawer-content :title="`费用明细 · ${drawerBill?.freight_no ?? ''}`" closable>
         <n-spin :show="drawerLoading">
           <div v-if="drawerError" class="freight-error freight-error--drawer">
@@ -604,25 +649,16 @@ onActivated(() => {
                 <span class="freight-section__title">调整记录</span>
                 <span class="freight-muted">共 {{ adjustLogs.length }} 条（每次修改运费留痕）</span>
               </div>
-              <!-- 旧版 .timeline 样式：done 实心主色 / cur 空心主色光圈（最后一条为最近一次调整） -->
-              <div v-if="adjustLogs.length" class="timeline freight-timeline">
-                <div
-                  v-for="(log, index) in adjustLogs"
-                  :key="log.id ?? index"
-                  class="tl-item"
-                  :class="index === adjustLogs.length - 1 ? 'cur' : 'done'"
-                >
-                  <span class="tl-dot"></span>
-                  <div class="tl-head">
-                    <span class="tl-name">¥{{ money(log.before_freight) }} → ¥{{ money(log.after_freight) }}</span>
-                    <span class="tl-time">{{ datetime(log.create_time) }}</span>
-                  </div>
-                  <div class="tl-detail">
-                    <div>原因：{{ log.adjust_reason }}</div>
-                    <div class="tl-meta">操作人：{{ log.operator || '-' }}</div>
-                  </div>
-                </div>
-              </div>
+              <n-data-table
+                v-if="adjustLogs.length"
+                size="small"
+                :columns="adjustColumns"
+                :data="adjustLogs"
+                :row-key="adjustRowKey"
+                :bordered="false"
+                :single-line="false"
+                :scroll-x="600"
+              />
               <n-empty v-else description="暂无调整记录（未修改过运费）" style="padding: 16px 0" />
             </div>
           </template>
@@ -817,86 +853,10 @@ onActivated(() => {
   color: #262626;
 }
 
-.freight-timeline {
-  padding: 4px 2px;
-}
-
-/* 时间轴（旧版 .timeline：done 实心主色 / cur 空心主色光圈） */
-.tl-item {
-  position: relative;
-  padding: 0 0 18px 26px;
-}
-
-.tl-item:last-child {
-  padding-bottom: 4px;
-}
-
-.tl-item::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 16px;
-  bottom: -2px;
-  width: 2px;
-  background: #e5e6eb;
-}
-
-.tl-item:last-child::before {
-  display: none;
-}
-
-.tl-dot {
-  position: absolute;
-  left: 0;
-  top: 4px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #ffffff;
-  border: 3px solid #d9d9d9;
-}
-
-.tl-item.done .tl-dot {
-  border-color: #1677ff;
-  background: #1677ff;
-}
-
-.tl-item.cur .tl-dot {
-  border-color: #1677ff;
-  background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.15);
-}
-
-.tl-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.tl-name {
+/* 调整记录表格：调整后金额沿用列表中「已调整」的橙色强调 */
+.freight-adjust-cell {
+  color: #fa8c16;
   font-weight: 600;
-  color: #262626;
-}
-
-.tl-item.cur .tl-name {
-  color: #1677ff;
-}
-
-.tl-time {
-  color: #8c8c8c;
-  font-size: 12px;
-}
-
-.tl-detail {
-  color: #595959;
-  margin-top: 3px;
-  font-size: 12px;
-  line-height: 1.7;
-}
-
-.tl-meta {
-  color: #8c8c8c;
 }
 
 .freight-drawer-skeleton {
