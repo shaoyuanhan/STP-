@@ -187,7 +187,7 @@ npm run preview    # 本地预览构建产物
 | GET | `/shipping-tasks/cancel-check` | CRM | 取消前置校验 |
 | POST | `/shipping-tasks/cancel` | CRM | 取消任务（仅待派单） |
 | POST | `/wms/outbound-status` | WMS | 出库回传（PICKED→IN_TRANSIT） |
-| POST | `/drivers/sync` | 狮桥 | 司机同步（`externalDriverId` 优先，其次身份证号；支持数组批量，≤200 条） |
+| POST | `/drivers/sync` | 狮桥 | 司机同步（`externalDriverId` 优先，其次身份证号；支持数组批量，≤200 条；camelCase / snake_case 字段均接受） |
 | POST | `/tracking/report` | 狮桥 | 在途点位上报（写轨迹，不改任务状态） |
 | POST | `/shipping-tasks/accept` | 承运商 | 接单并指派司机（`driverId` 或 `externalDriverId`） |
 | POST | `/shipping-tasks/pickup` | 承运商 | 提车发运（含照片） |
@@ -211,6 +211,12 @@ npm run preview    # 本地预览构建产物
 已完成全链路测试与浏览器全页面验证：CRM 下发 → 派单 → 接单 → 提车 → 出库 → 在途回传 → 到达 → 完结 → 运费修改/对账，以及取消链路，全部通过；第三方承运商 ID 派单 → 第三方司机 ID 接单链路已验证通过。
 
 ## 更新记录
+
+### V2.7（2026-10-21）司机同步接口兼容 snake_case 入参
+
+- `POST /api/external/drivers/sync` 同时接受 camelCase 与 snake_case 字段（`driver_name`/`name`、`id_card`、`external_driver_id`、`carrier_ids` 等），同义字段 camelCase 优先
+- 新增 `carrier_ids` 数组支持，一次绑定多个承运商（优先于 `carrierId` / `externalCarrierId`）
+- OpenAPI 升至 2.4.1：请求体改为 `oneOf`（单条对象 / 数组 / `{drivers:[...]}`），新增 `DriverSyncItem` 组件与单条、批量、snake_case 三个示例，导入 APIfox 可直接识别两种形态
 
 ### V2.6（2026-10-21）司机同步接口支持批量
 

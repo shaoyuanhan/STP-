@@ -1,0 +1,57 @@
+[
+  {
+    "externalDriverId": "SQD-BATCH-101",
+    "driverName": "钱国强",
+    "phone": "13911112201",
+    "idCard": "340104199111112211",
+    "licenseNo": "340100199111112211",
+    "licenseType": "A2",
+    "licenseValidFrom": "2023-01-01",
+    "licenseValidTo": "2029-01-01",
+    "carrierId": 1
+  },
+  {
+    "externalDriverId": "SQD-BATCH-102",
+    "driverName": "孙立军",
+    "phone": "13911112202",
+    "idCard": "340104199202222222",
+    "licenseNo": "340100199202222222",
+    "licenseType": "A2",
+    "licenseValidFrom": "2023-06-01",
+    "licenseValidTo": "2029-06-01",
+    "carrierId": 1
+  },
+  {
+    "externalDriverId": "SQD-BATCH-103",
+    "driverName": "李春生",
+    "phone": "13911112203",
+    "idCard": "340104199303333333",
+    "licenseNo": "340100199303333333",
+    "licenseType": "B2",
+    "licenseValidFrom": "2022-03-15",
+    "licenseValidTo": "2028-03-15",
+    "externalCarrierId": "SQ-CAR-002"
+  },
+  {
+    "externalDriverId": "SQD-BATCH-104",
+    "driverName": "周文斌",
+    "phone": "13911112204",
+    "idCard": "340104199404444444",
+    "licenseNo": "340100199404444444",
+    "licenseType": "A1",
+    "licenseValidFrom": "2021-09-01",
+    "licenseValidTo": "2027-09-01",
+    "carrierIds": [1, 2]
+  },
+  {
+    "externalDriverId": "SQD-BATCH-105",
+    "driverName": "吴海峰",
+    "phone": "13911112205",
+    "idCard": "340104199505555555",
+    "licenseNo": "340100199505555555",
+    "licenseType": "C1",
+    "licenseValidFrom": "2024-02-01",
+    "licenseValidTo": "2030-02-01",
+    "carrierId": 3
+  }
+]

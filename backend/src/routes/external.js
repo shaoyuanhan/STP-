@@ -378,10 +378,38 @@ router.post('/wms/outbound-status', wrap(async (req, res) => {
 
 /* ======================= ⑩ 狮桥：司机信息同步（身份证号 UPSERT，支持单条/批量） ======================= */
 /**
+ * 入参归一化：兼容 camelCase（狮桥标准）与 snake_case（内部管理接口同款）两种命名
+ * 同义字段 camelCase 优先，便于既有对接零改动迁移
+ */
+function normalizeDriverInput(raw) {
+  const pick = (...keys) => {
+    for (const k of keys) {
+      const v = raw[k];
+      if (v !== undefined && v !== null && v !== '') return v;
+    }
+    return undefined;
+  };
+  return {
+    externalDriverId: pick('externalDriverId', 'external_driver_id'),
+    driverName: pick('driverName', 'driver_name', 'name'),
+    phone: pick('phone'),
+    idCard: pick('idCard', 'id_card'),
+    licenseNo: pick('licenseNo', 'license_no'),
+    licenseType: pick('licenseType', 'license_type'),
+    licenseValidFrom: pick('licenseValidFrom', 'license_valid_from'),
+    licenseValidTo: pick('licenseValidTo', 'license_valid_to'),
+    externalCarrierId: pick('externalCarrierId', 'external_carrier_id'),
+    carrierId: pick('carrierId', 'carrier_id'),
+    carrierIds: pick('carrierIds', 'carrier_ids'),
+  };
+}
+
+/**
  * 单条司机同步：校验 + UPSERT + 承运商关联，调用方需提供事务连接
  * 匹配优先级：externalDriverId（第三方ID）→ idCard（身份证号）
  */
-async function syncOneDriver(conn, b) {
+async function syncOneDriver(conn, raw) {
+  const b = normalizeDriverInput(raw);
   const driverName = String(b.driverName ?? '').trim();
   if (!driverName) throw errParam('司机姓名 driverName 必填');
   const phone = assertPhone(b.phone, { label: '手机号 phone', mobileOnly: true });
@@ -431,25 +459,35 @@ async function syncOneDriver(conn, b) {
     created = true;
   }
 
-  // 维护司机-承运商关联（多对多；carrierId / externalCarrierId 任选其一）
+  // 维护司机-承运商关联（多对多：carrier_ids 数组 > carrierId > externalCarrierId）
   let carrierBound = null;
-  let carrierId = b.carrierId === undefined || b.carrierId === null || b.carrierId === '' ? null : Number(b.carrierId);
-  const externalCarrierId = b.externalCarrierId ? String(b.externalCarrierId).trim() : null;
-  if (carrierId === null && externalCarrierId) {
-    const [crows] = await conn.query('SELECT id FROM carrier WHERE external_carrier_id = ? AND deleted = 0', [externalCarrierId]);
-    if (!crows.length) throw errNotFound(`第三方承运商ID ${externalCarrierId} 对应的承运商不存在`);
-    carrierId = Number(crows[0].id);
+  let carrierIds = Array.isArray(b.carrierIds)
+    ? b.carrierIds.map(Number).filter((n) => Number.isInteger(n) && n > 0)
+    : [];
+  if (!carrierIds.length) {
+    let carrierId = b.carrierId === undefined || b.carrierId === null || b.carrierId === '' ? null : Number(b.carrierId);
+    const externalCarrierId = b.externalCarrierId ? String(b.externalCarrierId).trim() : null;
+    if (carrierId === null && externalCarrierId) {
+      const [crows] = await conn.query('SELECT id FROM carrier WHERE external_carrier_id = ? AND deleted = 0', [externalCarrierId]);
+      if (!crows.length) throw errNotFound(`第三方承运商ID ${externalCarrierId} 对应的承运商不存在`);
+      carrierId = Number(crows[0].id);
+    }
+    if (carrierId !== null) carrierIds = [carrierId];
   }
-  if (carrierId !== null) {
-    const [crows] = await conn.query('SELECT id, carrier_name FROM carrier WHERE id = ? AND deleted = 0', [carrierId]);
-    if (!crows.length) throw errNotFound(`承运商不存在（ID: ${carrierId}）`);
-    await conn.query(
-      `INSERT INTO carrier_driver (carrier_id, driver_id, create_name, update_name)
-       VALUES (?, ?, '狮桥物流', '狮桥物流')
-       ON DUPLICATE KEY UPDATE deleted = 0, update_name = VALUES(update_name)`,
-      [carrierId, driverId]
-    );
-    carrierBound = crows[0].carrier_name;
+  if (carrierIds.length) {
+    const boundNames = [];
+    for (const id of [...new Set(carrierIds)]) {
+      const [crows] = await conn.query('SELECT id, carrier_name FROM carrier WHERE id = ? AND deleted = 0', [id]);
+      if (!crows.length) throw errNotFound(`承运商不存在（ID: ${id}）`);
+      await conn.query(
+        `INSERT INTO carrier_driver (carrier_id, driver_id, create_name, update_name)
+         VALUES (?, ?, '狮桥物流', '狮桥物流')
+         ON DUPLICATE KEY UPDATE deleted = 0, update_name = VALUES(update_name)`,
+        [id, driverId]
+      );
+      boundNames.push(crows[0].carrier_name);
+    }
+    carrierBound = boundNames.join('、');
   }
   return { driverId, idCard, externalDriverId, created, carrierBound };
 }
