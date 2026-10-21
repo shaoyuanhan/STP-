@@ -9,16 +9,21 @@ const { wrap, ok, errParam, errBiz, errNotFound, pageOf, pageData, assertPhone }
 
 const router = Router();
 
-/** 列表：关键字/状态筛选 + 在册（关联且启用的）司机数 */
+/** 列表：按字段分项筛选（名称/编码/联系人/电话/第三方ID/状态）+ 在册（关联且启用的）司机数 */
 router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
-  const { keyword = '', status = '' } = req.query;
+  const {
+    carrier_name = '', carrier_code = '', contact_person = '', contact_phone = '',
+    external_carrier_id = '', status = '',
+  } = req.query;
   const where = ['c.deleted = 0'];
   const params = [];
-  if (keyword) {
-    where.push('(c.carrier_name LIKE ? OR c.contact_person LIKE ? OR c.carrier_code LIKE ? OR c.contact_phone LIKE ? OR c.external_carrier_id LIKE ?)');
-    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
-  }
+  const kw = (v) => `%${String(v).trim()}%`;
+  if (carrier_name) where.push('c.carrier_name LIKE ?'), params.push(kw(carrier_name));
+  if (carrier_code) where.push('c.carrier_code LIKE ?'), params.push(kw(carrier_code));
+  if (contact_person) where.push('c.contact_person LIKE ?'), params.push(kw(contact_person));
+  if (contact_phone) where.push('c.contact_phone LIKE ?'), params.push(kw(contact_phone));
+  if (external_carrier_id) where.push('c.external_carrier_id LIKE ?'), params.push(kw(external_carrier_id));
   if (status !== '' && status !== undefined && status !== null) {
     where.push('c.status = ?');
     params.push(Number(status));

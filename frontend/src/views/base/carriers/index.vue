@@ -36,9 +36,20 @@ function envSuccessText(env: { message?: string | null }, fallback: string): str
   return text && text.toLowerCase() !== 'success' ? text : fallback
 }
 
-// ---------------- 筛选 ----------------
-const filter = reactive<{ keyword: string; status: string | number }>({
-  keyword: '',
+// ---------------- 筛选（按字段分项） ----------------
+const filter = reactive<{
+  carrier_name: string
+  carrier_code: string
+  contact_person: string
+  contact_phone: string
+  external_carrier_id: string
+  status: string | number
+}>({
+  carrier_name: '',
+  carrier_code: '',
+  contact_person: '',
+  contact_phone: '',
+  external_carrier_id: '',
   status: '', // '' 全部 / 1 合作中 / 0 已停用
 })
 
@@ -49,12 +60,25 @@ const statusOptions: SelectOption[] = [
 ]
 
 /** 已应用的查询（查询按钮触发替换；_t 强制 PageTable 重新请求） */
-type AppliedQuery = { keyword?: string; status?: CarrierStatus; _t: number }
+type AppliedQuery = {
+  carrier_name?: string
+  carrier_code?: string
+  contact_person?: string
+  contact_phone?: string
+  external_carrier_id?: string
+  status?: CarrierStatus
+  _t: number
+}
 const applied = ref<AppliedQuery>({ _t: 0 })
 
 function buildAppliedQuery(): AppliedQuery {
+  const trim = (v: string) => v.trim() || undefined
   return {
-    keyword: filter.keyword.trim() || undefined,
+    carrier_name: trim(filter.carrier_name),
+    carrier_code: trim(filter.carrier_code),
+    contact_person: trim(filter.contact_person),
+    contact_phone: trim(filter.contact_phone),
+    external_carrier_id: trim(filter.external_carrier_id),
     status: filter.status === '' ? undefined : (Number(filter.status) as CarrierStatus),
     _t: Date.now(),
   }
@@ -65,7 +89,11 @@ function handleSearch() {
 }
 
 function handleReset() {
-  filter.keyword = ''
+  filter.carrier_name = ''
+  filter.carrier_code = ''
+  filter.contact_person = ''
+  filter.contact_phone = ''
+  filter.external_carrier_id = ''
   filter.status = ''
   applied.value = buildAppliedQuery()
 }
@@ -286,12 +314,52 @@ async function confirmStatusChange() {
     <n-card class="page-card" :bordered="false">
       <div class="page-card__filters">
         <div class="page-card__field">
-          <span class="page-card__label">关键字</span>
+          <span class="page-card__label">承运商名称</span>
           <n-input
-            v-model:value="filter.keyword"
+            v-model:value="filter.carrier_name"
             class="page-card__input"
             clearable
-            placeholder="名称 / 联系人 / 电话 / 编码"
+            placeholder="请输入承运商名称"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">承运商编码</span>
+          <n-input
+            v-model:value="filter.carrier_code"
+            class="page-card__input"
+            clearable
+            placeholder="如 CAR-001"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">第三方承运商ID</span>
+          <n-input
+            v-model:value="filter.external_carrier_id"
+            class="page-card__input"
+            clearable
+            placeholder="外部系统承运商ID"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">联系人</span>
+          <n-input
+            v-model:value="filter.contact_person"
+            class="page-card__input"
+            clearable
+            placeholder="请输入联系人"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">联系电话</span>
+          <n-input
+            v-model:value="filter.contact_phone"
+            class="page-card__input"
+            clearable
+            placeholder="请输入联系电话"
             @keydown.enter="handleSearch"
           />
         </div>
@@ -461,7 +529,7 @@ async function confirmStatusChange() {
 }
 
 .page-card__input {
-  width: 220px;
+  width: 190px;
 }
 
 .page-card__select {

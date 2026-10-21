@@ -22,16 +22,21 @@ function decorateDriver(row) {
   };
 }
 
-/** 列表：关键字/承运商/状态筛选，含所属承运商（逗号连接） */
+/** 列表：按字段分项筛选（姓名/手机号/身份证号/驾驶证号/第三方ID/承运商/状态），含所属承运商（逗号连接） */
 router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
-  const { keyword = '', carrier_id = '', status = '' } = req.query;
+  const {
+    driver_name = '', phone = '', id_card = '', license_no = '',
+    external_driver_id = '', carrier_id = '', status = '',
+  } = req.query;
   const where = ['d.deleted = 0'];
   const params = [];
-  if (keyword) {
-    where.push('(d.driver_name LIKE ? OR d.phone LIKE ? OR d.id_card LIKE ? OR d.license_no LIKE ? OR d.external_driver_id LIKE ?)');
-    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
-  }
+  const kw = (v) => `%${String(v).trim()}%`;
+  if (driver_name) where.push('d.driver_name LIKE ?'), params.push(kw(driver_name));
+  if (phone) where.push('d.phone LIKE ?'), params.push(kw(phone));
+  if (id_card) where.push('d.id_card LIKE ?'), params.push(kw(id_card));
+  if (license_no) where.push('d.license_no LIKE ?'), params.push(kw(license_no));
+  if (external_driver_id) where.push('d.external_driver_id LIKE ?'), params.push(kw(external_driver_id));
   if (carrier_id) {
     where.push('EXISTS (SELECT 1 FROM carrier_driver cd WHERE cd.driver_id = d.id AND cd.carrier_id = ? AND cd.deleted = 0)');
     params.push(Number(carrier_id));

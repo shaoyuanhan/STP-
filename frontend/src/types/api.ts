@@ -171,7 +171,11 @@ export interface CarrierPayload {
 }
 
 export interface CarrierQuery extends PageQuery {
-  keyword?: string
+  carrier_name?: string
+  carrier_code?: string
+  contact_person?: string
+  contact_phone?: string
+  external_carrier_id?: string
   status?: CarrierStatus | '' | null
 }
 
@@ -215,7 +219,11 @@ export interface DriverPayload {
 }
 
 export interface DriverQuery extends PageQuery {
-  keyword?: string
+  driver_name?: string
+  phone?: string
+  id_card?: string
+  license_no?: string
+  external_driver_id?: string
   carrier_id?: number | '' | null
   status?: DriverStatus | '' | null
 }

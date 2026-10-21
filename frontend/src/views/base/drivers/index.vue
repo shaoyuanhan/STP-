@@ -53,9 +53,21 @@ const SOURCE_LABELS: Record<number, string> = { 1: '系统录入', 2: '狮桥同
 const LICENSE_TYPES = ['A1', 'A2', 'A3', 'B1', 'B2', 'C1', 'C2']
 const licenseTypeOptions: SelectOption[] = LICENSE_TYPES.map((t) => ({ label: t, value: t }))
 
-// ---------------- 筛选 ----------------
-const filter = reactive<{ keyword: string; carrier_id: string | number; status: string | number }>({
-  keyword: '',
+// ---------------- 筛选（按字段分项） ----------------
+const filter = reactive<{
+  driver_name: string
+  phone: string
+  id_card: string
+  license_no: string
+  external_driver_id: string
+  carrier_id: string | number
+  status: string | number
+}>({
+  driver_name: '',
+  phone: '',
+  id_card: '',
+  license_no: '',
+  external_driver_id: '',
   carrier_id: '', // '' 全部
   status: '',
 })
@@ -68,7 +80,11 @@ const filterStatusOptions: SelectOption[] = [
 
 /** 已应用的查询（_t 强制 PageTable 重新请求） */
 type AppliedQuery = {
-  keyword?: string
+  driver_name?: string
+  phone?: string
+  id_card?: string
+  license_no?: string
+  external_driver_id?: string
   carrier_id?: number
   status?: DriverStatus
   _t: number
@@ -78,8 +94,13 @@ const applied = ref<AppliedQuery>({ _t: 0 })
 const carrierOptions = ref<SelectOption[]>([])
 
 function buildAppliedQuery(): AppliedQuery {
+  const trim = (v: string) => v.trim() || undefined
   return {
-    keyword: filter.keyword.trim() || undefined,
+    driver_name: trim(filter.driver_name),
+    phone: trim(filter.phone),
+    id_card: trim(filter.id_card),
+    license_no: trim(filter.license_no),
+    external_driver_id: trim(filter.external_driver_id),
     carrier_id: filter.carrier_id === '' ? undefined : Number(filter.carrier_id),
     status: filter.status === '' ? undefined : (Number(filter.status) as DriverStatus),
     _t: Date.now(),
@@ -91,7 +112,11 @@ function handleSearch() {
 }
 
 function handleReset() {
-  filter.keyword = ''
+  filter.driver_name = ''
+  filter.phone = ''
+  filter.id_card = ''
+  filter.license_no = ''
+  filter.external_driver_id = ''
   filter.carrier_id = ''
   filter.status = ''
   applied.value = buildAppliedQuery()
@@ -370,12 +395,52 @@ onActivated(loadCarrierOptions)
     <n-card class="page-card" :bordered="false">
       <div class="page-card__filters">
         <div class="page-card__field">
-          <span class="page-card__label">关键字</span>
+          <span class="page-card__label">司机姓名</span>
           <n-input
-            v-model:value="filter.keyword"
+            v-model:value="filter.driver_name"
             class="page-card__input"
             clearable
-            placeholder="姓名 / 手机号 / 身份证号 / 驾驶证号"
+            placeholder="请输入姓名"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">手机号</span>
+          <n-input
+            v-model:value="filter.phone"
+            class="page-card__input"
+            clearable
+            placeholder="请输入手机号"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">身份证号</span>
+          <n-input
+            v-model:value="filter.id_card"
+            class="page-card__input"
+            clearable
+            placeholder="请输入身份证号"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">驾驶证号</span>
+          <n-input
+            v-model:value="filter.license_no"
+            class="page-card__input"
+            clearable
+            placeholder="请输入驾驶证号"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">第三方司机ID</span>
+          <n-input
+            v-model:value="filter.external_driver_id"
+            class="page-card__input"
+            clearable
+            placeholder="外部系统司机ID"
             @keydown.enter="handleSearch"
           />
         </div>
@@ -588,7 +653,7 @@ onActivated(loadCarrierOptions)
 }
 
 .page-card__input {
-  width: 230px;
+  width: 190px;
 }
 
 .page-card__select {

@@ -106,13 +106,13 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 - `GET /api/dictionaries` → `{ taskStatus:[{value,label}], carrierStatus:[{value:1,label:'合作中'},{value:0,label:'已停用'}], driverStatus:[...], driverSource:[{value:1,label:'自建'},{value:2,label:'狮桥同步'}], reconcileStatus:[{value:0,label:'待对账'},{value:1,label:'已对账'}], esignStatus:[{value:'WAIT_SIGN',label:'待签署'},...], cancelReasons:['承运商无法履约','调度调整','其他'] }`
 
 ### 5.2 承运商
-- `GET /api/carriers?keyword=&status=&page=&size=` → list 含 driver_count（关联启用司机数）
+- `GET /api/carriers?carrier_name=&carrier_code=&external_carrier_id=&contact_person=&contact_phone=&status=&page=&size=` → 按字段分项模糊筛选；list 含 driver_count（关联启用司机数）
 - `POST /api/carriers` `{carrier_name*, external_carrier_id, contact_person*, contact_phone*, cooperation_routes, remark}` → 编码自动生成，名称/第三方ID 去重(A0002)
 - `PUT /api/carriers/:id` 同上字段（编码只读；名称/第三方ID 改名校验去重）
 - `PUT /api/carriers/:id/status` `{status: 1|0}` 停用后不可被派单、在途不受影响
 
 ### 5.3 司机
-- `GET /api/drivers?keyword=&carrier_id=&status=&page=&size=` → list 含 carriers（所属承运商名，逗号连接字符串或数组）
+- `GET /api/drivers?driver_name=&phone=&id_card=&license_no=&external_driver_id=&carrier_id=&status=&page=&size=` → 按字段分项模糊筛选；list 含 carriers（所属承运商名，逗号连接字符串或数组）
 - `POST /api/drivers` `{name*, external_driver_id, phone*, id_card*, license_no, license_type, license_valid_from*, license_valid_to*, carrier_ids:[], remark}` source=1
 - `PUT /api/drivers/:id` 姓名/身份证不可改（A0002），carrier_ids 全量替换 carrier_driver
 - `PUT /api/drivers/:id/status` `{status:1|0}` 停用后不可分派、不影响在途

@@ -3,7 +3,7 @@
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
     "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
-    "version": "2.3.0"
+    "version": "2.3.1"
   },
   "servers": [
     {
@@ -216,12 +216,44 @@
         "summary": "承运商分页列表",
         "parameters": [
           {
-            "name": "keyword",
+            "name": "carrier_name",
             "in": "query",
             "schema": {
               "type": "string"
             },
-            "description": "关键字（名称/联系人/编码/电话）"
+            "description": "承运商名称（模糊匹配）"
+          },
+          {
+            "name": "carrier_code",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "承运商编码（模糊匹配，如 CAR-001）"
+          },
+          {
+            "name": "external_carrier_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "第三方承运商ID（模糊匹配）"
+          },
+          {
+            "name": "contact_person",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "联系人（模糊匹配）"
+          },
+          {
+            "name": "contact_phone",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "联系电话（模糊匹配）"
           },
           {
             "name": "status",
@@ -517,12 +549,44 @@
         "summary": "司机分页列表",
         "parameters": [
           {
-            "name": "keyword",
+            "name": "driver_name",
             "in": "query",
             "schema": {
               "type": "string"
             },
-            "description": "关键字（姓名/手机号/身份证/驾驶证号）"
+            "description": "司机姓名（模糊匹配）"
+          },
+          {
+            "name": "phone",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "手机号（模糊匹配）"
+          },
+          {
+            "name": "id_card",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "身份证号（模糊匹配）"
+          },
+          {
+            "name": "license_no",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "驾驶证号（模糊匹配）"
+          },
+          {
+            "name": "external_driver_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "第三方司机ID（模糊匹配）"
           },
           {
             "name": "carrier_id",

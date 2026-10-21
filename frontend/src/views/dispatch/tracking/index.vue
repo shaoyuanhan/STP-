@@ -107,7 +107,11 @@ function switchScope(next: Scope) {
   if (scope.value === next) return
   scope.value = next
   router.replace({ query: { ...route.query, scope: next } })
-  keyword.value = ''
+  taskNoFilter.value = ''
+  transportNoFilter.value = ''
+  vinFilter.value = ''
+  customerFilter.value = ''
+  destinationFilter.value = ''
   provinceFilter.value = null
   cityFilter.value = null
   onlyAbnormal.value = false
@@ -147,23 +151,48 @@ const metaList = computed<TaskMeta[]>(() =>
   }))
 )
 
-// ---- 筛选（省份 / 同城 / 关键字） ----
-const keyword = ref('')
+// ---- 筛选（按字段分项 + 省份 / 同城 / 异常） ----
+const taskNoFilter = ref('')
+const transportNoFilter = ref('')
+const vinFilter = ref('')
+const customerFilter = ref('')
+const destinationFilter = ref('')
 const provinceFilter = ref<string | null>(null)
 const cityFilter = ref<string | null>(null)
 const onlyAbnormal = ref(false)
 
+const activeFilterCount = computed(
+  () =>
+    [
+      taskNoFilter.value,
+      transportNoFilter.value,
+      vinFilter.value,
+      customerFilter.value,
+      destinationFilter.value,
+    ].filter((v) => v.trim()).length +
+    (provinceFilter.value ? 1 : 0) +
+    (cityFilter.value ? 1 : 0) +
+    (onlyAbnormal.value ? 1 : 0)
+)
+
 const visibleMeta = computed<TaskMeta[]>(() => {
-  const kw = keyword.value.trim().toLowerCase()
+  const taskNo = taskNoFilter.value.trim().toLowerCase()
+  const transportNo = transportNoFilter.value.trim().toLowerCase()
+  const vin = vinFilter.value.trim().toLowerCase()
+  const customer = customerFilter.value.trim().toLowerCase()
+  const destination = destinationFilter.value.trim().toLowerCase()
   const list = metaList.value.filter((meta) => {
     if (onlyAbnormal.value && !meta.abnormal) return false
     if (provinceFilter.value && meta.province !== provinceFilter.value) return false
     if (cityFilter.value && meta.dest?.city !== cityFilter.value) return false
-    if (!kw) return true
-    const hay = `${meta.task.task_no} ${meta.task.latest_track?.transport_no ?? ''} ${
-      meta.task.vins ?? ''
-    } ${meta.task.customer_name ?? ''} ${meta.task.delivery_address ?? ''}`.toLowerCase()
-    return hay.includes(kw)
+    if (taskNo && !String(meta.task.task_no ?? '').toLowerCase().includes(taskNo)) return false
+    if (transportNo && !String(meta.task.latest_track?.transport_no ?? '').toLowerCase().includes(transportNo)) {
+      return false
+    }
+    if (vin && !String(meta.task.vins ?? '').toLowerCase().includes(vin)) return false
+    if (customer && !String(meta.task.customer_name ?? '').toLowerCase().includes(customer)) return false
+    if (destination && !String(meta.task.delivery_address ?? '').toLowerCase().includes(destination)) return false
+    return true
   })
   if (!isHistory.value) {
     list.sort((a, b) => {
@@ -185,6 +214,11 @@ const filterLabel = computed(() => {
 })
 
 function clearFilters() {
+  taskNoFilter.value = ''
+  transportNoFilter.value = ''
+  vinFilter.value = ''
+  customerFilter.value = ''
+  destinationFilter.value = ''
   provinceFilter.value = null
   cityFilter.value = null
   onlyAbnormal.value = false
@@ -621,15 +655,42 @@ function onMapHover(id: number | null) {
         </button>
       </div>
 
-      <n-input
-        v-model:value="keyword"
-        class="ov-search"
-        size="small"
-        clearable
-        placeholder="任务单号 / 运输单号 / VIN / 客户 / 目的地"
-      />
+      <div class="ov-filters">
+        <n-input
+          v-model:value="taskNoFilter"
+          class="ov-filter"
+          size="small"
+          clearable
+          placeholder="任务单号"
+        />
+        <n-input
+          v-model:value="transportNoFilter"
+          class="ov-filter"
+          size="small"
+          clearable
+          placeholder="运输单号"
+        />
+        <n-input v-model:value="vinFilter" class="ov-filter" size="small" clearable placeholder="VIN" />
+        <n-input
+          v-model:value="customerFilter"
+          class="ov-filter"
+          size="small"
+          clearable
+          placeholder="客户名称"
+        />
+        <n-input
+          v-model:value="destinationFilter"
+          class="ov-filter"
+          size="small"
+          clearable
+          placeholder="目的地"
+        />
+      </div>
 
       <div class="ov-toolbar__actions">
+        <n-button v-if="activeFilterCount" size="small" quaternary @click="clearFilters">
+          清除筛选（{{ activeFilterCount }}）
+        </n-button>
         <span v-if="!isHistory" class="ov-toolbar__live">每 30 秒自动刷新</span>
         <n-button size="small" :loading="loading" @click="refreshAll()">刷新</n-button>
       </div>
@@ -1006,10 +1067,17 @@ function onMapHover(id: number | null) {
   transition: background 0.15s, color 0.15s;
 }
 
-.ov-search {
-  width: 260px;
-  flex: 0 1 260px;
-  min-width: 150px;
+.ov-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 420px;
+}
+
+.ov-filter {
+  width: 152px;
+  flex: 0 1 152px;
+  min-width: 120px;
 }
 
 .ov-tab.is-active {
