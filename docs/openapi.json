@@ -3,7 +3,7 @@
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
     "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "servers": [
     {
@@ -2568,6 +2568,95 @@
           },
           "404": {
             "description": "D0002 carrierId 对应承运商不存在"
+          }
+        }
+      }
+    },
+    "/api/external/tracking/report": {
+      "post": {
+        "tags": [
+          "10 外部接口·狮桥物流"
+        ],
+        "summary": "⑪ 在途点位上报",
+        "description": "狮桥按固定频率（默认 1 小时）回传车辆位置，写入在途轨迹表 transport_track，运输单号规则 SQ+yyyyMMdd+任务id补零4位。仅记录轨迹、不改变任务状态（出库完成即进入在途）；仅「已提车/已出库/在途」任务可上报，未提车或运输已结束返回 D0001；上报时间不得晚于当前时间、不得早于上次上报时间；同一上报时间与坐标重复推送为幂等返回，不重复写轨迹。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "longitude",
+                  "latitude"
+                ],
+                "properties": {
+                  "applyNo": {
+                    "type": "string",
+                    "description": "发运申请号（推荐，优先按此定位任务）"
+                  },
+                  "taskNo": {
+                    "type": "string",
+                    "description": "任务单号（未传 applyNo 时使用）"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "description": "经度，取值 -180 ~ 180"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "纬度，取值 -90 ~ 90"
+                  },
+                  "locationDesc": {
+                    "type": "string",
+                    "description": "当前位置描述，缺省「位置更新」"
+                  },
+                  "speed": {
+                    "type": "number",
+                    "description": "当前时速 km/h，狮桥无法提供时可不传"
+                  },
+                  "reportTime": {
+                    "type": "string",
+                    "description": "上报时间 YYYY-MM-DD HH:mm:ss，缺省当前时间，不得晚于当前时间"
+                  }
+                }
+              },
+              "example": {
+                "applyNo": "CRM-DEMO202610210001",
+                "longitude": 117.227239,
+                "latitude": 31.820586,
+                "locationDesc": "合肥绕城高速南段",
+                "speed": 82,
+                "reportTime": "2026-10-21 11:30:00"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "上报结果（idempotent=true 表示重复上报，直接返回未新增）",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "位置上报成功",
+                  "data": {
+                    "transportNo": "SQ202610210142",
+                    "reportTime": "2026-10-21 11:13:22",
+                    "status": "IN_TRANSIT",
+                    "idempotent": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A0001 经度/纬度缺失或越界、时间格式错误；A0002 上报时间早于上次上报时间"
+          },
+          "404": {
+            "description": "D0002 applyNo/taskNo 对应任务不存在"
+          },
+          "409": {
+            "description": "D0001 当前任务状态不允许上报位置"
           }
         }
       }

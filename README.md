@@ -2,7 +2,7 @@
 
 **Smart Transport Management Platform（简称 STP）**
 
-基于《TMS-整车发运系统 PRD》实现的**前后端分离**企业级运输管理系统，覆盖承运商/司机基础数据、发运任务派单调度、在途监控、应付运费对账、电子签台账，并提供 CRM / WMS / 狮桥物流 / 承运商端的 12 个外部对接接口，支持完整业务流程端到端联调。
+基于《TMS-整车发运系统 PRD》实现的**前后端分离**企业级运输管理系统，覆盖承运商/司机基础数据、发运任务派单调度、在途监控、应付运费对账、电子签台账，并提供 CRM / WMS / 狮桥物流 / 承运商端的 13 个外部对接接口，支持完整业务流程端到端联调。
 
 ## 技术栈
 
@@ -20,7 +20,7 @@ tms-vehicle-shipping/
 │   ├── schema.sql          # 建表语句（含第三方 ID 字段与唯一索引）
 │   └── seed.sql            # 演示种子数据
 ├── docs/
-│   ├── openapi.json        # OpenAPI 3.0 接口文档（35 个路径，可导入 APIfox）
+│   ├── openapi.json        # OpenAPI 3.0 接口文档（36 个路径，可导入 APIfox）
 │   └── api-contract.md     # 前后端统一契约（状态机/表结构/接口清单）
 ├── backend/
 │   ├── package.json
@@ -149,7 +149,7 @@ npm run preview    # 本地预览构建产物
 
 ## 核心接口一览
 
-完整接口定义见 `docs/openapi.json`（OpenAPI 3.0，可直接导入 APIfox / Postman），含全部 35 个路径的参数、请求体结构与响应示例；字段与错误码约定见 `docs/api-contract.md`。
+完整接口定义见 `docs/openapi.json`（OpenAPI 3.0，可直接导入 APIfox / Postman），含全部 36 个路径的参数、请求体结构与响应示例；字段与错误码约定见 `docs/api-contract.md`。
 
 ### 内部管理接口
 
@@ -188,6 +188,7 @@ npm run preview    # 本地预览构建产物
 | POST | `/shipping-tasks/cancel` | CRM | 取消任务（仅待派单） |
 | POST | `/wms/outbound-status` | WMS | 出库回传（PICKED→IN_TRANSIT） |
 | POST | `/drivers/sync` | 狮桥 | 司机同步（`externalDriverId` 优先，其次身份证号） |
+| POST | `/tracking/report` | 狮桥 | 在途点位上报（写轨迹，不改任务状态） |
 | POST | `/shipping-tasks/accept` | 承运商 | 接单并指派司机（`driverId` 或 `externalDriverId`） |
 | POST | `/shipping-tasks/pickup` | 承运商 | 提车发运（含照片） |
 | POST | `/shipping-tasks/arrive` | 承运商 | 到达回传（生成运费单） |
@@ -210,6 +211,14 @@ npm run preview    # 本地预览构建产物
 已完成全链路测试与浏览器全页面验证：CRM 下发 → 派单 → 接单 → 提车 → 出库 → 在途回传 → 到达 → 完结 → 运费修改/对账，以及取消链路，全部通过；第三方承运商 ID 派单 → 第三方司机 ID 接单链路已验证通过。
 
 ## 更新记录
+
+### V2.4（2026-10-21）新增在途点位上报接口
+
+- **接口**：`POST /api/external/tracking/report`（狮桥第 ⑪ 号接口），按 `applyNo` / `taskNo` 定位任务，写入 `transport_track`
+- **入参**：`longitude`、`latitude` 必填（经纬度范围校验），`locationDesc`、`speed`、`reportTime` 选填（默认当前时间）
+- **规则**：仅「已提车 / 已出库 / 在途」可上报；上报时间不得晚于当前时间、不得早于上次上报；同一上报时间+坐标重复推送幂等返回
+- **不改状态**：出库完成即进入在途，点位上报只记录轨迹，供运输监控画线与「超 1 小时未上报」异常判定
+- 运输单号沿用规则 `SQ+yyyyMMdd+任务id补零4位`；OpenAPI 升至 2.3.0，契约文档同步
 
 ### V2.3（2026-10-21）第三方承运商 / 司机 ID 全链路支持
 

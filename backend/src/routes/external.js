@@ -9,6 +9,7 @@
  *   CRM  ⑥ POST /shipping-tasks/cancel          送车发运申请取消（按取消规则，关联待签署电子签置 CANCELLED）
  *   WMS  ⑧ POST /wms/outbound-status            WMS 出库状态同步（PICKED→OUTBOUND→IN_TRANSIT，司机提车在前、仓库出库在后）
  *   狮桥 ⑩ POST /drivers/sync                   司机信息同步（身份证号 UPSERT，source=2，维护 carrier_driver）
+ *   狮桥 ⑪ POST /tracking/report                在途点位上报（写 transport_track，仅记录轨迹不改状态）
  *   狮桥 ⑫ POST /shipping-tasks/accept          承运商接单（DISPATCHED→CARRIER_ACCEPTED，分配司机）
  *   狮桥 ⑫ POST /shipping-tasks/pickup          司机提车（CARRIER_ACCEPTED→PICKED，含提车照片）
  *   狮桥 ⑫ POST /shipping-tasks/arrive          司机到达（IN_TRANSIT→ARRIVED，回填实际运费/里程）
@@ -459,6 +460,65 @@ router.post('/drivers/sync', wrap(async (req, res) => {
     created: result.created,
     carrierBound: result.carrierBound,
   }, result.created ? '司机同步成功，已新增' : '司机同步成功，已更新');
+}));
+
+/* ======================= ⑪ 狮桥：在途点位上报 ======================= */
+// POST /api/external/tracking/report
+// 狮桥按固定频率回传车辆位置：写 transport_track，不推进任务状态（出库完成即进入在途）。
+// 仅已提车/已出库/在途任务可上报；上报时间不得晚于当前时间、不得早于上次上报。
+// 同一上报时间与坐标重复推送按幂等返回，不重复写轨迹。
+router.post('/tracking/report', wrap(async (req, res) => {
+  const b = req.body || {};
+
+  const longitude = Number(b.longitude);
+  const latitude = Number(b.latitude);
+  if (b.longitude === undefined || b.longitude === null || b.longitude === '' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    throw errParam('经度 longitude 必填，取值 -180 ~ 180');
+  }
+  if (b.latitude === undefined || b.latitude === null || b.latitude === '' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+    throw errParam('纬度 latitude 必填，取值 -90 ~ 90');
+  }
+  const locationDesc = cutStr(String(b.locationDesc ?? '').trim(), 255) || '位置更新';
+  const speed = assertAmount(b.speed, { label: '时速 speed', required: false });
+  const reportTime = parseDateTime(b.reportTime, '上报时间 reportTime');
+  assertNotFuture(reportTime, '上报时间 reportTime');
+
+  const result = await withTransaction(async (conn) => {
+    const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
+
+    if (['WAIT_DISPATCH', 'DISPATCHED', 'CARRIER_ACCEPTED'].includes(task.status)) {
+      throw errState(`当前任务状态不允许上报位置（${task.status}），车辆尚未提车`);
+    }
+    if (['ARRIVED', 'FINISHED', 'CANCELLED'].includes(task.status)) {
+      throw errState(`当前任务状态不允许上报位置（${task.status}），运输已结束`);
+    }
+
+    const reportAt = reportTime || nowStr();
+    const [lastRows] = await conn.query(
+      'SELECT transport_no, longitude, latitude, report_time FROM transport_track WHERE task_id = ? AND deleted = 0 ORDER BY report_time DESC, id DESC LIMIT 1 FOR UPDATE',
+      [task.id]
+    );
+    const last = lastRows[0] || null;
+    if (last && reportAt < String(last.report_time)) {
+      throw errBiz(`上报时间（${reportAt}）不能早于上次上报时间（${last.report_time}）`);
+    }
+    if (last && reportAt === String(last.report_time)
+      && Number(last.longitude) === longitude && Number(last.latitude) === latitude) {
+      return { transportNo: last.transport_no, reportTime: last.report_time, status: task.status, idempotent: true };
+    }
+
+    // 运输单号规则：SQ+yyyyMMdd+任务id补零4位
+    const transportNo = `SQ${localDateStr().replace(/-/g, '')}${String(task.id).padStart(4, '0')}`;
+    await conn.query(
+      `INSERT INTO transport_track
+        (task_id, task_no, transport_no, longitude, latitude, location_desc, speed, report_time, create_name, update_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '狮桥物流', '狮桥物流')`,
+      [task.id, task.task_no, transportNo, longitude, latitude, locationDesc, speed, reportAt]
+    );
+    return { transportNo, reportTime: reportAt, status: task.status, idempotent: false };
+  });
+
+  ok(res, result, result.idempotent ? '重复上报，幂等处理直接返回' : '位置上报成功');
 }));
 
 /* ======================= ⑫ 承运商通用：任务状态回传（状态机校验推进） ======================= */
