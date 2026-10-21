@@ -247,18 +247,19 @@ function computeView(el, points) {
  *   heat: {省名: 单量} 省份热力,
  *   bubbles: [{key, name, lng, lat, count, active}] 聚合气泡,
  *   tags: [{id, name, lng, lat, active}] 单票运单号标签（可点击选中运单）,
- *   links: [{id, points: [[lng,lat],...], active, label}] 多运单线路,
- *   legend: [{color, text}] 自定义图例（缺省用起终点图例）,
+ *   links: [{id, points: [[lng,lat],...], active, alert, label}] 多运单线路,
+ *   routeAlert: 单票详情路径是否为异常线路,
+ *   legend: [{color, text, kind}] 自定义图例（kind: line | dot；缺省用起终点图例）,
  *   keepView: 保持上一次的缩放/平移视野（仅高亮点、刷新等轻量更新时使用）,
- *   onSelect(index) / onSelectTask(id) / onSelectProvince(name) / onSelectBubble(key) 点击回调
+ *   onSelect(index) / onSelectTask(id) / onSelectProvince(name) / onSelectBubble(key) / onHoverTask(id|null)
  * }
  */
 function renderChinaMap(el, opts = {}) {
   const {
     origin, dest, stops = [], cur, active, provincesHL = [],
     fit = true, heat = null, bubbles = [], tags = [], links = [], hubs = [], legend = null,
-    keepView = false, mode = 'transit',
-    onSelect, onSelectTask, onSelectProvince, onSelectBubble,
+    keepView = false, mode = 'transit', routeAlert = false,
+    onSelect, onSelectTask, onSelectProvince, onSelectBubble, onHoverTask,
   } = opts;
 
   /** 到达热度 4 级暖色：单量越多越深，与青绿飞线形成冷暖对比 */
@@ -367,13 +368,15 @@ function renderChinaMap(el, opts = {}) {
     .filter(Boolean);
 
   // 每条飞线一条起淡终实的同色渐变（userSpaceOnUse 沿起终点方向）
-  // 正常：青蓝；异常（超时未上报）：玫红
+  // 正常：品牌蓝；异常（超时未上报）：危险红。历史轨迹用更浅的蓝，避免和在途抢色。
+  const normalStops = mode === 'history'
+    ? [['#BAE0FF', '0.35'], ['#69B1FF', '0.62'], ['#1677FF', '0.82']]
+    : [['#91CAFF', '0.4'], ['#1677FF', '0.82'], ['#0958D9', '1']];
+  const alertStops = [['#FFA39E', '0.45'], ['#F5222D', '0.88'], ['#CF1322', '1']];
   const linkDefs = linkParts.length
     ? `<defs>${linkParts
         .map(({ idx, start, end, link }) => {
-          const stops = link.alert
-            ? [['#FB7185', '0.3'], ['#F43F5E', '0.7'], ['#EF4444', '0.95']]
-            : [['#0891B2', '0.28'], ['#0E7490', '0.68'], ['#06B6D4', '0.95']];
+          const stops = link.alert ? alertStops : normalStops;
           return `<linearGradient id="mp-lg-${idx}" gradientUnits="userSpaceOnUse" x1="${start[0]}" y1="${start[1]}" x2="${end[0]}" y2="${end[1]}">
               ${stops.map(([c, o], i) => `<stop offset="${[0, 0.55, 1][i]}" stop-color="${c}" stop-opacity="${o}"/>`).join('')}
             </linearGradient>`;
@@ -386,8 +389,9 @@ function renderChinaMap(el, opts = {}) {
       const pathId = `mp-path-${idx}`;
       const dur = Math.max(2.6, Math.min(7.2, len / 150)).toFixed(2);
       const tone = link.alert ? ' is-alert' : '';
-      return `<path class="mp-link-hit" d="${d}" data-task-id="${link.id}" vector-effect="non-scaling-stroke"></path>
-        <path id="${pathId}" class="mp-link${link.active ? ' active' : ''}${tone}" d="${d}" stroke="url(#mp-lg-${idx})" data-task-id="${link.id}" vector-effect="non-scaling-stroke"><title>${link.label || ''}</title></path>
+      return `<g class="mp-link-item${tone}" data-task-id="${link.id}">
+        <path class="mp-link-hit" d="${d}" vector-effect="non-scaling-stroke"></path>
+        <path id="${pathId}" class="mp-link${link.active ? ' active' : ''}${tone}" d="${d}" stroke="url(#mp-lg-${idx})" vector-effect="non-scaling-stroke"><title>${link.label || ''}</title></path>
         <circle class="mp-flow-dot${tone}" r="${u(2.2)}" data-r-px="2.2" pointer-events="none" vector-effect="non-scaling-stroke">
           <animateMotion dur="${dur}s" begin="-${((idx % 8) * 0.55).toFixed(2)}s" repeatCount="indefinite" rotate="auto">
             <mpath href="#${pathId}"/>
@@ -395,7 +399,8 @@ function renderChinaMap(el, opts = {}) {
         </circle>
         <g class="mp-arrow${tone}" transform="translate(${ax},${ay}) rotate(${angle})" pointer-events="none">
           <path d="M-1.2,-3.4 L6.4,0 L-1.2,3.4 Z"></path>
-        </g>`;
+        </g>
+      </g>`;
     })
     .join('');
 
@@ -451,10 +456,20 @@ function renderChinaMap(el, opts = {}) {
             ];
           })
         : null;
-      return `<g class="mp-bubble${b.hideCount ? ' is-dot' : ''}${b.active ? ' active' : ''}${b.alert ? ' is-alert' : ''}" transform="translate(${x},${y})" data-bubble-key="${b.key}">
+      const alertCount = Math.max(0, Number(b.alertCount) || (b.alert ? 1 : 0));
+      // 单票异常：圆点本身变红。同城多单：圆点保持蓝色，右上角用红色数字标出异常单数
+      const alertDot = Boolean(b.alert) && b.hideCount;
+      const badge = !b.hideCount && alertCount > 0
+        ? `<g class="mp-alert-badge" transform="translate(${u(rPx * 0.62)},${-u(rPx * 0.62)})">
+            <circle r="${u(6.2)}" data-r-px="6.2" vector-effect="non-scaling-stroke"/>
+            <text y="${u(2.2)}" text-anchor="middle" data-fs-px="9" style="font-size:${u(9)}px">${alertCount > 9 ? '9+' : alertCount}</text>
+          </g>`
+        : '';
+      return `<g class="mp-bubble${b.hideCount ? ' is-dot' : ''}${b.active ? ' active' : ''}${alertDot ? ' is-alert' : ''}" transform="translate(${x},${y})" data-bubble-key="${b.key}">
         <circle class="mp-halo" r="${u(haloPx)}" data-r-px="${haloPx}"/>
         <circle class="mp-core" r="${r}" data-r-px="${rPx}" vector-effect="non-scaling-stroke"/>
         ${b.hideCount ? '' : `<text class="mp-count" y="${u(4)}" text-anchor="middle" data-fs-px="12" style="font-size:${u(12)}px">${count}</text>`}
+        ${badge}
         ${
           label
             ? `<text class="mp-city-label" x="${(label.x - x).toFixed(1)}" y="${(label.y - y).toFixed(1)}" text-anchor="${label.anchor}" dominant-baseline="middle" data-fs-px="10.5" style="font-size:${u(10.5)}px">${b.name}</text>`
@@ -542,8 +557,8 @@ function renderChinaMap(el, opts = {}) {
       <g class="mp-prov-labels">${provLabelEls}</g>
       <path class="mp-outline" d="${M.outline}" vector-effect="non-scaling-stroke"/>
       <path class="mp-dash" d="${M.nineDash}" vector-effect="non-scaling-stroke"/>
-      ${linkEls}
-      ${routeD ? `<path class="mp-route" d="${routeD}" vector-effect="non-scaling-stroke"/><path class="mp-route-flow" d="${routeD}" vector-effect="non-scaling-stroke"/>` : ''}
+      <g class="mp-links">${linkEls}</g>
+      ${routeD ? `<path class="mp-route${routeAlert ? ' is-alert' : ''}" d="${routeD}" vector-effect="non-scaling-stroke"/><path class="mp-route-flow${routeAlert ? ' is-alert' : ''}" d="${routeD}" vector-effect="non-scaling-stroke"/>` : ''}
       ${activeRing}
       ${hubEls}
       ${stopDots}
@@ -570,8 +585,10 @@ function renderChinaMap(el, opts = {}) {
         Array.isArray(legend) && legend.length
           ? legend
               .map(
-                (item) =>
-                  `<span><i class="lg${String(item.color).startsWith('linear-gradient') ? ' lg-bar' : ''}" style="background:${item.color}"></i>${item.text}</span>`
+                (item) => {
+                  const bar = item.kind === 'line' || String(item.color).startsWith('linear-gradient');
+                  return `<span><i class="lg${bar ? ' lg-bar' : ''}" style="background:${item.color}"></i>${item.text}</span>`;
+                }
               )
               .join('')
           : `<span><i class="lg lg-start"></i>起始地：${opts.originLabel || '-'}</span>
@@ -743,6 +760,13 @@ function renderChinaMap(el, opts = {}) {
   bind('[data-task-id]', 'data-task-id', onSelectTask, Number);
   bind('[data-province]', 'data-province', onSelectProvince, String);
   bind('[data-bubble-key]', 'data-bubble-key', onSelectBubble, String);
+
+  if (onHoverTask) {
+    el.querySelectorAll('.mp-link-item[data-task-id]').forEach((node) => {
+      node.addEventListener('mouseenter', () => onHoverTask(Number(node.getAttribute('data-task-id'))));
+      node.addEventListener('mouseleave', () => onHoverTask(null));
+    });
+  }
 }
 
 // ---- ESM 导出（供 Vue3 工程 ChinaMap 组件按需导入；不影响原有全局用法） ----

@@ -42,15 +42,41 @@ interface TaskMeta {
   abnormal: boolean
 }
 
-/** 司机按规定每小时上报一次位置，超过 1 小时未回传即视为异常线路 */
+/** 司机按规定每小时上报一次位置，超过 1 小时未回传即视为异常线路；再次上报后自动恢复 */
 const REPORT_TIMEOUT_MS = 60 * 60 * 1000
 
+function reportAgeMs(raw?: string | null): number | null {
+  if (!raw) return null
+  const time = new Date(String(raw).replace(' ', 'T')).getTime()
+  if (!Number.isFinite(time)) return null
+  return Date.now() - time
+}
+
+function isOverdue(status?: string | null, raw?: string | null): boolean {
+  if (status !== 'IN_TRANSIT') return false
+  const age = reportAgeMs(raw)
+  if (age === null) return true
+  return age > REPORT_TIMEOUT_MS
+}
+
+function durationText(ms: number): string {
+  const total = Math.max(1, Math.floor(ms / 60000))
+  const hours = Math.floor(total / 60)
+  const minutes = total % 60
+  if (hours <= 0) return `${minutes} 分钟`
+  if (minutes === 0) return `${hours} 小时`
+  return `${hours} 小时 ${minutes} 分`
+}
+
+function reportHint(task: TrackingOverviewTask): string {
+  const age = reportAgeMs(task.latest_track?.report_time)
+  if (age === null) return '暂无上报'
+  if (isOverdue(task.status, task.latest_track?.report_time)) return `超时 ${durationText(age)}`
+  return `${durationText(age)}前上报`
+}
+
 function isReportOverdue(task: TrackingOverviewTask): boolean {
-  if (task.status !== 'IN_TRANSIT') return false
-  const raw = task.latest_track?.report_time
-  const time = raw ? new Date(String(raw).replace(' ', 'T')).getTime() : NaN
-  if (!Number.isFinite(time)) return true
-  return Date.now() - time > REPORT_TIMEOUT_MS
+  return isOverdue(task.status, task.latest_track?.report_time)
 }
 
 // ---- 数据加载 ----
@@ -84,6 +110,7 @@ function switchScope(next: Scope) {
   keyword.value = ''
   provinceFilter.value = null
   cityFilter.value = null
+  onlyAbnormal.value = false
   closeDrawer()
   stopAutoRefresh()
   loadOverview()
@@ -124,10 +151,12 @@ const metaList = computed<TaskMeta[]>(() =>
 const keyword = ref('')
 const provinceFilter = ref<string | null>(null)
 const cityFilter = ref<string | null>(null)
+const onlyAbnormal = ref(false)
 
 const visibleMeta = computed<TaskMeta[]>(() => {
   const kw = keyword.value.trim().toLowerCase()
-  return metaList.value.filter((meta) => {
+  const list = metaList.value.filter((meta) => {
+    if (onlyAbnormal.value && !meta.abnormal) return false
     if (provinceFilter.value && meta.province !== provinceFilter.value) return false
     if (cityFilter.value && meta.dest?.city !== cityFilter.value) return false
     if (!kw) return true
@@ -136,17 +165,34 @@ const visibleMeta = computed<TaskMeta[]>(() => {
     } ${meta.task.customer_name ?? ''} ${meta.task.delivery_address ?? ''}`.toLowerCase()
     return hay.includes(kw)
   })
+  if (!isHistory.value) {
+    list.sort((a, b) => {
+      if (a.abnormal !== b.abnormal) return a.abnormal ? -1 : 1
+      const ageA = reportAgeMs(a.task.latest_track?.report_time) ?? Number.POSITIVE_INFINITY
+      const ageB = reportAgeMs(b.task.latest_track?.report_time) ?? Number.POSITIVE_INFINITY
+      return a.abnormal ? ageB - ageA : ageA - ageB
+    })
+  }
+  return list
 })
 
 const filterLabel = computed(() => {
-  if (cityFilter.value) return `目的地：${cityFilter.value}`
-  if (provinceFilter.value) return `到达省份：${provinceFilter.value}`
-  return ''
+  const parts: string[] = []
+  if (onlyAbnormal.value) parts.push('只看异常')
+  if (cityFilter.value) parts.push(`目的地：${cityFilter.value}`)
+  else if (provinceFilter.value) parts.push(`到达省份：${provinceFilter.value}`)
+  return parts.join(' · ')
 })
 
 function clearFilters() {
   provinceFilter.value = null
   cityFilter.value = null
+  onlyAbnormal.value = false
+}
+
+function toggleAbnormal() {
+  if (isHistory.value) return
+  onlyAbnormal.value = !onlyAbnormal.value
 }
 
 function onProvince(name: string) {
@@ -247,6 +293,7 @@ const mapLinks = computed(() => {
       label: `${meta.task.task_no} · ${meta.origin?.city ?? '-'} → ${meta.dest?.city ?? '-'}${meta.abnormal ? '（超时未上报）' : ''}`,
     }))
     .filter((link) => link.points.length >= 2)
+    .sort((a, b) => Number(a.alert) - Number(b.alert))
 })
 
 interface CityCluster {
@@ -294,6 +341,7 @@ const mapBubbles = computed(() => {
     hideCount: cluster.tasks.length === 1,
     active: cityFilter.value === cluster.city,
     alert: cluster.abnormal > 0,
+    alertCount: cluster.abnormal,
     tip: `${cluster.city} · ${cluster.tasks.length} 单${cluster.abnormal ? `（异常 ${cluster.abnormal} 单）` : ''}\n${cluster.tasks.map((t) => t.task_no).join('\n')}`,
   }))
 })
@@ -320,28 +368,6 @@ const mapHubs = computed(() => {
   return [...acc.values()].map((hub) => ({ ...hub, tip: `${hub.name} · 发运 ${hub.count} 单` }))
 })
 
-const mapLegend = computed(() => {
-  if (selectedId.value !== null) {
-    return [
-      { color: '#52c41a', text: `起始地：${cityLabel(focusTask.value?.ship_location)}` },
-      { color: '#f5222d', text: `目的地：${cityLabel(focusTask.value?.delivery_address)}` },
-      { color: '#0891b2', text: '位置回传点（点击查看）' },
-    ]
-  }
-  if (isHistory.value) {
-    return [
-      { color: 'linear-gradient(90deg,#FFF1E0,#FDBA74,#F97316)', text: '到达热度（越深单量越多）' },
-      { color: 'linear-gradient(90deg,rgba(8,145,178,.25),#06B6D4)', text: '历史轨迹（点击定位运单）' },
-      { color: '#0891b2', text: '圆点=单票，气泡数字=同城单量' },
-    ]
-  }
-  return [
-    { color: 'linear-gradient(90deg,rgba(8,145,178,.25),#06B6D4)', text: '在途线路（点击定位运单）' },
-    { color: 'linear-gradient(90deg,rgba(244,63,94,.3),#F43F5E)', text: '异常线路（超 1 小时未上报）' },
-    { color: '#0891b2', text: '圆点=单票，气泡数字=同城单量' },
-  ]
-})
-
 // ---- 选中运单（右侧抽屉） ----
 const selectedId = ref<number | null>(null)
 const detail = ref<TrackingTaskDetail | null>(null)
@@ -351,6 +377,55 @@ const selectedTrackIndex = ref<number | null>(null)
 
 const focusTask = computed(() => detail.value?.task ?? null)
 const focusTracks = computed<TransportTrack[]>(() => detail.value?.tracks ?? [])
+
+/** 当前选中运单是否异常：详情已加载时用最新轨迹，否则用总览里的最近上报 */
+const selectedAbnormal = computed(() => {
+  if (selectedId.value === null || isHistory.value) return false
+  if (focusTask.value && Number(focusTask.value.id) === selectedId.value) {
+    const last = focusTracks.value[focusTracks.value.length - 1]
+    return isOverdue(focusTask.value.status, last?.report_time)
+  }
+  return metaList.value.find((meta) => meta.task.id === selectedId.value)?.abnormal ?? false
+})
+
+const focusStateText = computed(() => {
+  const task = focusTask.value
+  if (!task || task.status !== 'IN_TRANSIT') return ''
+  const last = focusTracks.value[focusTracks.value.length - 1]
+  const age = reportAgeMs(last?.report_time)
+  if (age === null) return '在途后还没有位置上报，按异常线路显示。司机上报后会自动变为正常线路。'
+  if (age > REPORT_TIMEOUT_MS) {
+    return `最近一次上报已过去 ${durationText(age)}。超过 1 小时未上报，线路标为异常；再次上报后自动恢复。`
+  }
+  return `最近一次上报在 ${durationText(age)}前，未超过 1 小时，线路正常。`
+})
+
+const mapLegend = computed(() => {
+  if (selectedId.value !== null) {
+    return [
+      { color: '#52c41a', text: `起始地：${cityLabel(focusTask.value?.ship_location)}`, kind: 'dot' as const },
+      { color: '#fa8c16', text: `目的地：${cityLabel(focusTask.value?.delivery_address)}`, kind: 'dot' as const },
+      {
+        color: selectedAbnormal.value ? '#f5222d' : '#1677ff',
+        text: selectedAbnormal.value ? '异常线路（超时未上报）' : '运输路径',
+        kind: 'line' as const,
+      },
+      { color: '#1677ff', text: '位置回传点（点击查看）', kind: 'dot' as const },
+    ]
+  }
+  if (isHistory.value) {
+    return [
+      { color: 'linear-gradient(90deg,#FFF7E6,#FFD591,#FA8C16)', text: '到达热度（越深单量越多）', kind: 'line' as const },
+      { color: '#1677ff', text: '历史轨迹（点击定位运单）', kind: 'line' as const },
+      { color: '#1677ff', text: '圆点为单票，数字为同城单量', kind: 'dot' as const },
+    ]
+  }
+  return [
+    { color: '#1677ff', text: '正常线路', kind: 'line' as const },
+    { color: '#f5222d', text: '异常线路 · 超 1 小时未上报，再次上报后恢复', kind: 'line' as const },
+    { color: '#1677ff', text: '圆点为单票，气泡数字为同城单量', kind: 'dot' as const },
+  ]
+})
 
 async function openTask(id: number) {
   selectedId.value = id
@@ -380,6 +455,7 @@ function closeDrawer() {
   detail.value = null
   detailError.value = null
   selectedTrackIndex.value = null
+  highlightTask(null)
 }
 
 function keepTrackSelection() {
@@ -493,6 +569,27 @@ onActivated(() => {
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && selectedId.value !== null) closeDrawer()
 }
+
+const mapRef = ref<{ highlight: (id: number | null) => void } | null>(null)
+const listBody = ref<HTMLElement | null>(null)
+const hoverId = ref<number | null>(null)
+
+function highlightTask(id: number | null) {
+  hoverId.value = id
+  mapRef.value?.highlight(id)
+}
+
+function onMapHover(id: number | null) {
+  highlightTask(id)
+  if (id == null || !listBody.value) return
+  const row = listBody.value.querySelector<HTMLElement>(`[data-task-row="${id}"]`)
+  if (!row) return
+  const box = listBody.value.getBoundingClientRect()
+  const rowBox = row.getBoundingClientRect()
+  if (rowBox.top < box.top || rowBox.bottom > box.bottom) {
+    row.scrollIntoView({ block: 'nearest' })
+  }
+}
 </script>
 
 <template>
@@ -551,11 +648,17 @@ function handleKeydown(event: KeyboardEvent) {
         <div class="kpi__value">{{ vehicleCount }}<span>台</span></div>
         <div class="kpi__sub">按 VIN 去重 · 一车一单</div>
       </div>
-      <div v-if="!isHistory" class="card kpi kpi--danger">
+      <button
+        v-if="!isHistory"
+        type="button"
+        class="card kpi kpi--danger"
+        :class="{ 'is-on': onlyAbnormal }"
+        @click="toggleAbnormal"
+      >
         <div class="kpi__label">异常运单</div>
         <div class="kpi__value kpi__value--danger">{{ abnormalCount }}<span>单</span></div>
-        <div class="kpi__sub">超 1 小时未上报位置</div>
-      </div>
+        <div class="kpi__sub">{{ onlyAbnormal ? '正在只看异常，点击恢复全部' : '超过 1 小时未上报，点击筛选' }}</div>
+      </button>
       <div class="card kpi kpi--amber">
         <div class="kpi__label">运输线路</div>
         <div class="kpi__value">{{ routeCount }}<span>条</span></div>
@@ -573,7 +676,7 @@ function handleKeydown(event: KeyboardEvent) {
               {{ filterLabel }}
               <b class="ov-chip__close" @click="clearFilters">✕</b>
             </span>
-            <span class="ov-map__hint">滚轮缩放 · 拖拽平移 · 点击线路或圆点定位运单</span>
+            <span class="ov-map__hint">悬停高亮线路 · 点击查看运单 · 滚轮缩放</span>
           </div>
         </div>
 
@@ -584,6 +687,7 @@ function handleKeydown(event: KeyboardEvent) {
           </div>
           <ChinaMap
             v-else
+            ref="mapRef"
             :mode="scope"
             :fit="selectedId !== null"
             :origin="selectedId !== null ? focusOriginPoint : null"
@@ -596,11 +700,13 @@ function handleKeydown(event: KeyboardEvent) {
             :links="mapLinks"
             :hubs="mapHubs"
             :legend="mapLegend"
+            :route-alert="selectedAbnormal"
             height="clamp(340px, calc(100vh - 330px), 560px)"
             @select="selectTrack"
             @task="openTask"
             @province="onProvince"
             @bubble="onBubble"
+            @hover="onMapHover"
           />
         </n-spin>
       </section>
@@ -615,13 +721,20 @@ function handleKeydown(event: KeyboardEvent) {
           <div v-if="!visibleMeta.length" class="ov-empty">
             {{ error ? '数据加载失败' : '暂无符合条件的运单' }}
           </div>
-          <div v-else class="ov-list__body">
+          <div v-else ref="listBody" class="ov-list__body">
             <div
               v-for="meta in visibleMeta"
               :key="meta.task.id"
               class="ov-row"
-              :class="{ selected: meta.task.id === selectedId, 'is-alert': meta.abnormal }"
+              :data-task-row="meta.task.id"
+              :class="{
+                selected: meta.task.id === selectedId,
+                'is-alert': meta.abnormal,
+                'is-hot': meta.task.id === hoverId,
+              }"
               @click="openTask(meta.task.id)"
+              @mouseenter="highlightTask(meta.task.id)"
+              @mouseleave="highlightTask(null)"
             >
               <div class="ov-row__l1">
                 <b>{{ meta.task.task_no }}</b>
@@ -637,13 +750,11 @@ function handleKeydown(event: KeyboardEvent) {
                 <span class="ov-row__loc" :title="meta.task.latest_track?.location_desc ?? ''">
                   {{ meta.task.latest_track?.location_desc || '暂无位置回传' }}
                 </span>
-                <span class="ov-row__time">
+                <span class="ov-row__time" :class="{ 'is-late': meta.abnormal }">
                   {{
                     isHistory && meta.task.finish_time
                       ? dateShort(meta.task.finish_time)
-                      : meta.task.latest_track?.report_time
-                        ? dateShort(meta.task.latest_track.report_time)
-                        : ''
+                      : reportHint(meta.task)
                   }}
                 </span>
               </div>
@@ -675,6 +786,15 @@ function handleKeydown(event: KeyboardEvent) {
             </div>
 
             <template v-else-if="focusTask">
+              <div
+                v-if="!isHistory && focusTask.status === 'IN_TRANSIT'"
+                class="ov-state"
+                :class="selectedAbnormal ? 'is-alert' : 'is-ok'"
+              >
+                <b>{{ selectedAbnormal ? '异常线路' : '正常线路' }}</b>
+                <span>{{ focusStateText }}</span>
+              </div>
+
               <!-- 进度 -->
               <div class="ov-progress">
                 <div class="ov-progress__line">
@@ -875,28 +995,33 @@ function handleKeydown(event: KeyboardEvent) {
   background: #94a3b8;
 }
 
-.kpi--blue::before {
-  background: #3b82f6;
+.kpi--blue::before,
+.kpi--cyan::before,
+.kpi--indigo::before,
+.kpi--amber::before {
+  background: #1677ff;
 }
 
-.kpi--cyan::before {
-  background: #06b6d4;
-}
-
-.kpi--indigo::before {
-  background: #6366f1;
+.kpi--danger {
+  width: 100%;
+  padding: 14px 16px 13px;
+  border: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
 }
 
 .kpi--danger::before {
-  background: #f43f5e;
+  background: #f5222d;
 }
 
-.kpi--amber::before {
-  background: #f59e0b;
+.kpi--danger.is-on {
+  background: #fff1f0;
+  box-shadow: inset 0 0 0 1px #ffccc7;
 }
 
 .kpi__value--danger {
-  color: #e11d48;
+  color: #cf1322;
 }
 
 .kpi__label {
@@ -1030,13 +1155,27 @@ function handleKeydown(event: KeyboardEvent) {
   padding-left: 11px;
 }
 
-/* 异常线路：左侧红色提示条 + 红色上报时间 */
+/* 异常线路：左侧红色提示条；悬停与地图线路联动 */
 .ov-row.is-alert:not(.selected) {
-  box-shadow: inset 3px 0 0 #f43f5e;
+  box-shadow: inset 3px 0 0 #f5222d;
 }
 
-.ov-row.is-alert .ov-row__time {
-  color: #e11d48;
+.ov-row.is-hot:not(.selected) {
+  background: #f5f9ff;
+}
+
+.ov-row.is-alert.is-hot:not(.selected) {
+  background: #fff7f6;
+}
+
+.ov-row.is-alert.selected {
+  background: #fff1f0;
+  border-left-color: #f5222d;
+}
+
+.ov-row__time.is-late {
+  color: #cf1322;
+  font-weight: 600;
 }
 
 .ov-row__badge {
@@ -1046,8 +1185,8 @@ function handleKeydown(event: KeyboardEvent) {
   height: 18px;
   padding: 0 6px;
   border-radius: 9px;
-  background: rgba(244, 63, 94, 0.1);
-  color: #e11d48;
+  background: #fff1f0;
+  color: #cf1322;
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -1187,6 +1326,38 @@ function handleKeydown(event: KeyboardEvent) {
 .ov-drawer-leave-to {
   transform: translateX(24px);
   opacity: 0;
+}
+
+.ov-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ov-state b {
+  flex: none;
+}
+
+.ov-state.is-ok {
+  background: #f6ffed;
+  color: #389e0d;
+}
+
+.ov-state.is-ok span {
+  color: #135200;
+}
+
+.ov-state.is-alert {
+  background: #fff1f0;
+  color: #cf1322;
+}
+
+.ov-state.is-alert span {
+  color: #5c0011;
 }
 
 /* ---- 进度条 ---- */

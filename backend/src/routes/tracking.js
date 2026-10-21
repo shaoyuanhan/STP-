@@ -16,6 +16,24 @@ const SCOPE_STATUSES = {
   history: ['FINISHED'],
 };
 
+/**
+ * 每单最近一次位置：按上报时间取最新，同刻多条再取最大 id。
+ * 异常线路以「最近一次上报距今是否超过 1 小时」判定，不能只看自增 id。
+ */
+const LATEST_TRACK_JOIN = `LEFT JOIN (
+       SELECT tr.task_id, MAX(tr.id) AS max_id
+       FROM transport_track tr
+       INNER JOIN (
+         SELECT task_id, MAX(report_time) AS report_time
+         FROM transport_track
+         WHERE deleted = 0
+         GROUP BY task_id
+       ) latest ON latest.task_id = tr.task_id AND latest.report_time = tr.report_time
+       WHERE tr.deleted = 0
+       GROUP BY tr.task_id
+     ) lm ON lm.task_id = t.id
+     LEFT JOIN transport_track tr ON tr.id = lm.max_id`;
+
 /** 列表公共 SELECT 片段（VIN/车型取车辆明细聚合） */
 const LIST_FIELDS = `t.id, t.task_no, t.apply_no, t.customer_name, t.status,
             t.ship_location, t.delivery_address, t.plan_pickup_date, t.ship_time,
@@ -62,9 +80,7 @@ router.get('/tasks', wrap(async (req, res) => {
      FROM shipping_task t
      LEFT JOIN carrier c ON c.id = t.carrier_id
      LEFT JOIN driver d ON d.id = t.driver_id
-     LEFT JOIN (SELECT task_id, MAX(id) AS max_id FROM transport_track WHERE deleted = 0 GROUP BY task_id) lm
-            ON lm.task_id = t.id
-     LEFT JOIN transport_track tr ON tr.id = lm.max_id
+     ${LATEST_TRACK_JOIN}
      ${whereSql}
      ${orderSql}
      LIMIT ? OFFSET ?`,
@@ -103,9 +119,7 @@ router.get('/overview', wrap(async (req, res) => {
      FROM shipping_task t
      LEFT JOIN carrier c ON c.id = t.carrier_id
      LEFT JOIN driver d ON d.id = t.driver_id
-     LEFT JOIN (SELECT task_id, MAX(id) AS max_id FROM transport_track WHERE deleted = 0 GROUP BY task_id) lm
-            ON lm.task_id = t.id
-     LEFT JOIN transport_track tr ON tr.id = lm.max_id
+     ${LATEST_TRACK_JOIN}
      WHERE t.deleted = 0 AND t.status IN (${statuses.map(() => '?').join(',')})
      ${orderSql}
      LIMIT 300`,

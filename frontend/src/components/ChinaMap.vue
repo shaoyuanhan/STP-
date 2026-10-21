@@ -24,8 +24,10 @@ interface MapBubble {
   /** 悬停提示（缺省为「城市 · N 单」） */
   tip?: string
   active?: boolean
-  /** 异常（超时未上报）：红色标识 */
+  /** 异常（超时未上报）：单票圆点标红；多单时配合 alertCount 显示角标 */
   alert?: boolean
+  /** 同城异常单数，大于 0 时在气泡右上角标红 */
+  alertCount?: number
 }
 
 interface MapTag {
@@ -41,7 +43,7 @@ interface MapLink {
   points: Array<[number, number]>
   active?: boolean
   label?: string
-  /** 异常（超时未上报）：玫红虚线 + 红色光点 */
+  /** 异常（超时未上报）：红色实线；再次上报回到 1 小时内后由调用方去掉该标记 */
   alert?: boolean
 }
 
@@ -57,6 +59,8 @@ interface MapHub {
 interface LegendItem {
   color: string
   text: string
+  /** line 画成短横，dot 画成圆点 */
+  kind?: 'line' | 'dot'
 }
 
 interface GeoPoint {
@@ -106,6 +110,8 @@ const props = withDefaults(
     hubs?: MapHub[]
     /** 自定义图例（缺省展示起终点图例） */
     legend?: LegendItem[] | null
+    /** 单票详情路径是否按异常线路着色 */
+    routeAlert?: boolean
     /** 容器高度（px） */
     height?: number | string
   }>(),
@@ -127,6 +133,7 @@ const props = withDefaults(
     links: () => [],
     hubs: () => [],
     legend: null,
+    routeAlert: false,
     height: 520,
   },
 )
@@ -136,9 +143,11 @@ const emit = defineEmits<{
   task: [id: number]
   province: [name: string]
   bubble: [key: string]
+  hover: [id: number | null]
 }>()
 
 const el = ref<HTMLElement | null>(null)
+const hotId = ref<number | null>(null)
 
 /** 解析坐标点：优先经纬度，其次地址文本匹配（缺失返回 null，渲染器自动跳过） */
 function resolvePoint(point: GeoPoint | null | undefined, fallbackLabel?: string) {
@@ -182,6 +191,7 @@ function render() {
     links: props.links,
     hubs: props.hubs,
     legend: props.legend,
+    routeAlert: props.routeAlert,
     originLabel: props.originLabel,
     destLabel: props.destLabel,
     curLabel: props.curLabel,
@@ -189,7 +199,27 @@ function render() {
     onSelectTask: (id: number) => emit('task', id),
     onSelectProvince: (name: string) => emit('province', name),
     onSelectBubble: (key: string) => emit('bubble', key),
+    onHoverTask: (id: number | null) => emit('hover', id),
   })
+  applyHot()
+}
+
+/** 悬停高亮某条线路，不重绘地图，避免打断当前缩放和平移 */
+function applyHot() {
+  const root = el.value
+  if (!root) return
+  const layer = root.querySelector('.mp-links')
+  if (!layer) return
+  const key = hotId.value == null ? '' : String(hotId.value)
+  layer.classList.toggle('is-focus', Boolean(key))
+  layer.querySelectorAll('.mp-link-item').forEach((node) => {
+    node.classList.toggle('is-hot', Boolean(key) && node.getAttribute('data-task-id') === key)
+  })
+}
+
+function highlight(id: number | null) {
+  hotId.value = id
+  applyHot()
 }
 
 onMounted(render)
@@ -213,12 +243,13 @@ watch(
     props.links,
     props.hubs,
     props.legend,
+    props.routeAlert,
   ],
   render,
   { deep: true },
 )
 
-defineExpose({ render })
+defineExpose({ render, highlight })
 </script>
 
 <template>
@@ -302,8 +333,8 @@ defineExpose({ render })
 }
 
 .china-map .mp-zoom button:hover {
-  background: #ecfeff;
-  color: #0891b2;
+  background: #e6f4ff;
+  color: #1677ff;
 }
 
 .china-map .mp-zoom button + button {
@@ -361,19 +392,19 @@ defineExpose({ render })
 }
 
 .china-map .mp-hub-ring {
-  fill: rgba(8, 145, 178, 0.1);
-  stroke: rgba(8, 145, 178, 0.42);
+  fill: rgba(22, 119, 255, 0.1);
+  stroke: rgba(22, 119, 255, 0.38);
   stroke-width: 1;
 }
 
 .china-map .mp-hub-core {
-  fill: #0891b2;
+  fill: #1677ff;
   stroke: #ffffff;
   stroke-width: 1.6;
 }
 
 .china-map .mp-hub text {
-  fill: #0e7490;
+  fill: #0958d9;
   font-weight: 600;
   paint-order: stroke;
   stroke: rgba(255, 255, 255, 0.92);
@@ -381,14 +412,13 @@ defineExpose({ render })
   stroke-linejoin: round;
 }
 
-/* 飞线层：起淡终实的青蓝渐变 + 轻微同色投影 */
+/* 飞线层：正常线路品牌蓝，异常线路危险红，悬停时压暗其余线路 */
 .china-map .mp-link {
   fill: none;
-  stroke-width: 1.9;
+  stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: drop-shadow(0 0 5px rgba(8, 145, 178, 0.28));
-  transition: stroke 0.15s, stroke-width 0.15s, filter 0.15s;
+  transition: stroke-width 0.15s, opacity 0.15s;
 }
 
 .china-map .mp-link-hit {
@@ -400,89 +430,84 @@ defineExpose({ render })
   cursor: pointer;
 }
 
-.china-map .mp-link:hover,
-.china-map .mp-link-hit:hover + .mp-link {
-  stroke: #0891b2;
-  stroke-width: 2.6;
-  filter: drop-shadow(0 0 7px rgba(8, 145, 178, 0.42));
-}
-
-.china-map .mp-link.active {
-  stroke: #f97316;
-  stroke-width: 3;
-  filter: drop-shadow(0 0 7px rgba(249, 115, 22, 0.35));
-}
-
-/* 异常线路：玫红虚线 + 红色光晕，和正常线路一眼区分 */
 .china-map .mp-link.is-alert {
-  stroke-dasharray: 7 5;
-  filter: drop-shadow(0 0 6px rgba(244, 63, 94, 0.35));
+  stroke-width: 2.15;
 }
 
-.china-map .mp-link.is-alert:hover,
-.china-map .mp-link-hit:hover + .mp-link.is-alert {
-  filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.5));
+.china-map .mp-links.is-focus .mp-link-item {
+  opacity: 0.16;
 }
 
-/* 沿线流动光点（对应 ECharts effect 的巡航光点） */
+.china-map .mp-links.is-focus .mp-link-item.is-hot {
+  opacity: 1;
+}
+
+.china-map .mp-link-item.is-hot .mp-link {
+  stroke-width: 2.8;
+}
+
+/* 沿线流动光点 */
 .china-map .mp-flow-dot {
-  fill: #0891b2;
-  opacity: 0.85;
+  fill: #1677ff;
+  opacity: 0.9;
   pointer-events: none;
-  filter: drop-shadow(0 0 2px rgba(8, 145, 178, 0.45));
 }
 
 .china-map .mp-flow-dot.is-alert {
-  fill: #f43f5e;
-  filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.55));
+  fill: #f5222d;
 }
 
 /* 飞线方向箭头 */
 .china-map .mp-arrow path {
-  fill: #0891b2;
-  opacity: 0.78;
+  fill: #1677ff;
+  opacity: 0.85;
 }
 
 .china-map .mp-arrow.is-alert path {
-  fill: #f43f5e;
+  fill: #f5222d;
 }
 
-/* 聚合气泡层：白底青边 + 柔和投影，数字用深青蓝 */
+/* 聚合气泡：白底蓝边。单票异常才整点变红；同城多单用右上角红标 */
 .china-map .mp-bubble .mp-count {
-  fill: #0e7490;
+  fill: #0958d9;
   font-weight: 600;
   pointer-events: none;
 }
 
 .china-map .mp-bubble .mp-core {
-  fill: rgba(255, 255, 255, 0.92);
-  stroke: #0891b2;
-  stroke-width: 1.8;
-  filter: drop-shadow(0 1px 3px rgba(8, 145, 178, 0.25));
+  fill: rgba(255, 255, 255, 0.94);
+  stroke: #1677ff;
+  stroke-width: 1.6;
   transition: fill 0.15s, stroke 0.15s;
 }
 
 .china-map .mp-bubble .mp-halo {
-  fill: rgba(8, 145, 178, 0.14);
+  fill: rgba(22, 119, 255, 0.12);
   pointer-events: none;
 }
 
-/* 异常城市：红色描边 + 红色光晕与数字 */
-.china-map .mp-bubble.is-alert .mp-core {
-  stroke: #f43f5e;
-  filter: drop-shadow(0 1px 3px rgba(244, 63, 94, 0.3));
-}
-
-.china-map .mp-bubble.is-alert .mp-halo {
-  fill: rgba(244, 63, 94, 0.15);
-}
-
-.china-map .mp-bubble.is-alert .mp-count {
-  fill: #be123c;
-}
-
 .china-map .mp-bubble.is-dot.is-alert .mp-core {
-  fill: #f43f5e;
+  fill: #f5222d;
+  stroke: #ffffff;
+}
+
+.china-map .mp-bubble.is-dot.is-alert .mp-halo {
+  fill: rgba(245, 34, 45, 0.16);
+}
+
+.china-map .mp-alert-badge {
+  pointer-events: none;
+}
+
+.china-map .mp-alert-badge circle {
+  fill: #f5222d;
+  stroke: #ffffff;
+  stroke-width: 1.2;
+}
+
+.china-map .mp-alert-badge text {
+  fill: #ffffff;
+  font-weight: 700;
 }
 
 /* 城市名标注：深灰蓝 + 白色文字衬底，避免与线路/气泡重叠时看不清 */
@@ -497,14 +522,22 @@ defineExpose({ render })
 }
 
 .china-map .mp-bubble.is-dot .mp-core {
-  fill: #0891b2;
+  fill: #1677ff;
   stroke: #ffffff;
-  stroke-width: 2;
+  stroke-width: 1.6;
 }
 
 .china-map .mp-bubble:hover .mp-core {
-  fill: #ecfeff;
-  stroke: #0891b2;
+  fill: #e6f4ff;
+  stroke: #1677ff;
+}
+
+.china-map .mp-bubble.is-dot:hover .mp-core {
+  fill: #4096ff;
+}
+
+.china-map .mp-bubble.is-dot.is-alert:hover .mp-core {
+  fill: #ff4d4f;
 }
 
 .china-map .mp-bubble.active .mp-core {
@@ -523,34 +556,34 @@ defineExpose({ render })
 /* 单票运单号标签层 */
 .china-map .mp-tag rect {
   fill: rgba(255, 255, 255, 0.95);
-  stroke: #0891b2;
+  stroke: #1677ff;
   stroke-width: 1;
   transition: fill 0.15s;
 }
 
 .china-map .mp-tag text {
-  fill: #0e7490;
+  fill: #0958d9;
   font-weight: 600;
   pointer-events: none;
 }
 
 .china-map .mp-tag-line {
-  stroke: #0891b2;
+  stroke: #1677ff;
   stroke-width: 1;
 }
 
 .china-map .mp-tag-dot {
-  fill: #0891b2;
+  fill: #1677ff;
   stroke: #ffffff;
   stroke-width: 1;
 }
 
 .china-map .mp-tag:hover rect {
-  fill: #ecfeff;
+  fill: #e6f4ff;
 }
 
 .china-map .mp-tag.active rect {
-  fill: #0891b2;
+  fill: #1677ff;
 }
 
 .china-map .mp-tag.active text {
@@ -573,19 +606,27 @@ defineExpose({ render })
 
 .china-map .mp-route {
   fill: none;
-  stroke: rgba(8, 145, 178, 0.42);
+  stroke: rgba(22, 119, 255, 0.35);
   stroke-width: 2.2;
   stroke-linecap: round;
 }
 
+.china-map .mp-route.is-alert {
+  stroke: rgba(245, 34, 45, 0.35);
+}
+
 .china-map .mp-route-flow {
   fill: none;
-  stroke: #0891b2;
+  stroke: #1677ff;
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-dasharray: 6 15;
-  opacity: 0.85;
+  opacity: 0.9;
   animation: china-map-flow 2s linear infinite;
+}
+
+.china-map .mp-route-flow.is-alert {
+  stroke: #f5222d;
 }
 
 @keyframes china-map-flow {
@@ -598,7 +639,7 @@ defineExpose({ render })
 }
 
 .china-map .mp-stop {
-  fill: rgba(8, 145, 178, 0.85);
+  fill: #1677ff;
   stroke: #fff;
   stroke-width: 1;
   transition: fill 0.15s;
@@ -610,21 +651,21 @@ defineExpose({ render })
 }
 
 .china-map .mp-stop.mp-clickable:hover {
-  fill: #0e7490;
+  fill: #0958d9;
 }
 
 .china-map .mp-marker .mp-core {
-  fill: #0891b2;
+  fill: #1677ff;
   stroke: #ffffff;
   stroke-width: 1.6;
 }
 
 .china-map .mp-marker.start .mp-core {
-  fill: #10b981;
+  fill: #52c41a;
 }
 
 .china-map .mp-marker.end .mp-core {
-  fill: #f97316;
+  fill: #fa8c16;
 }
 
 .china-map .mp-marker text {
@@ -635,7 +676,7 @@ defineExpose({ render })
 }
 
 .china-map .mp-marker .mp-pulse {
-  fill: rgba(8, 145, 178, 0.22);
+  fill: rgba(22, 119, 255, 0.2);
   animation: china-map-pulse 2s ease-out infinite;
   transform-box: fill-box;
   transform-origin: center;
@@ -653,8 +694,8 @@ defineExpose({ render })
 }
 
 .china-map .mp-ring {
-  fill: rgba(8, 145, 178, 0.08);
-  stroke: #0891b2;
+  fill: rgba(22, 119, 255, 0.08);
+  stroke: #1677ff;
   stroke-width: 2;
   stroke-dasharray: 4 3;
   pointer-events: none;
@@ -692,7 +733,7 @@ defineExpose({ render })
   color: #334155;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid #e6eef5;
-  border-left: 3px solid #0891b2;
+  border-left: 3px solid #1677ff;
   border-radius: 10px;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
   flex-wrap: wrap;
@@ -715,20 +756,20 @@ defineExpose({ render })
 }
 
 .china-map .mp-legend .lg-start {
-  background: #10b981;
+  background: #52c41a;
 }
 
 .china-map .mp-legend .lg-end {
-  background: #f97316;
+  background: #fa8c16;
 }
 
 .china-map .mp-legend .lg-cur {
-  background: #0891b2;
-  box-shadow: 0 0 0 4px rgba(8, 145, 178, 0.16);
+  background: #1677ff;
+  box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.16);
 }
 
 .china-map .mp-legend .lg-stop {
-  background: rgba(8, 145, 178, 0.85);
+  background: #1677ff;
   border-radius: 2px;
 }
 </style>
