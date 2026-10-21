@@ -38,6 +38,19 @@ interface TaskMeta {
   origin: { city: string; lng: number; lat: number } | null
   dest: { city: string; lng: number; lat: number } | null
   province: string | null
+  /** 超时未上报位置：线路标红，独立统计 */
+  abnormal: boolean
+}
+
+/** 司机按规定每小时上报一次位置，超过 1 小时未回传即视为异常线路 */
+const REPORT_TIMEOUT_MS = 60 * 60 * 1000
+
+function isReportOverdue(task: TrackingOverviewTask): boolean {
+  if (task.status !== 'IN_TRANSIT') return false
+  const raw = task.latest_track?.report_time
+  const time = raw ? new Date(String(raw).replace(' ', 'T')).getTime() : NaN
+  if (!Number.isFinite(time)) return true
+  return Date.now() - time > REPORT_TIMEOUT_MS
 }
 
 // ---- 数据加载 ----
@@ -103,6 +116,7 @@ const metaList = computed<TaskMeta[]>(() =>
     origin: geoOf(task.ship_location),
     dest: geoOf(task.delivery_address),
     province: matchProvince(task.delivery_address) ?? null,
+    abnormal: isReportOverdue(task),
   }))
 )
 
@@ -176,6 +190,9 @@ const vehicleCount = computed(() => {
   return set.size
 })
 
+/** 异常单数：全量统计（不受省份/城市筛选影响），与顶部 KPI 口径一致 */
+const abnormalCount = computed(() => metaList.value.filter((meta) => meta.abnormal).length)
+
 const routeCount = computed(() => {
   const set = new Set<string>()
   metaList.value.forEach((meta) => {
@@ -208,21 +225,14 @@ const heat = computed<Record<string, number> | null>(() =>
 )
 
 // ---- 地图：线路 / 聚合气泡 / 运单号标签 ----
+/**
+ * 总览飞线固定连接「发运地 → 交付地」两端城市点：
+ * 上报名只是途中位置，若按上报点收尾，弧线会断在半路、和目的地圆点对不上。
+ */
 function routePoints(meta: TaskMeta): Array<[number, number]> {
   const pts: Array<[number, number]> = []
-  const push = (lng: number, lat: number) => {
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return
-    const last = pts[pts.length - 1]
-    if (last && Math.abs(last[0] - lng) < 0.01 && Math.abs(last[1] - lat) < 0.01) return
-    pts.push([lng, lat])
-  }
-
-  if (meta.origin) push(meta.origin.lng, meta.origin.lat)
-  ;(meta.task.points ?? []).forEach(([lng, lat]) => push(Number(lng), Number(lat)))
-  if (['ARRIVED', 'FINISHED'].includes(meta.task.status) && meta.dest) {
-    push(meta.dest.lng, meta.dest.lat)
-  }
-  if (pts.length < 2 && meta.dest) push(meta.dest.lng, meta.dest.lat)
+  if (meta.origin) pts.push([meta.origin.lng, meta.origin.lat])
+  if (meta.dest) pts.push([meta.dest.lng, meta.dest.lat])
   return pts
 }
 
@@ -233,7 +243,8 @@ const mapLinks = computed(() => {
       id: meta.task.id,
       points: routePoints(meta),
       active: false,
-      label: `${meta.task.task_no} · ${meta.origin?.city ?? '-'} → ${meta.dest?.city ?? '-'}`,
+      alert: meta.abnormal,
+      label: `${meta.task.task_no} · ${meta.origin?.city ?? '-'} → ${meta.dest?.city ?? '-'}${meta.abnormal ? '（超时未上报）' : ''}`,
     }))
     .filter((link) => link.points.length >= 2)
 })
@@ -243,6 +254,7 @@ interface CityCluster {
   lng: number
   lat: number
   tasks: TrackingOverviewTask[]
+  abnormal: number
 }
 
 const clusters = computed<CityCluster[]>(() => {
@@ -251,8 +263,18 @@ const clusters = computed<CityCluster[]>(() => {
     if (!meta.dest) return
     const key = meta.dest.city
     const hit = map.get(key)
-    if (hit) hit.tasks.push(meta.task)
-    else map.set(key, { city: key, lng: meta.dest.lng, lat: meta.dest.lat, tasks: [meta.task] })
+    if (hit) {
+      hit.tasks.push(meta.task)
+      if (meta.abnormal) hit.abnormal += 1
+    } else {
+      map.set(key, {
+        city: key,
+        lng: meta.dest.lng,
+        lat: meta.dest.lat,
+        tasks: [meta.task],
+        abnormal: meta.abnormal ? 1 : 0,
+      })
+    }
   })
   return [...map.values()]
 })
@@ -265,36 +287,58 @@ const mapBubbles = computed(() => {
   if (selectedId.value !== null) return []
   return clusters.value.map((cluster) => ({
     key: cluster.city,
-    name: cluster.tasks.length > 1 ? cluster.city : '',
+    name: cluster.city,
     lng: cluster.lng,
     lat: cluster.lat,
     count: cluster.tasks.length,
     hideCount: cluster.tasks.length === 1,
     active: cityFilter.value === cluster.city,
-    tip: `${cluster.city} · ${cluster.tasks.length} 单\n${cluster.tasks.map((t) => t.task_no).join('\n')}`,
+    alert: cluster.abnormal > 0,
+    tip: `${cluster.city} · ${cluster.tasks.length} 单${cluster.abnormal ? `（异常 ${cluster.abnormal} 单）` : ''}\n${cluster.tasks.map((t) => t.task_no).join('\n')}`,
   }))
 })
 
 const provincesHL = computed(() => (provinceFilter.value ? [provinceFilter.value] : []))
+
+/** 发运枢纽：同城发运聚成一个汇聚点，飞线从这里放射出去 */
+const mapHubs = computed(() => {
+  if (selectedId.value !== null) return []
+  const acc = new Map<string, { key: string; name: string; lng: number; lat: number; count: number }>()
+  visibleMeta.value.forEach((meta) => {
+    if (!meta.origin) return
+    const hit = acc.get(meta.origin.city)
+    if (hit) hit.count += 1
+    else
+      acc.set(meta.origin.city, {
+        key: meta.origin.city,
+        name: meta.origin.city,
+        lng: meta.origin.lng,
+        lat: meta.origin.lat,
+        count: 1,
+      })
+  })
+  return [...acc.values()].map((hub) => ({ ...hub, tip: `${hub.name} · 发运 ${hub.count} 单` }))
+})
 
 const mapLegend = computed(() => {
   if (selectedId.value !== null) {
     return [
       { color: '#52c41a', text: `起始地：${cityLabel(focusTask.value?.ship_location)}` },
       { color: '#f5222d', text: `目的地：${cityLabel(focusTask.value?.delivery_address)}` },
-      { color: '#1677ff', text: '位置回传点（点击查看）' },
+      { color: '#0891b2', text: '位置回传点（点击查看）' },
     ]
   }
   if (isHistory.value) {
     return [
-      { color: '#f56a00', text: '到达热度（越深单量越多）' },
-      { color: 'rgba(19,168,168,.8)', text: '历史轨迹（点击定位运单）' },
-      { color: '#13a8a8', text: '圆点=单票，气泡数字=同城单量' },
+      { color: 'linear-gradient(90deg,#FFF1E0,#FDBA74,#F97316)', text: '到达热度（越深单量越多）' },
+      { color: 'linear-gradient(90deg,rgba(8,145,178,.25),#06B6D4)', text: '历史轨迹（点击定位运单）' },
+      { color: '#0891b2', text: '圆点=单票，气泡数字=同城单量' },
     ]
   }
   return [
-    { color: 'rgba(22,119,255,.7)', text: '在途轨迹（点击定位运单）' },
-    { color: '#1677ff', text: '圆点=单票，气泡数字=同城单量' },
+    { color: 'linear-gradient(90deg,rgba(8,145,178,.25),#06B6D4)', text: '在途线路（点击定位运单）' },
+    { color: 'linear-gradient(90deg,rgba(244,63,94,.3),#F43F5E)', text: '异常线路（超 1 小时未上报）' },
+    { color: '#0891b2', text: '圆点=单票，气泡数字=同城单量' },
   ]
 })
 
@@ -502,12 +546,17 @@ function handleKeydown(event: KeyboardEvent) {
           {{ topProvince ? `TOP：${topProvince.name} · ${topProvince.count} 单` : '暂无省份数据' }}
         </div>
       </div>
-      <div class="card kpi kpi--green">
-        <div class="kpi__label">运输车辆</div>
+      <div class="card kpi kpi--indigo">
+        <div class="kpi__label">{{ isHistory ? '运输车辆' : '在途整车' }}</div>
         <div class="kpi__value">{{ vehicleCount }}<span>台</span></div>
-        <div class="kpi__sub">按 VIN 去重</div>
+        <div class="kpi__sub">按 VIN 去重 · 一车一单</div>
       </div>
-      <div class="card kpi kpi--orange">
+      <div v-if="!isHistory" class="card kpi kpi--danger">
+        <div class="kpi__label">异常运单</div>
+        <div class="kpi__value kpi__value--danger">{{ abnormalCount }}<span>单</span></div>
+        <div class="kpi__sub">超 1 小时未上报位置</div>
+      </div>
+      <div class="card kpi kpi--amber">
         <div class="kpi__label">运输线路</div>
         <div class="kpi__value">{{ routeCount }}<span>条</span></div>
         <div class="kpi__sub">{{ isHistory ? '历史轨迹回看' : '起点至目的地去重' }}</div>
@@ -545,6 +594,7 @@ function handleKeydown(event: KeyboardEvent) {
             :heat="heat"
             :bubbles="mapBubbles"
             :links="mapLinks"
+            :hubs="mapHubs"
             :legend="mapLegend"
             height="clamp(340px, calc(100vh - 330px), 560px)"
             @select="selectTrack"
@@ -570,11 +620,12 @@ function handleKeydown(event: KeyboardEvent) {
               v-for="meta in visibleMeta"
               :key="meta.task.id"
               class="ov-row"
-              :class="{ selected: meta.task.id === selectedId }"
+              :class="{ selected: meta.task.id === selectedId, 'is-alert': meta.abnormal }"
               @click="openTask(meta.task.id)"
             >
               <div class="ov-row__l1">
                 <b>{{ meta.task.task_no }}</b>
+                <span v-if="meta.abnormal" class="ov-row__badge">超时未上报</span>
                 <StatusTag type="task" :value="meta.task.status" />
               </div>
               <div class="ov-row__route">
@@ -802,7 +853,8 @@ function handleKeydown(event: KeyboardEvent) {
 /* ---- KPI ---- */
 .ov-kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* 窄屏自动换行，宽屏 5 张卡片同排 */
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -820,28 +872,36 @@ function handleKeydown(event: KeyboardEvent) {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: #1677ff;
+  background: #94a3b8;
 }
 
 .kpi--blue::before {
-  background: #1677ff;
+  background: #3b82f6;
 }
 
 .kpi--cyan::before {
-  background: #08979c;
+  background: #06b6d4;
 }
 
-.kpi--green::before {
-  background: #389e0d;
+.kpi--indigo::before {
+  background: #6366f1;
 }
 
-.kpi--orange::before {
-  background: #fa8c16;
+.kpi--danger::before {
+  background: #f43f5e;
+}
+
+.kpi--amber::before {
+  background: #f59e0b;
+}
+
+.kpi__value--danger {
+  color: #e11d48;
 }
 
 .kpi__label {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #64748b;
 }
 
 .kpi__value {
@@ -849,20 +909,20 @@ function handleKeydown(event: KeyboardEvent) {
   font-size: 26px;
   font-weight: 700;
   line-height: 1.15;
-  color: #262626;
+  color: #0f172a;
 }
 
 .kpi__value > span {
   margin-left: 4px;
   font-size: 12px;
   font-weight: 400;
-  color: #8c8c8c;
+  color: #64748b;
 }
 
 .kpi__sub {
   margin-top: 5px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #64748b;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -968,6 +1028,29 @@ function handleKeydown(event: KeyboardEvent) {
   background: #f0f7ff;
   border-left: 3px solid #1677ff;
   padding-left: 11px;
+}
+
+/* 异常线路：左侧红色提示条 + 红色上报时间 */
+.ov-row.is-alert:not(.selected) {
+  box-shadow: inset 3px 0 0 #f43f5e;
+}
+
+.ov-row.is-alert .ov-row__time {
+  color: #e11d48;
+}
+
+.ov-row__badge {
+  display: inline-flex;
+  align-items: center;
+  margin-right: auto;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: rgba(244, 63, 94, 0.1);
+  color: #e11d48;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .ov-row__l1 {

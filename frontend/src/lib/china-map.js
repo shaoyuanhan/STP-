@@ -115,6 +115,43 @@ const toXY = (lng, lat) => [
   +(((M.lat1 - lat)) * M.s).toFixed(1),
 ];
 
+/** 省份名称标注点：取面积最大子路径的重心，避免岛屿/飞地拉偏 */
+function provinceLabelPoint(d) {
+  let best = null;
+  let bestArea = 0;
+  for (const sub of String(d).split('M')) {
+    const nums = sub.match(/-?\d+(?:\.\d+)?/g) || [];
+    if (nums.length < 6) continue;
+    const pts = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) pts.push([Number(nums[i]), Number(nums[i + 1])]);
+    let area = 0;
+    let cx = 0;
+    let cy = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [x0, y0] = pts[i];
+      const [x1, y1] = pts[(i + 1) % pts.length];
+      const cross = x0 * y1 - x1 * y0;
+      area += cross;
+      cx += (x0 + x1) * cross;
+      cy += (y0 + y1) * cross;
+    }
+    area /= 2;
+    if (Math.abs(area) < 4) continue;
+    if (Math.abs(area) > Math.abs(bestArea)) {
+      bestArea = area;
+      best = { x: cx / (6 * area), y: cy / (6 * area), area: Math.abs(area) };
+    }
+  }
+  return best;
+}
+
+const PROV_LABELS = M.provinces
+  .map((p) => {
+    const pt = provinceLabelPoint(p.d);
+    return pt ? { name: p.name, x: +pt.x.toFixed(1), y: +pt.y.toFixed(1), area: pt.area } : null;
+  })
+  .filter(Boolean);
+
 /** 多点平滑曲线 (Catmull-Rom → Bezier) */
 function smoothPath(pts) {
   if (pts.length < 2) return '';
@@ -127,6 +164,33 @@ function smoothPath(pts) {
     d += ` C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0]},${p2[1]}`;
   }
   return d;
+}
+
+/** 飞线弧线：起终点 + 固定侧向控制点，保证所有弧线拱起方向一致 */
+function flyArc(a, b) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const ctrl = [
+    +((a[0] + b[0]) / 2 - dy * 0.16).toFixed(1),
+    +((a[1] + b[1]) / 2 + dx * 0.16).toFixed(1),
+  ];
+  return { ctrl, d: `M${a[0]},${a[1]} Q${ctrl[0]},${ctrl[1]} ${b[0]},${b[1]}` };
+}
+
+/** 二次贝塞尔取点（用于沿线方向箭头） */
+function quadAt(a, c, b, t) {
+  const mt = 1 - t;
+  return [
+    mt * mt * a[0] + 2 * mt * t * c[0] + t * t * b[0],
+    mt * mt * a[1] + 2 * mt * t * c[1] + t * t * b[1],
+  ];
+}
+
+/** 二次贝塞尔切线角度（箭头朝向） */
+function quadAngle(a, c, b, t) {
+  const dx = 2 * (1 - t) * (c[0] - a[0]) + 2 * t * (b[0] - c[0]);
+  const dy = 2 * (1 - t) * (c[1] - a[1]) + 2 * t * (b[1] - c[1]);
+  return +(Math.atan2(dy, dx) * 180 / Math.PI).toFixed(1);
 }
 
 /** 地图画布基准（与 svg 基础 viewBox 一致） */
@@ -192,13 +256,13 @@ function computeView(el, points) {
 function renderChinaMap(el, opts = {}) {
   const {
     origin, dest, stops = [], cur, active, provincesHL = [],
-    fit = true, heat = null, bubbles = [], tags = [], links = [], legend = null,
+    fit = true, heat = null, bubbles = [], tags = [], links = [], hubs = [], legend = null,
     keepView = false, mode = 'transit',
     onSelect, onSelectTask, onSelectProvince, onSelectBubble,
   } = opts;
 
-  /** 到达热度 4 级暖色：单量越多越深，与蓝色线路形成对比 */
-  const HEAT_COLORS = ['#ffe7b8', '#ffc580', '#ff9c40', '#f56a00'];
+  /** 到达热度 4 级暖色：单量越多越深，与青绿飞线形成冷暖对比 */
+  const HEAT_COLORS = ['#FFF1E0', '#FFE0C2', '#FDBA74', '#F97316'];
   const heatColor = (ratio) =>
     HEAT_COLORS[ratio >= 0.99 ? 3 : ratio >= 0.66 ? 2 : ratio >= 0.33 ? 1 : 0];
 
@@ -213,6 +277,34 @@ function renderChinaMap(el, opts = {}) {
   const scale = Math.min(cw / view.w, ch / view.h) || 1;
   const u = (px) => +(px / scale).toFixed(2);
 
+  // ---- 标注避让：文字分两组，城市/枢纽名互相避让，省名只与省名避让 ----
+  const textRects = [];
+  const provRects = [];
+  const solidBoxes = [];
+  const rectHit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  const textWidth = (text, px) => {
+    let em = 0;
+    for (const ch of String(text)) em += /[\u4e00-\u9fa5]/.test(ch) ? 1 : 0.55;
+    return (em * px) / scale;
+  };
+  const placeLabel = (text, x, y, px, makeCands, group = textRects, ignoreSolid = false) => {
+    const w = textWidth(text, px);
+    const h = (px * 1.3) / scale;
+    for (const [dx, dy, anchor] of makeCands(w, h)) {
+      const left = anchor === 'middle' ? x + dx - w / 2 : anchor === 'start' ? x + dx : x + dx - w;
+      const rect = { x: left, y: y + dy - h / 2, w, h };
+      if (!ignoreSolid && solidBoxes.some((b) => rectHit(rect, b))) continue;
+      if (group.some((b) => rectHit(rect, b))) continue;
+      group.push(rect);
+      return { x: +(x + dx).toFixed(1), y: +(y + dy).toFixed(1), anchor };
+    }
+    return null;
+  };
+  const addDotBox = (x, y, rPx) => {
+    const half = (rPx + 3) / scale;
+    solidBoxes.push({ x: x - half, y: y - half, w: half * 2, h: half * 2 });
+  };
+
   const heatMax = heat ? Math.max(0, ...Object.values(heat)) : 0;
   const provPaths = M.provinces.map((p) => {
     const n = heat ? heat[p.name] || 0 : 0;
@@ -220,6 +312,28 @@ function renderChinaMap(el, opts = {}) {
     const style = heat && n ? ` style="fill:${heatColor(ratio)}"` : '';
     return `<path class="mp-prov${provincesHL.includes(p.name) ? ' hl' : ''}${heat ? ' mp-heat' : ''}" d="${p.d}" data-name="${p.name}"${heat ? ` data-province="${p.name}"` : ''}${style} vector-effect="non-scaling-stroke"><title>${p.name}${heat && n ? ` · ${n} 单` : ''}</title></path>`;
   }).join('');
+
+  // 发运枢纽坐标（文字稍后与城市名统一做避让布局）
+  const hubEntries = hubs
+    .map((h) => {
+      const [x, y] = toXY(Number(h.lng), Number(h.lat));
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      addDotBox(x, y, 8);
+      return { h, x, y };
+    })
+    .filter(Boolean);
+
+  // 枢纽名优先级最高（飞线汇聚点），先占位，城市名随后避让
+  const hubLabels = hubEntries.map(({ h, x, y }) =>
+    h.name
+      ? placeLabel(h.name, x, y, 11, (w, hgt) => [
+          [0, -(15 / scale) - hgt / 2, 'middle'],
+          [0, 15 / scale + hgt / 2, 'middle'],
+          [15 / scale + w / 2, hgt * 0.3, 'start'],
+          [-15 / scale - w / 2, hgt * 0.3, 'end'],
+        ])
+      : null
+  );
 
   // 运输路径：起点 → 历史位置点 → 当前位置 → 终点（平滑曲线）
   const routePts = [];
@@ -229,18 +343,59 @@ function renderChinaMap(el, opts = {}) {
   if (dest?.geo2) routePts.push(dest.geo2);
   const routeD = routePts.length >= 2 ? smoothPath(routePts) : '';
 
-  // 多运单线路（总览层）：点击可选中对应运单
-  const linkEls = links
-    .map((link) => {
+  // 多运单线路（总览层）：统一改成同向拱起的飞线弧，点击可选中对应运单
+  const linkParts = links
+    .map((link, idx) => {
       const pts = (link.points || [])
         .map(([lng, lat]) => [Number(lng), Number(lat)])
         .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat))
         .map(([lng, lat]) => toXY(lng, lat));
-      if (pts.length < 2) return '';
-      const d = smoothPath(pts);
-      // 透明加宽热区（16px）垫在线路下方：细线也能轻松点中
+      if (pts.length < 2) return null;
+      const start = pts[0];
+      const end = pts[pts.length - 1];
+      if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 1) return null;
+      const { ctrl, d } = flyArc(start, end);
+      const [ax, ay] = quadAt(start, ctrl, end, 0.68);
+      return {
+        link, idx, d, start, end,
+        ax: +ax.toFixed(1),
+        ay: +ay.toFixed(1),
+        angle: quadAngle(start, ctrl, end, 0.68),
+        len: Math.hypot(end[0] - start[0], end[1] - start[1]) * 1.12,
+      };
+    })
+    .filter(Boolean);
+
+  // 每条飞线一条起淡终实的同色渐变（userSpaceOnUse 沿起终点方向）
+  // 正常：青蓝；异常（超时未上报）：玫红
+  const linkDefs = linkParts.length
+    ? `<defs>${linkParts
+        .map(({ idx, start, end, link }) => {
+          const stops = link.alert
+            ? [['#FB7185', '0.3'], ['#F43F5E', '0.7'], ['#EF4444', '0.95']]
+            : [['#0891B2', '0.28'], ['#0E7490', '0.68'], ['#06B6D4', '0.95']];
+          return `<linearGradient id="mp-lg-${idx}" gradientUnits="userSpaceOnUse" x1="${start[0]}" y1="${start[1]}" x2="${end[0]}" y2="${end[1]}">
+              ${stops.map(([c, o], i) => `<stop offset="${[0, 0.55, 1][i]}" stop-color="${c}" stop-opacity="${o}"/>`).join('')}
+            </linearGradient>`;
+        })
+        .join('')}</defs>`
+    : '';
+
+  const linkEls = linkParts
+    .map(({ link, idx, d, start, end, ax, ay, angle, len }) => {
+      const pathId = `mp-path-${idx}`;
+      const dur = Math.max(2.6, Math.min(7.2, len / 150)).toFixed(2);
+      const tone = link.alert ? ' is-alert' : '';
       return `<path class="mp-link-hit" d="${d}" data-task-id="${link.id}" vector-effect="non-scaling-stroke"></path>
-        <path class="mp-link${link.active ? ' active' : ''}" d="${d}" data-task-id="${link.id}" vector-effect="non-scaling-stroke"><title>${link.label || ''}</title></path>`;
+        <path id="${pathId}" class="mp-link${link.active ? ' active' : ''}${tone}" d="${d}" stroke="url(#mp-lg-${idx})" data-task-id="${link.id}" vector-effect="non-scaling-stroke"><title>${link.label || ''}</title></path>
+        <circle class="mp-flow-dot${tone}" r="${u(2.2)}" data-r-px="2.2" pointer-events="none" vector-effect="non-scaling-stroke">
+          <animateMotion dur="${dur}s" begin="-${((idx % 8) * 0.55).toFixed(2)}s" repeatCount="indefinite" rotate="auto">
+            <mpath href="#${pathId}"/>
+          </animateMotion>
+        </circle>
+        <g class="mp-arrow${tone}" transform="translate(${ax},${ay}) rotate(${angle})" pointer-events="none">
+          <path d="M-1.2,-3.4 L6.4,0 L-1.2,3.4 Z"></path>
+        </g>`;
     })
     .join('');
 
@@ -264,23 +419,89 @@ function renderChinaMap(el, opts = {}) {
     )
     .join('');
 
-  // 聚合气泡（同城/同省单量）
-  const bubbleEls = bubbles
+  // 聚合气泡（同城/同省单量）：圆点先占位，城市名再按上下左右找空位
+  const bubbleEntries = bubbles
     .map((b) => {
       const lng = Number(b.lng);
       const lat = Number(b.lat);
-      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return '';
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
       const [x, y] = toXY(lng, lat);
       const count = Math.max(1, Number(b.count) || 1);
-      // hideCount：单票点位只画小圆点，不显示数字/名称，避免遮挡线路
-      const rPx = b.hideCount ? 5 : 8 + Math.min(10, Math.sqrt(count) * 3);
+      // hideCount：单票点位只画小圆点，不显示数字
+      const rPx = b.hideCount ? 4.5 : 8 + Math.min(10, Math.sqrt(count) * 3);
+      addDotBox(x, y, rPx + 2);
+      return { b, x, y, count, rPx, haloPx: rPx + 7 };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.count - a.count);
+
+  const bubbleEls = bubbleEntries
+    .map(({ b, x, y, count, rPx, haloPx }) => {
       const r = u(rPx);
-      return `<g class="mp-bubble${b.hideCount ? ' is-dot' : ''}${b.active ? ' active' : ''}" transform="translate(${x},${y})" data-bubble-key="${b.key}">
-        <circle r="${r}" data-r-px="${rPx}" vector-effect="non-scaling-stroke"/>
-        ${b.hideCount ? '' : `<text y="${u(4)}" data-fs-px="12" style="font-size:${u(12)}px">${count}</text>`}
-        ${!b.hideCount && b.name ? `<text class="mp-bubble-name" y="${+(r + u(13)).toFixed(1)}" data-fs-px="11" style="font-size:${u(11)}px">${b.name}</text>` : ''}
+      const label = b.name
+        ? placeLabel(b.name, x, y, 10.5, (w, h) => {
+            const off = (rPx + 3) / scale;
+            return [
+              [0, off + h / 2, 'middle'],
+              [0, -off - h / 2, 'middle'],
+              [off + w / 2, h * 0.3, 'start'],
+              [-off - w / 2, h * 0.3, 'end'],
+              [off * 0.85 + w / 2, off * 0.85, 'start'],
+              [-off * 0.85 - w / 2, off * 0.85, 'end'],
+            ];
+          })
+        : null;
+      return `<g class="mp-bubble${b.hideCount ? ' is-dot' : ''}${b.active ? ' active' : ''}${b.alert ? ' is-alert' : ''}" transform="translate(${x},${y})" data-bubble-key="${b.key}">
+        <circle class="mp-halo" r="${u(haloPx)}" data-r-px="${haloPx}"/>
+        <circle class="mp-core" r="${r}" data-r-px="${rPx}" vector-effect="non-scaling-stroke"/>
+        ${b.hideCount ? '' : `<text class="mp-count" y="${u(4)}" text-anchor="middle" data-fs-px="12" style="font-size:${u(12)}px">${count}</text>`}
+        ${
+          label
+            ? `<text class="mp-city-label" x="${(label.x - x).toFixed(1)}" y="${(label.y - y).toFixed(1)}" text-anchor="${label.anchor}" dominant-baseline="middle" data-fs-px="10.5" style="font-size:${u(10.5)}px">${b.name}</text>`
+            : ''
+        }
         <title>${b.tip || `${b.name || ''} · ${count} 单`}</title>
       </g>`;
+    })
+    .join('');
+
+  // 发运枢纽：青绿圆环 + 白描边 + 城市名（避让后落在圆点上方或两侧）
+  const hubEls = hubEntries
+    .map(({ h, x, y }, i) => {
+      const label = hubLabels[i];
+      return `<g class="mp-hub" transform="translate(${x},${y})">
+        <circle class="mp-hub-ring" r="${u(7)}" data-r-px="7"/>
+        <circle class="mp-hub-core" r="${u(3)}" data-r-px="3" vector-effect="non-scaling-stroke"/>
+        ${
+          label
+            ? `<text x="${(label.x - x).toFixed(1)}" y="${(label.y - y).toFixed(1)}" text-anchor="${label.anchor}" dominant-baseline="middle" data-fs-px="11" style="font-size:${u(11)}px">${h.name}</text>`
+            : ''
+        }
+        <title>${h.tip || `${h.name || ''} 发运`}</title>
+      </g>`;
+    })
+    .join('');
+
+  // 省名标注：只与其他省名避让，保证每个省都有名称；密集区会被城市名压住但不消失
+  const provLabelEls = [...PROV_LABELS]
+    .sort((a, b) => b.area - a.area)
+    .map(({ name, x, y }) => {
+      const cands = (w, h) => [
+        [0, 0, 'middle'],
+        [0, h * 1.15, 'middle'],
+        [0, -h * 1.15, 'middle'],
+        [w * 0.9, 0, 'middle'],
+        [-w * 0.9, 0, 'middle'],
+        [w * 0.9, h * 1.15, 'middle'],
+        [-w * 0.9, -h * 1.15, 'middle'],
+      ];
+      // 先避开圆点，实在没有空位就放宽圆点避让，仍保证省名之间不重叠
+      const hit =
+        placeLabel(name, x, y, 9.5, cands, provRects) ||
+        placeLabel(name, x, y, 9.5, cands, provRects, true) || { x, y };
+      return hit
+        ? `<text class="mp-prov-label" x="${hit.x}" y="${hit.y}" data-fs-px="9.5" style="font-size:${u(9.5)}px">${name}</text>`
+        : '';
     })
     .join('');
 
@@ -316,12 +537,15 @@ function renderChinaMap(el, opts = {}) {
   el.innerHTML = `
   <div class="mp-wrap mp-mode-${mode === 'history' ? 'history' : 'transit'}">
     <svg class="mp-svg" viewBox="${view.x} ${view.y} ${view.w} ${view.h}" preserveAspectRatio="xMidYMid meet" role="img">
+      ${linkDefs}
       <g class="mp-land">${provPaths}</g>
+      <g class="mp-prov-labels">${provLabelEls}</g>
       <path class="mp-outline" d="${M.outline}" vector-effect="non-scaling-stroke"/>
       <path class="mp-dash" d="${M.nineDash}" vector-effect="non-scaling-stroke"/>
       ${linkEls}
       ${routeD ? `<path class="mp-route" d="${routeD}" vector-effect="non-scaling-stroke"/><path class="mp-route-flow" d="${routeD}" vector-effect="non-scaling-stroke"/>` : ''}
       ${activeRing}
+      ${hubEls}
       ${stopDots}
       ${bubbleEls}
       ${tagEls}
@@ -345,7 +569,10 @@ function renderChinaMap(el, opts = {}) {
       ${
         Array.isArray(legend) && legend.length
           ? legend
-              .map((item) => `<span><i class="lg" style="background:${item.color}"></i>${item.text}</span>`)
+              .map(
+                (item) =>
+                  `<span><i class="lg${String(item.color).startsWith('linear-gradient') ? ' lg-bar' : ''}" style="background:${item.color}"></i>${item.text}</span>`
+              )
               .join('')
           : `<span><i class="lg lg-start"></i>起始地：${opts.originLabel || '-'}</span>
       <span><i class="lg lg-end"></i>目的地：${opts.destLabel || '-'}</span>

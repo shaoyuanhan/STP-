@@ -24,6 +24,8 @@ interface MapBubble {
   /** 悬停提示（缺省为「城市 · N 单」） */
   tip?: string
   active?: boolean
+  /** 异常（超时未上报）：红色标识 */
+  alert?: boolean
 }
 
 interface MapTag {
@@ -39,6 +41,17 @@ interface MapLink {
   points: Array<[number, number]>
   active?: boolean
   label?: string
+  /** 异常（超时未上报）：玫红虚线 + 红色光点 */
+  alert?: boolean
+}
+
+/** 发运枢纽：多条飞线的共同起点 */
+interface MapHub {
+  key: string
+  name: string
+  lng: number | string
+  lat: number | string
+  tip?: string
 }
 
 interface LegendItem {
@@ -89,6 +102,8 @@ const props = withDefaults(
     tags?: MapTag[]
     /** 多运单线路：{id, points, active, label} */
     links?: MapLink[]
+    /** 发运枢纽（飞线汇聚点）：{key, name, lng, lat, tip} */
+    hubs?: MapHub[]
     /** 自定义图例（缺省展示起终点图例） */
     legend?: LegendItem[] | null
     /** 容器高度（px） */
@@ -110,6 +125,7 @@ const props = withDefaults(
     bubbles: () => [],
     tags: () => [],
     links: () => [],
+    hubs: () => [],
     legend: null,
     height: 520,
   },
@@ -164,6 +180,7 @@ function render() {
     bubbles: props.bubbles,
     tags: props.tags,
     links: props.links,
+    hubs: props.hubs,
     legend: props.legend,
     originLabel: props.originLabel,
     destLabel: props.destLabel,
@@ -194,6 +211,7 @@ watch(
     props.bubbles,
     props.tags,
     props.links,
+    props.hubs,
     props.legend,
   ],
   render,
@@ -235,6 +253,7 @@ defineExpose({ render })
   flex: 1;
   width: 100%;
   min-height: 0;
+  background: #f7fafc;
   cursor: grab;
   touch-action: none;
 }
@@ -283,50 +302,93 @@ defineExpose({ render })
 }
 
 .china-map .mp-zoom button:hover {
-  background: #e6f4ff;
-  color: #1677ff;
+  background: #ecfeff;
+  color: #0891b2;
 }
 
 .china-map .mp-zoom button + button {
   border-top: 1px solid #f0f0f0;
 }
 
-/* 底图：中性浅灰，避免整屏偏蓝 */
+/* 底图：浅蓝灰，干净通透 */
 .china-map .mp-land path {
-  fill: #f3f6fa;
-  stroke: #e6ecf5;
+  fill: #edf3f9;
+  stroke: #c9d8e6;
   stroke-width: 0.6;
   transition: fill 0.2s;
 }
 
 .china-map .mp-land path:hover {
-  fill: #e9eff8;
+  fill: #e4eef7;
 }
 
 .china-map .mp-land path.hl {
-  fill: #fff4e6;
-  stroke: #fa8c16;
+  fill: #fff1e0;
+  stroke: #f97316;
   stroke-width: 1.2;
 }
 
-/* 省份热力层：填充由渲染器内联（暖色，单量越多越深） */
+/* 省份热力层：填充由渲染器内联（浅杏 → 亮橙，单量越多越深） */
 .china-map .mp-land path.mp-heat {
-  stroke: rgba(255, 255, 255, 0.85);
+  stroke: rgba(255, 255, 255, 0.9);
 }
 
 .china-map .mp-land path.mp-heat.hl {
-  stroke: #d4380d;
+  stroke: #f97316;
   stroke-width: 1.6;
 }
 
-/* 多运单线路层 */
+/* 省名标注：浅灰蓝、带白色衬底，弱于线路与城市名 */
+.china-map .mp-prov-labels {
+  pointer-events: none;
+}
+
+.china-map .mp-prov-label {
+  fill: #93a5b7;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: rgba(247, 250, 252, 0.85);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+
+/* 发运枢纽：多条飞线的汇聚点 */
+.china-map .mp-hub {
+  pointer-events: none;
+}
+
+.china-map .mp-hub-ring {
+  fill: rgba(8, 145, 178, 0.1);
+  stroke: rgba(8, 145, 178, 0.42);
+  stroke-width: 1;
+}
+
+.china-map .mp-hub-core {
+  fill: #0891b2;
+  stroke: #ffffff;
+  stroke-width: 1.6;
+}
+
+.china-map .mp-hub text {
+  fill: #0e7490;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* 飞线层：起淡终实的青蓝渐变 + 轻微同色投影 */
 .china-map .mp-link {
   fill: none;
-  stroke: rgba(22, 119, 255, 0.7);
-  stroke-width: 2.2;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: stroke 0.15s, stroke-width 0.15s;
+  filter: drop-shadow(0 0 5px rgba(8, 145, 178, 0.28));
+  transition: stroke 0.15s, stroke-width 0.15s, filter 0.15s;
 }
 
 .china-map .mp-link-hit {
@@ -340,118 +402,155 @@ defineExpose({ render })
 
 .china-map .mp-link:hover,
 .china-map .mp-link-hit:hover + .mp-link {
-  stroke: #0958d9;
-  stroke-width: 2.8;
+  stroke: #0891b2;
+  stroke-width: 2.6;
+  filter: drop-shadow(0 0 7px rgba(8, 145, 178, 0.42));
 }
 
 .china-map .mp-link.active {
-  stroke: #fa8c16;
+  stroke: #f97316;
   stroke-width: 3;
+  filter: drop-shadow(0 0 7px rgba(249, 115, 22, 0.35));
 }
 
-/* 聚合气泡层：白底 + 彩色描边，数量用描边色，避免整图一坨蓝 */
-.china-map .mp-bubble circle {
-  fill: rgba(255, 255, 255, 0.96);
-  stroke: #1677ff;
-  stroke-width: 2;
-  transition: fill 0.15s, stroke 0.15s;
+/* 异常线路：玫红虚线 + 红色光晕，和正常线路一眼区分 */
+.china-map .mp-link.is-alert {
+  stroke-dasharray: 7 5;
+  filter: drop-shadow(0 0 6px rgba(244, 63, 94, 0.35));
 }
 
-.china-map .mp-bubble text {
-  fill: #1677ff;
+.china-map .mp-link.is-alert:hover,
+.china-map .mp-link-hit:hover + .mp-link.is-alert {
+  filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.5));
+}
+
+/* 沿线流动光点（对应 ECharts effect 的巡航光点） */
+.china-map .mp-flow-dot {
+  fill: #0891b2;
+  opacity: 0.85;
+  pointer-events: none;
+  filter: drop-shadow(0 0 2px rgba(8, 145, 178, 0.45));
+}
+
+.china-map .mp-flow-dot.is-alert {
+  fill: #f43f5e;
+  filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.55));
+}
+
+/* 飞线方向箭头 */
+.china-map .mp-arrow path {
+  fill: #0891b2;
+  opacity: 0.78;
+}
+
+.china-map .mp-arrow.is-alert path {
+  fill: #f43f5e;
+}
+
+/* 聚合气泡层：白底青边 + 柔和投影，数字用深青蓝 */
+.china-map .mp-bubble .mp-count {
+  fill: #0e7490;
   font-weight: 600;
-  text-anchor: middle;
   pointer-events: none;
 }
 
-.china-map .mp-bubble .mp-bubble-name {
-  fill: #262626;
-  font-weight: 500;
-  paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.9);
-  stroke-width: 3px;
+.china-map .mp-bubble .mp-core {
+  fill: rgba(255, 255, 255, 0.92);
+  stroke: #0891b2;
+  stroke-width: 1.8;
+  filter: drop-shadow(0 1px 3px rgba(8, 145, 178, 0.25));
+  transition: fill 0.15s, stroke 0.15s;
 }
 
-.china-map .mp-bubble.is-dot circle {
-  fill: #1677ff;
+.china-map .mp-bubble .mp-halo {
+  fill: rgba(8, 145, 178, 0.14);
+  pointer-events: none;
+}
+
+/* 异常城市：红色描边 + 红色光晕与数字 */
+.china-map .mp-bubble.is-alert .mp-core {
+  stroke: #f43f5e;
+  filter: drop-shadow(0 1px 3px rgba(244, 63, 94, 0.3));
+}
+
+.china-map .mp-bubble.is-alert .mp-halo {
+  fill: rgba(244, 63, 94, 0.15);
+}
+
+.china-map .mp-bubble.is-alert .mp-count {
+  fill: #be123c;
+}
+
+.china-map .mp-bubble.is-dot.is-alert .mp-core {
+  fill: #f43f5e;
+}
+
+/* 城市名标注：深灰蓝 + 白色文字衬底，避免与线路/气泡重叠时看不清 */
+.china-map .mp-city-label {
+  fill: #334155;
+  font-weight: 500;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.china-map .mp-bubble.is-dot .mp-core {
+  fill: #0891b2;
   stroke: #ffffff;
   stroke-width: 2;
 }
 
-.china-map .mp-bubble:hover circle {
-  fill: #e6f4ff;
+.china-map .mp-bubble:hover .mp-core {
+  fill: #ecfeff;
+  stroke: #0891b2;
 }
 
-.china-map .mp-bubble.active circle {
-  fill: #fa8c16;
+.china-map .mp-bubble.active .mp-core {
+  fill: #f97316;
   stroke: #ffffff;
 }
 
-.china-map .mp-bubble.active text {
+.china-map .mp-bubble.active .mp-halo {
+  fill: rgba(249, 115, 22, 0.16);
+}
+
+.china-map .mp-bubble.active .mp-count {
   fill: #ffffff;
-}
-
-/* 历史视角：线路与气泡改用青绿色，与暖色热力区分 */
-.china-map .mp-mode-history .mp-link {
-  stroke: rgba(19, 168, 168, 0.78);
-}
-
-.china-map .mp-mode-history .mp-link:hover,
-.china-map .mp-mode-history .mp-link-hit:hover + .mp-link {
-  stroke: #08979c;
-}
-
-.china-map .mp-mode-history .mp-bubble circle {
-  stroke: #13a8a8;
-}
-
-.china-map .mp-mode-history .mp-bubble text {
-  fill: #0b7c7c;
-}
-
-.china-map .mp-mode-history .mp-bubble.is-dot circle {
-  fill: #13a8a8;
-}
-
-.china-map .mp-mode-history .mp-bubble:hover circle {
-  fill: #e6fffb;
-}
-
-.china-map .mp-mode-history .mp-bubble.active circle {
-  fill: #fa8c16;
 }
 
 /* 单票运单号标签层 */
 .china-map .mp-tag rect {
   fill: rgba(255, 255, 255, 0.95);
-  stroke: #1677ff;
+  stroke: #0891b2;
   stroke-width: 1;
   transition: fill 0.15s;
 }
 
 .china-map .mp-tag text {
-  fill: #1677ff;
+  fill: #0e7490;
   font-weight: 600;
   pointer-events: none;
 }
 
 .china-map .mp-tag-line {
-  stroke: #1677ff;
+  stroke: #0891b2;
   stroke-width: 1;
 }
 
 .china-map .mp-tag-dot {
-  fill: #1677ff;
+  fill: #0891b2;
   stroke: #ffffff;
   stroke-width: 1;
 }
 
 .china-map .mp-tag:hover rect {
-  fill: #e8f2ff;
+  fill: #ecfeff;
 }
 
 .china-map .mp-tag.active rect {
-  fill: #1677ff;
+  fill: #0891b2;
 }
 
 .china-map .mp-tag.active text {
@@ -460,13 +559,13 @@ defineExpose({ render })
 
 .china-map .mp-outline {
   fill: none;
-  stroke: #c9d4e3;
+  stroke: #c9d8e6;
   stroke-width: 1;
 }
 
 .china-map .mp-dash {
   fill: none;
-  stroke: #a9b8cb;
+  stroke: #b9ccde;
   stroke-width: 1;
   stroke-dasharray: 6 4;
   opacity: 0.8;
@@ -474,23 +573,24 @@ defineExpose({ render })
 
 .china-map .mp-route {
   fill: none;
-  stroke: rgba(22, 119, 255, 0.4);
-  stroke-width: 2.5;
+  stroke: rgba(8, 145, 178, 0.42);
+  stroke-width: 2.2;
   stroke-linecap: round;
 }
 
 .china-map .mp-route-flow {
   fill: none;
-  stroke: #1677ff;
-  stroke-width: 2.5;
+  stroke: #0891b2;
+  stroke-width: 2.2;
   stroke-linecap: round;
-  stroke-dasharray: 8 14;
-  animation: china-map-flow 1.6s linear infinite;
+  stroke-dasharray: 6 15;
+  opacity: 0.85;
+  animation: china-map-flow 2s linear infinite;
 }
 
 @keyframes china-map-flow {
   from {
-    stroke-dashoffset: 22;
+    stroke-dashoffset: 21;
   }
   to {
     stroke-dashoffset: 0;
@@ -498,7 +598,7 @@ defineExpose({ render })
 }
 
 .china-map .mp-stop {
-  fill: rgba(22, 119, 255, 0.75);
+  fill: rgba(8, 145, 178, 0.85);
   stroke: #fff;
   stroke-width: 1;
   transition: fill 0.15s;
@@ -510,32 +610,32 @@ defineExpose({ render })
 }
 
 .china-map .mp-stop.mp-clickable:hover {
-  fill: #0958d9;
+  fill: #0e7490;
 }
 
 .china-map .mp-marker .mp-core {
-  fill: #1677ff;
+  fill: #0891b2;
   stroke: #ffffff;
   stroke-width: 1.6;
 }
 
 .china-map .mp-marker.start .mp-core {
-  fill: #52c41a;
+  fill: #10b981;
 }
 
 .china-map .mp-marker.end .mp-core {
-  fill: #f5222d;
+  fill: #f97316;
 }
 
 .china-map .mp-marker text {
-  fill: #262626;
+  fill: #334155;
   paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.85);
+  stroke: rgba(255, 255, 255, 0.9);
   font-weight: 600;
 }
 
 .china-map .mp-marker .mp-pulse {
-  fill: rgba(22, 119, 255, 0.25);
+  fill: rgba(8, 145, 178, 0.22);
   animation: china-map-pulse 2s ease-out infinite;
   transform-box: fill-box;
   transform-origin: center;
@@ -553,45 +653,15 @@ defineExpose({ render })
 }
 
 .china-map .mp-ring {
-  fill: rgba(22, 119, 255, 0.08);
-  stroke: #1677ff;
+  fill: rgba(8, 145, 178, 0.08);
+  stroke: #0891b2;
   stroke-width: 2;
   stroke-dasharray: 4 3;
   pointer-events: none;
 }
 
-/* 单运单详情（历史视角）同样用青绿，保持与总览一致 */
-.china-map .mp-mode-history .mp-route {
-  stroke: rgba(19, 168, 168, 0.45);
-}
-
-.china-map .mp-mode-history .mp-route-flow {
-  stroke: #13a8a8;
-}
-
-.china-map .mp-mode-history .mp-stop {
-  fill: rgba(19, 168, 168, 0.8);
-}
-
-.china-map .mp-mode-history .mp-stop.mp-clickable:hover {
-  fill: #08979c;
-}
-
-.china-map .mp-mode-history .mp-marker .mp-core {
-  fill: #13a8a8;
-}
-
-.china-map .mp-mode-history .mp-marker .mp-pulse {
-  fill: rgba(19, 168, 168, 0.25);
-}
-
-.china-map .mp-mode-history .mp-ring {
-  fill: rgba(19, 168, 168, 0.08);
-  stroke: #13a8a8;
-}
-
 .china-map .mp-inset .mp-prov {
-  fill: #f3f6fa;
+  fill: #edf3f9;
   stroke: #ffffff;
   stroke-width: 0.8;
 }
@@ -603,21 +673,28 @@ defineExpose({ render })
 
 .china-map .mp-inset .mp-inset-bd {
   fill: none;
-  stroke: #b9c8e8;
+  stroke: #c9d8e6;
   stroke-width: 1;
 }
 
+/* 图例：白底 + 浅阴影 + 圆角，左侧青色点缀条 */
 .china-map .mp-legend {
-  flex: none;
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  z-index: 3;
+  max-width: calc(100% - 28px);
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 18px;
-  padding: 8px 12px;
+  gap: 16px;
+  padding: 8px 12px 8px 10px;
   font-size: 12px;
-  color: #262626;
-  background: rgba(255, 255, 255, 0.85);
-  border-top: 1px solid #e5e9f2;
+  color: #334155;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e6eef5;
+  border-left: 3px solid #0891b2;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
   flex-wrap: wrap;
 }
 
@@ -630,21 +707,28 @@ defineExpose({ render })
   vertical-align: -1px;
 }
 
+.china-map .mp-legend .lg-bar {
+  width: 26px;
+  height: 8px;
+  border-radius: 4px;
+  vertical-align: 0;
+}
+
 .china-map .mp-legend .lg-start {
-  background: #52c41a;
+  background: #10b981;
 }
 
 .china-map .mp-legend .lg-end {
-  background: #f5222d;
+  background: #f97316;
 }
 
 .china-map .mp-legend .lg-cur {
-  background: #1677ff;
-  box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.2);
+  background: #0891b2;
+  box-shadow: 0 0 0 4px rgba(8, 145, 178, 0.16);
 }
 
 .china-map .mp-legend .lg-stop {
-  background: rgba(22, 119, 255, 0.75);
+  background: rgba(8, 145, 178, 0.85);
   border-radius: 2px;
 }
 </style>

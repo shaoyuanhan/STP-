@@ -242,7 +242,8 @@ async function main() {
       const carrierId = (i % 3) + 1;
       const driverId = [1, 2, 3, 4, 5, 6][i % 6];
       const planFreight = Math.max(1800, Math.round((km * 2.4 + 1200) / 100) * 100);
-      const vehicleCount = i % 7 === 3 ? 2 : 1;
+      // 演示数据统一一车一单：运单量与运输车辆数一一对应
+      const vehicleCount = 1;
 
       // 时间线
       let createTime;
@@ -256,7 +257,9 @@ async function main() {
         lastReport = addHours(shipTime, travelHours);
       } else {
         progress = 0.22 + (i % 7) * 0.09;
-        lastReport = addHours(now, -((20 + (i * 13) % 130) / 60));
+        // 大多数运单 5~55 分钟前上报；每 9 单留 1 单超 1 小时未上报，用于演示异常线路
+        const staleMinutes = i % 9 === 4 ? 75 + (i % 4) * 20 : 5 + ((i * 7) % 50);
+        lastReport = addHours(now, -(staleMinutes / 60));
         shipTime = addHours(lastReport, -travelHours * progress);
         createTime = addHours(shipTime, -((6 + (i % 5))));
       }
