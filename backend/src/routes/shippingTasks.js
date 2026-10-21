@@ -98,7 +98,7 @@ const TASK_SELECT = `
   SELECT t.id, t.task_no, t.apply_no, t.customer_name,
          (SELECT GROUP_CONCAT(v.vin ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vins,
          (SELECT GROUP_CONCAT(v.vehicle_model ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vehicle_models,
-         t.ship_location, t.delivery_address, t.plan_freight, c.carrier_name, d.driver_name,
+         t.ship_location, t.delivery_address, t.plan_freight, t.mileage, c.carrier_name, d.driver_name,
          t.plan_pickup_date, t.outbound_date, t.ship_time, t.arrive_time,
          t.status, t.create_time, t.version
   FROM shipping_task t
@@ -127,6 +127,7 @@ const TASK_EXPORT_COLUMNS = [
   { header: '发运地点', value: (r) => text(r.ship_location), width: 20 },
   { header: '交付地址', value: (r) => text(r.delivery_address), width: 34 },
   { header: '计划运费', value: (r) => r.plan_freight, type: 'number', width: 12 },
+  { header: '里程(km)', value: (r) => r.mileage, type: 'number', width: 12 },
   { header: '承运商', value: (r) => text(r.carrier_name), width: 24 },
   { header: '司机', value: (r) => text(r.driver_name), width: 12 },
   { header: '计划提车日期', value: (r) => dateOnly(r.plan_pickup_date), width: 14 },

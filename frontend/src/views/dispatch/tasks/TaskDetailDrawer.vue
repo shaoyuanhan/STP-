@@ -2,7 +2,7 @@
 /**
  * 任务详情抽屉（契约 5.4 / PRD 3.③⑦）
  *
- * 分区：基础信息（含 CRM 备注）/ 车辆信息（多车明细表 + 仓库库位 + 运费合计）/
+ * 分区：基础信息（含 CRM 备注）/ 物料明细（一车一单单车明细 + 仓库库位 + 运费）/
  *       发运信息（未回传节点显示「待回传」灰字）/ 承运信息（派单备注 + 取消记录）/
  *       运输时间轴（status_log）/ 轨迹记录（若有）
  *
@@ -306,6 +306,12 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
             <n-descriptions-item label="到达时间">
               <span v-if="task.arrive_time">{{ datetime(task.arrive_time) }}</span>
               <span v-else class="muted">待回传</span>
+            </n-descriptions-item>
+            <n-descriptions-item label="里程">
+              <span v-if="task.mileage !== null && task.mileage !== undefined && task.mileage !== ''">
+                {{ task.mileage }} km
+              </span>
+              <span v-else class="muted">CRM 未下发</span>
             </n-descriptions-item>
             <n-descriptions-item label="计划运费">
               <MoneyText :value="task.plan_freight" prefix="¥" bold />

@@ -5,11 +5,11 @@
  * - 全国地图总览：轨迹线为各运单轨迹（点击定位运单），同城多单聚合成数字气泡（点击按城市筛选），
  *   同城单票为小圆点（点击打开详情）；历史视角叠加到达省份热力。
  * - 右侧运单列表与地图双向联动；选中运单后地图自动放大到该运单起终点并展示全部回传点，
- *   右侧抽屉展示运单信息、上报点与位置记录。
+ *   右侧抽屉展示运单信息、异常记录与位置记录。
  * - 顶部 KPI：运单量、覆盖省份、运输车辆、运输线路；在途视角 30s 自动刷新。
  * - 视角与 URL 的 ?scope= 同步，旧「历史轨迹」入口重定向到本页并自动切到历史视角。
  */
-import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getTrackingOverview, getTrackingTask } from '@/services/tracking'
 import type { TrackingOverviewTask, TrackingTaskDetail, TransportTrack } from '@/types/api'
@@ -112,6 +112,7 @@ function switchScope(next: Scope) {
   vinFilter.value = ''
   customerFilter.value = ''
   destinationFilter.value = ''
+  finishRange.value = null
   provinceFilter.value = null
   cityFilter.value = null
   onlyAbnormal.value = false
@@ -141,6 +142,10 @@ function cityLabel(text?: string | null): string {
   return hit ? hit.city : s.slice(0, 12)
 }
 
+function mileageLabel(value?: number | string | null): string {
+  return value === null || value === undefined || value === '' ? '-' : `${value} km`
+}
+
 const metaList = computed<TaskMeta[]>(() =>
   tasks.value.map((task) => ({
     task,
@@ -157,6 +162,8 @@ const transportNoFilter = ref('')
 const vinFilter = ref('')
 const customerFilter = ref('')
 const destinationFilter = ref('')
+/** 历史态势：完成时间范围（开始~结束，yyyy-MM-dd） */
+const finishRange = ref<[string, string] | null>(null)
 const provinceFilter = ref<string | null>(null)
 const cityFilter = ref<string | null>(null)
 const onlyAbnormal = ref(false)
@@ -172,7 +179,8 @@ const activeFilterCount = computed(
     ].filter((v) => v.trim()).length +
     (provinceFilter.value ? 1 : 0) +
     (cityFilter.value ? 1 : 0) +
-    (onlyAbnormal.value ? 1 : 0)
+    (onlyAbnormal.value ? 1 : 0) +
+    (isHistory.value && finishRange.value ? 1 : 0)
 )
 
 const visibleMeta = computed<TaskMeta[]>(() => {
@@ -192,6 +200,11 @@ const visibleMeta = computed<TaskMeta[]>(() => {
     if (vin && !String(meta.task.vins ?? '').toLowerCase().includes(vin)) return false
     if (customer && !String(meta.task.customer_name ?? '').toLowerCase().includes(customer)) return false
     if (destination && !String(meta.task.delivery_address ?? '').toLowerCase().includes(destination)) return false
+    if (isHistory.value && finishRange.value) {
+      const finish = String(meta.task.finish_time ?? '').slice(0, 10)
+      const [start, end] = finishRange.value
+      if (!finish || finish < start || finish > end) return false
+    }
     return true
   })
   if (!isHistory.value) {
@@ -208,6 +221,9 @@ const visibleMeta = computed<TaskMeta[]>(() => {
 const filterLabel = computed(() => {
   const parts: string[] = []
   if (onlyAbnormal.value) parts.push('只看异常')
+  if (isHistory.value && finishRange.value) {
+    parts.push(`完成时间：${finishRange.value[0]} ~ ${finishRange.value[1]}`)
+  }
   if (cityFilter.value) parts.push(`目的地：${cityFilter.value}`)
   else if (provinceFilter.value) parts.push(`到达省份：${provinceFilter.value}`)
   return parts.join(' · ')
@@ -219,6 +235,7 @@ function clearFilters() {
   vinFilter.value = ''
   customerFilter.value = ''
   destinationFilter.value = ''
+  finishRange.value = null
   provinceFilter.value = null
   cityFilter.value = null
   onlyAbnormal.value = false
@@ -245,22 +262,22 @@ function onBubble(key: string) {
   provinceFilter.value = null
 }
 
-// ---- KPI ----
+// ---- KPI（跟随当前筛选结果统计） ----
 const provinceCount = computed(() => {
   const set = new Set<string>()
-  metaList.value.forEach((meta) => meta.province && set.add(meta.province))
+  visibleMeta.value.forEach((meta) => meta.province && set.add(meta.province))
   return set.size
 })
 
 const cityCount = computed(() => {
   const set = new Set<string>()
-  metaList.value.forEach((meta) => meta.dest && set.add(meta.dest.city))
+  visibleMeta.value.forEach((meta) => meta.dest && set.add(meta.dest.city))
   return set.size
 })
 
 const vehicleCount = computed(() => {
   const set = new Set<string>()
-  metaList.value.forEach((meta) => {
+  visibleMeta.value.forEach((meta) => {
     String(meta.task.vins ?? '')
       .split('、')
       .map((vin) => vin.trim())
@@ -270,19 +287,19 @@ const vehicleCount = computed(() => {
   return set.size
 })
 
-/** 异常单数：全量统计（不受省份/城市筛选影响），与顶部 KPI 口径一致 */
-const abnormalCount = computed(() => metaList.value.filter((meta) => meta.abnormal).length)
+/** 异常单数：跟随筛选结果统计 */
+const abnormalCount = computed(() => visibleMeta.value.filter((meta) => meta.abnormal).length)
 
 const routeCount = computed(() => {
   const set = new Set<string>()
-  metaList.value.forEach((meta) => {
+  visibleMeta.value.forEach((meta) => {
     set.add(`${meta.origin?.city ?? cityLabel(meta.task.ship_location)}→${meta.dest?.city ?? cityLabel(meta.task.delivery_address)}`)
   })
   return set.size
 })
 
 const topProvince = computed(() => {
-  const acc = provinceCounts(metaList.value)
+  const acc = provinceCounts(visibleMeta.value)
   const sorted = Object.entries(acc).sort((a, b) => b[1] - a[1])
   return sorted.length ? { name: sorted[0][0], count: sorted[0][1] } : null
 })
@@ -361,7 +378,7 @@ const clusters = computed<CityCluster[]>(() => {
 })
 
 /**
- * 同城单量：多单显示数字气泡，单票只显示小圆点（不带运单号，避免压住线路）。
+ * 同城多单：圆点旁写城市名和单量；单票只留小圆点。
  * 点击后单票直接打开详情，多单按城市筛选。
  */
 const mapBubbles = computed(() => {
@@ -422,10 +439,6 @@ const selectedAbnormal = computed(() => {
   return metaList.value.find((meta) => meta.task.id === selectedId.value)?.abnormal ?? false
 })
 
-const focusLastTrack = computed<TransportTrack | null>(
-  () => focusTracks.value[focusTracks.value.length - 1] ?? null,
-)
-
 /** 物料明细：VIN 与车型按顿号聚合且顺序一一对应，拆成每台车一行 */
 const vehicleRows = computed(() => {
   const vins = String(focusTask.value?.vins ?? '').split('、').filter(Boolean)
@@ -433,37 +446,77 @@ const vehicleRows = computed(() => {
   return vins.map((vin, index) => ({ vin, model: models[index] || '-' }))
 })
 
-/** 异常超时时长：最后上报距今减去 1 小时规定间隔 */
-const overdueText = computed(() => {
-  const age = reportAgeMs(focusLastTrack.value?.report_time)
-  if (age === null) return '在途后尚未上报位置'
-  return durationText(Math.max(0, age - REPORT_TIMEOUT_MS))
+/** 异常记录：相邻上报间隔超 1 小时各记一条（起点=上次上报+1h），仍在超时则追加未恢复记录，按时间先后排列 */
+interface AnomalyRecord {
+  key: string
+  start: number | null
+  end: number | null
+  duration: string
+  ongoing: boolean
+}
+
+const anomalyRecords = computed<AnomalyRecord[]>(() => {
+  const toMs = (raw?: string | null): number | null => {
+    if (!raw) return null
+    const time = new Date(String(raw).replace(' ', 'T')).getTime()
+    return Number.isFinite(time) ? time : null
+  }
+  const tracks = focusTracks.value
+  const records: AnomalyRecord[] = []
+  for (let i = 1; i < tracks.length; i++) {
+    const prev = toMs(tracks[i - 1].report_time)
+    const cur = toMs(tracks[i].report_time)
+    if (prev === null || cur === null || cur - prev <= REPORT_TIMEOUT_MS) continue
+    const start = prev + REPORT_TIMEOUT_MS
+    records.push({
+      key: `gap-${tracks[i].id ?? i}`,
+      start,
+      end: cur,
+      duration: durationText(cur - start),
+      ongoing: false,
+    })
+  }
+  const last = toMs(tracks[tracks.length - 1]?.report_time)
+  if (isOverdue(focusTask.value?.status, tracks[tracks.length - 1]?.report_time)) {
+    const start = last === null ? null : last + REPORT_TIMEOUT_MS
+    records.push({
+      key: 'ongoing',
+      start,
+      end: null,
+      duration: start === null ? '在途后尚未上报' : durationText(Date.now() - start),
+      ongoing: true,
+    })
+  }
+  return records.sort((a, b) => (a.start ?? 0) - (b.start ?? 0))
 })
 
 const mapLegend = computed(() => {
   if (selectedId.value !== null) {
-    return [
-      { color: '#52c41a', text: `起始地：${cityLabel(focusTask.value?.ship_location)}`, kind: 'dot' as const },
-      { color: '#fa8c16', text: `目的地：${cityLabel(focusTask.value?.delivery_address)}`, kind: 'dot' as const },
-      {
-        color: selectedAbnormal.value ? '#f5222d' : '#1677ff',
-        text: selectedAbnormal.value ? '异常线路（超时未上报）' : '运输路径',
-        kind: 'line' as const,
-      },
-      { color: '#1677ff', text: '位置回传点（点击查看）', kind: 'dot' as const },
+    const items: Array<{ color: string; text: string; kind: 'line' | 'dot'; dashed?: boolean }> = [
+      { color: '#52c41a', text: `起始地：${cityLabel(focusTask.value?.ship_location)}`, kind: 'dot' },
+      { color: '#fa8c16', text: `目的地：${cityLabel(focusTask.value?.delivery_address)}`, kind: 'dot' },
+      { color: '#1677ff', text: '已行驶', kind: 'line' },
     ]
+    if (!focusArrived.value) {
+      items.push({ color: '#94a3b8', text: '未行驶', kind: 'line' as const, dashed: true })
+    }
+    items.push({ color: '#1677ff', text: '位置回传点（点击查看）', kind: 'dot' as const })
+    if (selectedAbnormal.value) {
+      items.push({ color: '#f5222d', text: '最新位置超时未上报', kind: 'dot' as const })
+    }
+    return items
   }
   if (isHistory.value) {
     return [
       { color: 'linear-gradient(90deg,#FFF7E6,#FFD591,#FA8C16)', text: '到达热度（越深单量越多）', kind: 'line' as const },
       { color: '#1677ff', text: '历史轨迹（点击定位运单）', kind: 'line' as const },
-      { color: '#1677ff', text: '圆点为单票，数字为同城单量', kind: 'dot' as const },
+      { color: '#1677ff', text: '圆点为目的地，城市名后的数字为同城单量', kind: 'dot' as const },
     ]
   }
   return [
     { color: '#1677ff', text: '正常线路', kind: 'line' as const },
     { color: '#f5222d', text: '异常线路 · 超 1 小时未上报，再次上报后恢复', kind: 'line' as const },
-    { color: '#1677ff', text: '圆点为单票，气泡数字为同城单量', kind: 'dot' as const },
+    { color: '#1677ff', text: '圆点为目的地，城市名后的数字为同城单量', kind: 'dot' as const },
   ]
 })
 
@@ -548,7 +601,13 @@ const activePoint = computed(() => {
 function selectTrack(index: number) {
   if (selectedId.value === null) return
   selectedTrackIndex.value = index
+  nextTick(() => {
+    trackListRef.value?.querySelector('tr.active')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    mapRef.value?.locate?.()
+  })
 }
+
+const trackListRef = ref<HTMLElement | null>(null)
 
 const originShort = computed(() => (focusTask.value?.ship_location || '起点').slice(0, 8))
 const destShort = computed(() => (focusTask.value?.delivery_address || '终点').slice(0, 8))
@@ -610,7 +669,7 @@ function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && selectedId.value !== null) closeDrawer()
 }
 
-const mapRef = ref<{ highlight: (id: number | null) => void } | null>(null)
+const mapRef = ref<{ highlight: (id: number | null) => void; locate?: () => void } | null>(null)
 const listBody = ref<HTMLElement | null>(null)
 const hoverId = ref<number | null>(null)
 
@@ -685,6 +744,17 @@ function onMapHover(id: number | null) {
           clearable
           placeholder="目的地"
         />
+        <n-date-picker
+          v-if="isHistory"
+          v-model:formatted-value="finishRange"
+          class="ov-filter ov-filter--range"
+          type="daterange"
+          size="small"
+          value-format="yyyy-MM-dd"
+          start-placeholder="开始时间"
+          end-placeholder="结束时间"
+          clearable
+        />
       </div>
 
       <div class="ov-toolbar__actions">
@@ -700,7 +770,7 @@ function onMapHover(id: number | null) {
     <section class="ov-kpis">
       <div class="card kpi kpi--blue">
         <div class="kpi__label">{{ isHistory ? '已完结运单' : '在途运单' }}</div>
-        <div class="kpi__value">{{ tasks.length }}<span>单</span></div>
+        <div class="kpi__value">{{ visibleMeta.length }}<span>单</span></div>
         <div class="kpi__sub">覆盖 {{ cityCount }} 个目的城市</div>
       </div>
       <div class="card kpi kpi--cyan">
@@ -768,6 +838,7 @@ function onMapHover(id: number | null) {
             :hubs="mapHubs"
             :legend="mapLegend"
             :route-alert="selectedAbnormal"
+            :arrived="focusArrived"
             height="clamp(340px, calc(100vh - 330px), 560px)"
             @select="selectTrack"
             @task="openTask"
@@ -812,6 +883,7 @@ function onMapHover(id: number | null) {
                 {{ meta.origin?.city ?? cityLabel(meta.task.ship_location) }}
                 <span class="ov-row__arrow">→</span>
                 {{ meta.dest?.city ?? cityLabel(meta.task.delivery_address) }}
+                <em class="ov-row__mile">{{ mileageLabel(meta.task.mileage) }}</em>
               </div>
               <div class="ov-row__l2">
                 <span class="ov-row__loc" :title="meta.task.latest_track?.location_desc ?? ''">
@@ -892,6 +964,7 @@ function onMapHover(id: number | null) {
                   </div>
                   <div><label>客户</label><span>{{ focusTask.customer_name || '-' }}</span></div>
                   <div><label>计划运费</label><span>¥{{ money(focusTask.plan_freight) }}</span></div>
+                  <div><label>里程</label><span>{{ mileageLabel(focusTask.mileage) }}</span></div>
                   <div v-if="!isHistory">
                     <label>预计提车</label><span>{{ dateOnly(focusTask.plan_pickup_date) }}</span>
                   </div>
@@ -944,56 +1017,34 @@ function onMapHover(id: number | null) {
                 </div>
               </div>
 
-              <!-- 异常提示：仅在出现异常时展示并填充数据 -->
-              <div v-if="selectedAbnormal" class="ov-block ov-block--alert">
+              <!-- 异常记录：该运单全部异常按时间先后展示 -->
+              <div v-if="anomalyRecords.length" class="ov-block ov-block--alert">
                 <div class="ov-block__head">
-                  <span>异常提示</span>
-                  <em>超时未上报</em>
+                  <span>异常记录</span>
+                  <em>{{ anomalyRecords.length }} 条 · 超时未上报</em>
                 </div>
-                <div class="ov-fields">
-                  <div class="wide">
-                    <label>异常原因</label><span>司机超过 1 小时未上传位置</span>
-                  </div>
-                  <div class="wide">
-                    <label>最近上报</label>
-                    <span>{{ focusLastTrack ? datetimeFull(focusLastTrack.report_time) : '暂无上报记录' }}</span>
-                  </div>
-                  <div class="wide">
-                    <label>已超时</label><span class="ov-fields__alert">{{ overdueText }}</span>
-                  </div>
-                  <div class="wide">
-                    <label>处理建议</label><span>联系司机补报位置，上报后线路自动恢复正常</span>
-                  </div>
+                <div class="ov-table-scroll ov-anomaly-list">
+                  <table class="ov-table ov-table--static">
+                    <thead>
+                      <tr><th>异常时间</th><th>持续</th><th>状态</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="item in anomalyRecords" :key="item.key">
+                        <td>
+                          <template v-if="item.start">
+                            {{ dateShort(item.start) }}
+                            <span class="ov-anomaly__sep">~</span>
+                            {{ item.end ? dateShort(item.end) : '至今' }}
+                          </template>
+                          <span v-else class="ov-anomaly__muted">在途后尚未上报</span>
+                        </td>
+                        <td class="ov-fields__alert">{{ item.duration }}</td>
+                        <td>{{ item.ongoing ? '未恢复' : '已恢复' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-
-              <!-- 上报点 -->
-              <div class="ov-block">
-                <div class="ov-block__head">
-                  <span>上报点</span>
-                  <em>{{ focusTracks.length }} 个</em>
-                </div>
-                <div v-if="focusTracks.length" class="ov-rail">
-                  <button
-                    v-for="(track, index) in focusTracks"
-                    :key="track.id ?? index"
-                    type="button"
-                    class="ov-rail__node"
-                    :class="{ active: index === selectedTrackIndex }"
-                    :title="trackTip(track)"
-                    @click="selectTrack(index)"
-                  >
-                    <i></i>
-                    <span class="ov-rail__name">{{ cityLabel(track.location_desc) }}</span>
-                    <span class="ov-rail__time">{{ dateShort(track.report_time) }}</span>
-                  </button>
-                </div>
-                <div v-else class="ov-block__empty">暂无位置回传记录</div>
-                <div v-if="activeTrack" class="ov-rail__info">
-                  <span><label>上报时间</label>{{ datetimeFull(activeTrack.report_time) }}</span>
-                  <span><label>位置</label>{{ activeTrack.location_desc || '-' }}</span>
-                  <span><label>时速</label>{{ activeTrack.speed ? `${activeTrack.speed} km/h` : '-' }}</span>
-                </div>
+                <div class="ov-anomaly__tip">司机按规定每小时上报一次，超 1 小时未上报记为异常；补报后自动恢复。</div>
               </div>
 
               <!-- 位置记录 -->
@@ -1002,7 +1053,7 @@ function onMapHover(id: number | null) {
                   <span>位置记录</span>
                   <em>{{ focusTracks.length }} 条</em>
                 </div>
-                <div class="ov-table-scroll">
+                <div ref="trackListRef" class="ov-table-scroll">
                   <table class="ov-table">
                     <thead>
                       <tr><th>上报时间</th><th>位置</th><th>时速</th></tr>
@@ -1078,6 +1129,12 @@ function onMapHover(id: number | null) {
   width: 152px;
   flex: 0 1 152px;
   min-width: 120px;
+}
+
+.ov-filter--range {
+  width: 240px;
+  flex: 0 1 240px;
+  min-width: 200px;
 }
 
 .ov-tab.is-active {
@@ -1344,6 +1401,12 @@ function onMapHover(id: number | null) {
   color: #bfbfbf;
 }
 
+.ov-row__mile {
+  margin-left: 8px;
+  font-style: normal;
+  color: #8c8c8c;
+}
+
 .ov-row__l2 {
   margin-top: 3px;
   display: flex;
@@ -1571,7 +1634,7 @@ function onMapHover(id: number | null) {
   transform: none;
 }
 
-/* ---- 上报点 / 记录 ---- */
+/* ---- 区块 / 记录 ---- */
 .ov-block {
   border: 1px solid #e8edf5;
   border-radius: 6px;
@@ -1603,65 +1666,40 @@ function onMapHover(id: number | null) {
   font-size: 12px;
 }
 
-.ov-rail {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+/* ---- 异常记录 ---- */
+/* 异常记录：条数多时在框内下拉滚动，避免撑高抽屉 */
+.ov-table-scroll.ov-anomaly-list {
+  max-height: 150px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
-.ov-rail__node {
-  flex: none;
-  width: 92px;
-  padding: 7px 8px;
-  border: 1px solid #e5e9f2;
-  border-radius: 5px;
-  background: #ffffff;
-  cursor: pointer;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.ov-anomaly-list::-webkit-scrollbar {
+  width: 6px;
 }
 
-.ov-rail__node i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #1677ff;
+.ov-anomaly-list::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
 }
 
-.ov-rail__node.active {
-  border-color: #1677ff;
-  background: #f0f7ff;
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+.ov-anomaly-list::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.ov-rail__name {
-  font-size: 12px;
-  color: #262626;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.ov-anomaly__sep {
+  margin: 0 3px;
+  color: #bfbfbf;
 }
 
-.ov-rail__time {
-  font-size: 11px;
+.ov-anomaly__muted {
   color: #8c8c8c;
 }
 
-.ov-rail__info {
+.ov-anomaly__tip {
   margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
   font-size: 12px;
-  color: #262626;
-}
-
-.ov-rail__info label {
-  display: inline-block;
-  width: 60px;
+  line-height: 1.6;
   color: #8c8c8c;
 }
 
@@ -1705,7 +1743,13 @@ function onMapHover(id: number | null) {
 }
 
 .ov-table tbody tr.active {
-  background: #f0f7ff;
+  background: #e8f3ff;
+  box-shadow: inset 3px 0 0 #1677ff;
+}
+
+.ov-table tbody tr.active td {
+  color: #0958d9;
+  font-weight: 600;
 }
 
 .ov-table__loc {

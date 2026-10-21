@@ -9,6 +9,11 @@
 import 'naive-ui/volar.d.ts'
 
 // 顶部 import 使本文件成为模块，全局声明必须放进 declare global
+interface ImportMetaEnv {
+  readonly VITE_AMAP_KEY?: string
+  readonly VITE_AMAP_SECURITY_JS_CODE?: string
+}
+
 declare global {
   /** intl-tel-input 实例（组件通过 expose 暴露给业务方做校验） */
   interface IntlTelInputInstance {

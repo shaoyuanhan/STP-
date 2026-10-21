@@ -126,6 +126,8 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
   const deliveryAddress = String(b.deliveryAddress ?? '').trim();
   if (!deliveryAddress) throw errParam('交付地址 deliveryAddress 必填');
   if (!Array.isArray(b.vehicles) || !b.vehicles.length) throw errParam('车辆明细 vehicles 必填（至少一台车）');
+  // 一车一单：一个发运申请只承载 1 台车，多车由 CRM 拆分为多条申请逐车下发
+  if (b.vehicles.length > 1) throw errParam('一车一单：每次发运申请仅允许 1 台车，请按车拆分后逐条下发');
   b.vehicles.forEach((v, i) => {
     const vin = String(v?.vin ?? '').trim();
     if (!vin) throw errParam(`第 ${i + 1} 台车的 VIN 必填`);
@@ -165,6 +167,8 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
     : (b.planFreight === undefined || b.planFreight === null || b.planFreight === ''
       ? null
       : assertAmount(b.planFreight, { label: '计划运费 planFreight' }));
+  // 里程：CRM 发运申请下发（线路里程），一车一单即该车里程，到达回传可覆盖
+  const mileage = assertAmount(b.mileage, { label: '里程 mileage', required: false });
 
   const taskNo = await withTransaction(async (conn) => {
     const no = await nextSeq('FY', conn); // 任务单号 FY+yyyyMMdd+4 位（系统自动生成）
@@ -172,8 +176,8 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
       `INSERT INTO shipping_task
         (task_no, apply_no, customer_name, region, sales_person, sales_phone, delivery_area, delivery_address,
          receiver_name, receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date,
-         plan_freight, status, remark, create_name, update_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'WAIT_DISPATCH', ?, 'CRM 系统', 'CRM 系统')`,
+         plan_freight, mileage, status, remark, create_name, update_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'WAIT_DISPATCH', ?, 'CRM 系统', 'CRM 系统')`,
       [no, applyNo, cutStr(customerName, 128),
        cutStr(String(b.region ?? '').trim(), 64) || null,
        cutStr(String(b.salesPerson ?? '').trim(), 64) || null,
@@ -189,11 +193,12 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
        cutStr(headShipLocation || String(b.vehicles[0]?.shipLocation ?? '').trim(), 128),
        b.planPickupDate ? String(b.planPickupDate).trim() : null,
        planFreight,
+       mileage,
        cutStr(String(b.remark ?? '').trim(), 500) || null]
     );
     const taskId = r.insertId;
 
-    // 车辆明细批量写入（一任务多车，VIN 下沉明细表）
+    // 车辆明细写入（一车一单，仅 1 台车；VIN 下沉明细表）
     const rows = b.vehicles.map((v, i) => [
       taskId, no, String(v.vin).trim().toUpperCase(),
       v.orderNo ? cutStr(String(v.orderNo).trim(), 64) : null,
@@ -217,12 +222,12 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
     await writeStatusLog(conn, {
       taskId, taskNo: no, fromStatus: null, toStatus: 'WAIT_DISPATCH',
       source: 'CRM', operator: 'CRM 系统',
-      remark: `接收CRM发运申请，生成待派单任务（${b.vehicles.length} 台车）`,
+      remark: `接收CRM发运申请，生成待派单任务（VIN ${String(b.vehicles[0].vin).trim().toUpperCase()}）`,
     });
     return no;
   });
 
-  ok(res, { taskNo }, `发运申请接收成功，已生成待派单任务 ${taskNo}`);
+  ok(res, { taskNo, mileage }, `发运申请接收成功，已生成待派单任务 ${taskNo}`);
 }));
 
 /* ======================= ② CRM：物流电子签同步 ======================= */
@@ -634,7 +639,8 @@ router.post('/tracking/report', wrap(async (req, res) => {
 //                                可选 actualPickupDate 实际提车日期（允许早于计划提车日期，不得晚于今天）；
 //                                之后重复回传仅补记日志（幂等不回退）
 //   POST /shipping-tasks/arrive  司机到达：IN_TRANSIT→ARRIVED 回填 arrive_time，生成 YF 运费单（FOR UPDATE 幂等）；
-//                                可选 actualFreight/mileage/arriveTime 与逐车 vehicles 回写实际运费，缺省按计划运费生成；
+//                                可选 actualFreight/mileage/arriveTime，mileage 覆盖 CRM 下发里程，缺省沿用任务里程；
+//                                一车一单，vehicles 兼容传入但仅允许 1 台且须一致；缺省按计划运费生成；
 //                                时间须晚于提车/出库时间且不得晚于当前时间
 //   POST /shipping-tasks/finish  司机完结：ARRIVED→FINISHED 回填 finish_time，同步运费单 finish_time；
 //                                当前时间须晚于到达时间
@@ -781,65 +787,51 @@ async function runStatusAction(req, action) {
       assertNotBefore(arriveTime, task.ship_time, { label: '到达时间', prevLabel: '提车发运时间' });
       assertNotBefore(arriveTime, task.outbound_date, { label: '到达时间', prevLabel: '出库时间' });
 
-      // 逐车实际运费（可选）：[{vin, actualFreight}]，VIN 须属于该任务，合计须与 actualFreight 一致
+      // 一车一单：任务车辆明细固定 1 台车
       const [vehicleRows] = await conn.query(
         'SELECT id, vin FROM shipping_task_vehicle WHERE task_id = ? AND deleted = 0',
         [task.id]
       );
-      const vinSet = new Set(vehicleRows.map((v) => String(v.vin).toUpperCase()));
-      let vehicleFreights = null;
-      if (b.vehicles !== undefined && b.vehicles !== null) {
-        if (!Array.isArray(b.vehicles) || !b.vehicles.length) throw errParam('车辆运费 vehicles 需为非空数组');
-        vehicleFreights = b.vehicles.map((v, i) => {
-          const vin = String(v?.vin ?? '').trim().toUpperCase();
-          if (!vin) throw errParam(`第 ${i + 1} 台车的 VIN 必填`);
-          if (!vinSet.has(vin)) throw errBiz(`VIN ${vin} 不属于该任务`);
-          return { vin, amount: assertAmount(v?.actualFreight, { label: `第 ${i + 1} 台车实际运费 actualFreight` }) };
-        });
-        if (new Set(vehicleFreights.map((v) => v.vin)).size !== vehicleFreights.length) {
-          throw errBiz('车辆运费明细存在重复 VIN');
-        }
-      }
+      if (vehicleRows.length !== 1) throw errBiz('任务车辆明细异常（一车一单应为 1 台车），请联系管理员核对');
+      const vehicle = vehicleRows[0];
 
-      const vehicleSum = vehicleFreights
-        ? Number(vehicleFreights.reduce((s, v) => s + v.amount, 0).toFixed(2))
-        : null;
-      if (vehicleSum !== null && reportedFreight !== null && Math.abs(vehicleSum - reportedFreight) > 0.005) {
-        throw errBiz(`车辆运费合计 ${vehicleSum} 与任务实际运费 ${reportedFreight} 不一致`);
+      // 兼容旧调用：vehicles 若传，仅允许 1 台且 VIN 须与该任务车辆一致
+      let vehicleFreight = null;
+      if (b.vehicles !== undefined && b.vehicles !== null) {
+        if (!Array.isArray(b.vehicles) || b.vehicles.length !== 1) {
+          throw errParam('一车一单：车辆运费 vehicles 仅允许 1 台车');
+        }
+        const vin = String(b.vehicles[0]?.vin ?? '').trim().toUpperCase();
+        if (!vin) throw errParam('车辆 VIN 必填');
+        if (vin !== String(vehicle.vin).toUpperCase()) throw errBiz(`VIN ${vin} 不属于该任务`);
+        vehicleFreight = assertAmount(b.vehicles[0]?.actualFreight, { label: '车辆实际运费 actualFreight' });
       }
-      const finalFreight = vehicleSum !== null
-        ? vehicleSum
-        : (reportedFreight !== null ? reportedFreight : Number(task.plan_freight) || 0);
+      if (vehicleFreight !== null && reportedFreight !== null && Math.abs(vehicleFreight - reportedFreight) > 0.005) {
+        throw errBiz(`车辆运费 ${vehicleFreight} 与任务实际运费 ${reportedFreight} 不一致`);
+      }
+      const finalFreight = vehicleFreight ?? reportedFreight ?? (Number(task.plan_freight) || 0);
+      // 里程：司机回传优先，未回传沿用 CRM 发运申请下发的里程
+      const finalMileage = reportedMileage !== null
+        ? reportedMileage
+        : (task.mileage === null || task.mileage === undefined ? null : Number(task.mileage));
 
       let freightNo = null;
       let billCreated = false;
       if (task.status !== 'ARRIVED' && task.status !== 'FINISHED') {
         await conn.query(
           `UPDATE shipping_task SET status = 'ARRIVED', arrive_time = COALESCE(?, NOW()), actual_freight = ?,
-                  version = version + 1, update_name = ?
+                  mileage = COALESCE(?, mileage), version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
-          [arriveTime, finalFreight, operatorName, task.id, task.version]
+          [arriveTime, finalFreight, reportedMileage, operatorName, task.id, task.version]
         );
-        // 车辆明细实际运费：有逐车明细按 VIN 回写，否则按台数均分（多车任务展示口径）
-        if (vehicleRows.length) {
-          if (vehicleFreights) {
-            for (const item of vehicleFreights) {
-              await conn.query(
-                'UPDATE shipping_task_vehicle SET actual_freight = ?, update_name = ? WHERE task_id = ? AND vin = ? AND deleted = 0',
-                [item.amount, operatorName, task.id, item.vin]
-              );
-            }
-          } else {
-            await conn.query(
-              'UPDATE shipping_task_vehicle SET actual_freight = ?, update_name = ? WHERE task_id = ? AND deleted = 0',
-              [Number((finalFreight / vehicleRows.length).toFixed(2)), operatorName, task.id]
-            );
-          }
-        }
+        await conn.query(
+          'UPDATE shipping_task_vehicle SET actual_freight = ?, update_name = ? WHERE id = ?',
+          [finalFreight, operatorName, vehicle.id]
+        );
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: 'ARRIVED',
           source: logSource, operator: operatorName,
-          remark: cutStr(`司机确认到达${reportedFreight !== null || vehicleSum !== null ? `，实际运费 ${finalFreight}` : ''}${reportedMileage !== null ? `，里程 ${reportedMileage} km` : ''}${arriveTime ? `，到达时间 ${arriveTime}` : ''}`, 255),
+          remark: cutStr(`司机确认到达${reportedFreight !== null || vehicleFreight !== null ? `，实际运费 ${finalFreight}` : ''}${finalMileage !== null ? `，里程 ${finalMileage} km` : ''}${arriveTime ? `，到达时间 ${arriveTime}` : ''}`, 255),
         });
       } else {
         await writeStatusLog(conn, {
@@ -848,7 +840,7 @@ async function runStatusAction(req, action) {
         });
       }
 
-      // 生成运费结算单（FOR UPDATE 幂等：已存在则不重复生成）
+      // 生成运费结算单（FOR UPDATE 幂等：已存在则不重复生成）；里程继承任务主表
       const [bills] = await conn.query('SELECT * FROM freight_bill WHERE task_id = ? AND deleted = 0 FOR UPDATE', [task.id]);
       if (bills.length) {
         freightNo = bills[0].freight_no;
@@ -861,13 +853,13 @@ async function runStatusAction(req, action) {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
           [freightNo, task.id, task.task_no, task.carrier_id, task.driver_id,
            task.ship_location, task.delivery_address || task.delivery_area,
-           reportedMileage, task.plan_freight, finalFreight, operatorName, operatorName]
+           finalMileage, task.plan_freight, finalFreight, operatorName, operatorName]
         );
         billCreated = true;
       }
       return {
         taskNo: task.task_no, status: task.status === 'ARRIVED' || task.status === 'FINISHED' ? task.status : 'ARRIVED',
-        freightNo, billCreated, actualFreight: finalFreight, mileage: reportedMileage,
+        freightNo, billCreated, actualFreight: finalFreight, mileage: finalMileage,
         message: `到达确认成功${billCreated ? `，已生成运费结算单 ${freightNo}（待对账）` : `，运费单 ${freightNo} 已存在（幂等）`}`,
       };
     }

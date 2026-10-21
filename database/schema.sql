@@ -131,7 +131,8 @@ CREATE TABLE `shipping_task` (
   `finish_time` DATETIME DEFAULT NULL COMMENT '完结时间,司机点击完结',
   `carrier_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '承运商ID,派单后回填',
   `driver_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '司机ID,承运商分配后回填',
-  `plan_freight` DECIMAL(12,2) DEFAULT NULL COMMENT '计划运费,线路参考价,CRM同步不可修改,=各车计划运费之和',
+  `plan_freight` DECIMAL(12,2) DEFAULT NULL COMMENT '计划运费,线路参考价,CRM同步不可修改,一车一单即单车计划运费',
+  `mileage` DECIMAL(10,2) DEFAULT NULL COMMENT '里程km,CRM发运申请下发,结算运费单继承',
   `actual_freight` DECIMAL(12,2) DEFAULT NULL COMMENT '实际运费,司机到达后回写',
   `status` VARCHAR(16) NOT NULL DEFAULT 'WAIT_DISPATCH' COMMENT '状态:WAIT_DISPATCH-待派单,DISPATCHED-已派单,CARRIER_ACCEPTED-承运商已接单,PICKED-已提车,OUTBOUND-已出库,IN_TRANSIT-在途,ARRIVED-已到达,FINISHED-已完结,CANCELLED-已取消',
   `cancel_reason` VARCHAR(255) DEFAULT NULL COMMENT '取消原因',
@@ -154,7 +155,7 @@ CREATE TABLE `shipping_task` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='发运任务主表';
 
 -- ---------------------------------------------------------------------
--- 5. shipping_task_vehicle 发运任务车辆明细表（一任务多车）
+-- 5. shipping_task_vehicle 发运任务车辆明细表（一车一单：每个任务仅 1 台车）
 -- ---------------------------------------------------------------------
 CREATE TABLE `shipping_task_vehicle` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',

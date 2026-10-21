@@ -140,16 +140,7 @@ const avatarText = computed(() => session.userName.slice(0, 1))
     <!-- 侧栏 -->
     <aside class="side">
       <div class="side__logo">
-        <svg class="side__logo-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M2 6h11v9H2z" fill="#1677ff" />
-          <path d="M13 9h4.6L21 12.4V15h-8z" fill="#0e6e64" />
-          <circle cx="6" cy="17.2" r="2.2" fill="#262626" />
-          <circle cx="16.6" cy="17.2" r="2.2" fill="#262626" />
-        </svg>
-        <div class="side__logo-text">
-          智能运输管理平台
-          <small>SMART TRANSPORT</small>
-        </div>
+        <img class="side__logo-brand" src="@/assets/brand-deepway.png" alt="DEEP WAY" />
       </div>
       <nav class="side__menu">
         <div v-for="section in MENU" :key="section.group" class="side__group">
@@ -241,27 +232,11 @@ const avatarText = computed(() => session.userName.slice(0, 1))
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.side__logo-mark {
-  width: 26px;
-  height: 26px;
-  flex: none;
-}
-
-.side__logo-text {
-  color: #fff;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  line-height: 1.25;
-}
-
-.side__logo-text small {
+.side__logo-brand {
+  width: 168px;
+  max-width: 100%;
+  height: auto;
   display: block;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 2px;
-  color: #8fa3bd;
-  margin-top: 1px;
 }
 
 .side__menu {

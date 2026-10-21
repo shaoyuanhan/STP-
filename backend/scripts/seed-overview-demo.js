@@ -285,15 +285,15 @@ async function main() {
         `INSERT INTO shipping_task
         (task_no, apply_no, customer_name, region, sales_person, sales_phone, delivery_area, delivery_address,
          receiver_name, receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date, outbound_date,
-         ship_time, arrive_time, finish_time, carrier_id, driver_id, plan_freight, actual_freight, status,
+         ship_time, arrive_time, finish_time, carrier_id, driver_id, plan_freight, mileage, actual_freight, status,
          remark, create_name, create_time)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           taskNo, applyNo, CUSTOMERS[i % CUSTOMERS.length], region, salesPerson, salesPhone,
           deliveryArea, destAddr, RECEIVERS[i % RECEIVERS.length], `+86139${pad(50000000 + i * 137, 8)}`,
           '合肥工厂', '合肥成品库', '送车', from.addr,
           planPickup, fmt(outboundTime), fmt(shipTime), arriveTime ? fmt(arriveTime) : null,
-          finishTime ? fmt(finishTime) : null, carrierId, driverId, planFreight.toFixed(2),
+          finishTime ? fmt(finishTime) : null, carrierId, driverId, planFreight.toFixed(2), km.toFixed(2),
           isFinished ? Math.max(0, planFreight - ((i * 37) % 400)).toFixed(2) : null, status,
           MARK, '演示数据生成器', fmt(createTime),
         ],

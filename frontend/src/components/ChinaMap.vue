@@ -1,17 +1,15 @@
 <script setup lang="ts">
 /**
- * 中国地图 + 运输路径组件（src/lib/china-map.js 渲染器包装）
+ * 运输地图（高德 JS API 2.0）
  *
- * 地图视野按起点/终点/回传点外接框自适应放大，不再固定展示全国；
- * 回传点可点击，点击后通过 select 事件回传轨迹下标。
- *
- * 坐标约定：优先传 lng/lat（WGS84 近似，与数据投影一致）；
- * 缺省时可用 text/label 描述地址（内置城市/省会坐标库自动匹配）。
- * 注意：渲染器通过 innerHTML 注入 DOM，地图样式定义在组件的非 scoped style 块。
+ * 全国总览：浅色底图 + 高德 Loca 脉冲飞线（按距离抬升的平滑弧线）。
+ * 运单详情：按回传点连线并放大到该线路。
+ * 城市坐标库与高德同为 GCJ-02，可直接落点。
+ * 未配置 VITE_AMAP_KEY 时只显示配置说明，不回退到手绘简图。
  */
-
-import { onMounted, ref, watch } from 'vue'
-import { matchCityGeo, renderChinaMap, toXY } from '@/lib/china-map'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { matchCityGeo } from '@/lib/china-map'
+import { amapKey, loadAmap, type AMapDistrict, type AMapInstance, type AMapOverlay } from '@/lib/amap'
 
 interface MapBubble {
   key: string
@@ -19,14 +17,10 @@ interface MapBubble {
   lng: number | string
   lat: number | string
   count: number
-  /** 单票点位：只画小圆点，不显示数字与城市名 */
   hideCount?: boolean
-  /** 悬停提示（缺省为「城市 · N 单」） */
   tip?: string
   active?: boolean
-  /** 异常（超时未上报）：单票圆点标红；多单时配合 alertCount 显示角标 */
   alert?: boolean
-  /** 同城异常单数，大于 0 时在气泡右上角标红 */
   alertCount?: number
 }
 
@@ -43,11 +37,9 @@ interface MapLink {
   points: Array<[number, number]>
   active?: boolean
   label?: string
-  /** 异常（超时未上报）：红色实线；再次上报回到 1 小时内后由调用方去掉该标记 */
   alert?: boolean
 }
 
-/** 发运枢纽：多条飞线的共同起点 */
 interface MapHub {
   key: string
   name: string
@@ -59,60 +51,49 @@ interface MapHub {
 interface LegendItem {
   color: string
   text: string
-  /** line 画成短横，dot 画成圆点 */
   kind?: 'line' | 'dot'
+  dashed?: boolean
 }
 
 interface GeoPoint {
   label?: string
-  /** 地址描述（无 lng/lat 时自动匹配城市坐标） */
   text?: string
   lng?: number | string
   lat?: number | string
   tip?: string
-  /** 轨迹下标（存在时可点击） */
+  index?: number
+}
+
+interface LngLat {
+  lng: number
+  lat: number
+  label: string
+  tip: string
   index?: number
 }
 
 const props = withDefaults(
   defineProps<{
-    /** 起始地（发运地点） */
     origin?: GeoPoint | null
-    /** 目的地（交付地址） */
     dest?: GeoPoint | null
-    /** 位置回传点列表（时间序） */
     stops?: Array<GeoPoint>
-    /** 最新当前位置（脉冲 marker） */
     cur?: GeoPoint | null
-    /** 当前选中的回传点（高亮光圈） */
     active?: GeoPoint | null
-    /** 起始地图例文字 */
     originLabel?: string
-    /** 目的地图例文字 */
     destLabel?: string
-    /** 当前位置图例文字 */
     curLabel?: string
-    /** 高亮省份名列表 */
     provincesHL?: string[]
-    /** 视角主题：transit 蓝（在途）/ history 青绿（历史），影响线路与气泡配色 */
     mode?: 'transit' | 'history'
-    /** 是否按起终点自适应放大（false = 全国总览视图） */
     fit?: boolean
-    /** 省份热力：{省名: 单量} */
     heat?: Record<string, number> | null
-    /** 聚合气泡：{key, name, lng, lat, count, active} */
     bubbles?: MapBubble[]
-    /** 单票运单号标签：{id, name, lng, lat, active} */
     tags?: MapTag[]
-    /** 多运单线路：{id, points, active, label} */
     links?: MapLink[]
-    /** 发运枢纽（飞线汇聚点）：{key, name, lng, lat, tip} */
     hubs?: MapHub[]
-    /** 自定义图例（缺省展示起终点图例） */
     legend?: LegendItem[] | null
-    /** 单票详情路径是否按异常线路着色 */
     routeAlert?: boolean
-    /** 容器高度（px） */
+    /** 已到达或已完结：终点并入已行驶实线，不再画未行驶虚线 */
+    arrived?: boolean
     height?: number | string
   }>(),
   {
@@ -134,6 +115,7 @@ const props = withDefaults(
     hubs: () => [],
     legend: null,
     routeAlert: false,
+    arrived: false,
     height: 520,
   },
 )
@@ -146,11 +128,54 @@ const emit = defineEmits<{
   hover: [id: number | null]
 }>()
 
-const el = ref<HTMLElement | null>(null)
+const root = ref<HTMLElement | null>(null)
+const canvas = ref<HTMLElement | null>(null)
+const missingKey = ref(false)
+const loadError = ref('')
+const ready = ref(false)
 const hotId = ref<number | null>(null)
 
-/** 解析坐标点：优先经纬度，其次地址文本匹配（缺失返回 null，渲染器自动跳过） */
-function resolvePoint(point: GeoPoint | null | undefined, fallbackLabel?: string) {
+interface PulseFeature {
+  distance?: number
+  link?: { properties?: { id?: number; alert?: boolean } }
+  properties?: { id?: number; alert?: boolean }
+}
+
+interface PulseLayer {
+  setSource: (source: unknown) => void
+  setStyle: (style: Record<string, unknown>) => void
+  queryFeature: (pixel: number[]) => PulseFeature | null
+}
+
+interface LocaContainer {
+  add: (layer: unknown) => void
+  remove: (layer: unknown) => void
+  destroy?: () => void
+  animate: { start: () => void }
+}
+
+interface LocaNamespace {
+  Container: new (opts: { map: AMapInstance }) => LocaContainer
+  GeoJSONSource: new (opts: { data: unknown }) => unknown
+  PulseLinkLayer: new (opts: Record<string, unknown>) => PulseLayer
+}
+
+let map: AMapInstance | null = null
+let district: AMapDistrict | null = null
+let loca: LocaContainer | null = null
+let pulseLayer: PulseLayer | null = null
+let lines = new Map<number, AMapOverlay>()
+let overlayClicked = false
+let viewKey = ''
+let viewChanged = false
+let lastActiveKey = ''
+let resizeObserver: ResizeObserver | null = null
+
+function locaNs(): LocaNamespace | null {
+  return (window as Window & { Loca?: LocaNamespace }).Loca ?? null
+}
+
+function resolvePoint(point: GeoPoint | null | undefined, fallbackLabel?: string): LngLat | null {
   if (!point) return null
   let lng = point.lng === undefined || point.lng === null ? undefined : Number(point.lng)
   let lat = point.lat === undefined || point.lat === null ? undefined : Number(point.lat)
@@ -161,60 +186,130 @@ function resolvePoint(point: GeoPoint | null | undefined, fallbackLabel?: string
       lat = matched.geo[1]
     }
   }
-  if (lng === undefined || lat === undefined || !Number.isFinite(lng) || !Number.isFinite(lat)) {
-    return null
-  }
+  if (lng === undefined || lat === undefined || !Number.isFinite(lng) || !Number.isFinite(lat)) return null
   return {
+    lng,
+    lat,
     label: point.label ?? fallbackLabel ?? '',
     tip: point.tip ?? '',
     index: point.index,
-    geo2: toXY(lng, lat),
   }
 }
 
-function render() {
-  if (!el.value) return
-  renderChinaMap(el.value, {
-    origin: resolvePoint(props.origin, props.originLabel),
-    dest: resolvePoint(props.dest, props.destLabel),
-    stops: props.stops
-      .map((stop) => resolvePoint(stop, stop.label))
-      .filter((item): item is NonNullable<typeof item> => item !== null),
-    cur: resolvePoint(props.cur, '当前位置'),
-    active: resolvePoint(props.active, ''),
-    provincesHL: props.provincesHL,
-    mode: props.mode,
-    fit: props.fit,
-    heat: props.heat,
-    bubbles: props.bubbles,
-    tags: props.tags,
-    links: props.links,
-    hubs: props.hubs,
-    legend: props.legend,
-    routeAlert: props.routeAlert,
-    originLabel: props.originLabel,
-    destLabel: props.destLabel,
-    curLabel: props.curLabel,
-    onSelect: (index: number) => emit('select', index),
-    onSelectTask: (id: number) => emit('task', id),
-    onSelectProvince: (name: string) => emit('province', name),
-    onSelectBubble: (key: string) => emit('bubble', key),
-    onHoverTask: (id: number | null) => emit('hover', id),
-  })
-  applyHot()
+function shortProvince(name: string): string {
+  return name.replace(/维吾尔自治区|壮族自治区|回族自治区|特别行政区|自治区|省|市/g, '')
 }
 
-/** 悬停高亮某条线路，不重绘地图，避免打断当前缩放和平移 */
-function applyHot() {
-  const root = el.value
-  if (!root) return
-  const layer = root.querySelector('.mp-links')
-  if (!layer) return
-  const key = hotId.value == null ? '' : String(hotId.value)
-  layer.classList.toggle('is-focus', Boolean(key))
-  layer.querySelectorAll('.mp-link-item').forEach((node) => {
-    node.classList.toggle('is-hot', Boolean(key) && node.getAttribute('data-task-id') === key)
+function arcPath(start: [number, number], end: [number, number]): Array<[number, number]> {
+  const dx = end[0] - start[0]
+  const dy = end[1] - start[1]
+  const dist = Math.hypot(dx, dy)
+  if (dist < 0.2) return [start, end]
+  const lift = Math.min(2.4, dist * 0.16)
+  const cx = (start[0] + end[0]) / 2 + (-dy / dist) * lift
+  const cy = (start[1] + end[1]) / 2 + (dx / dist) * lift
+  const pts: Array<[number, number]> = []
+  const steps = 32
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    const u = 1 - t
+    pts.push([u * u * start[0] + 2 * u * t * cx + t * t * end[0], u * u * start[1] + 2 * u * t * cy + t * t * end[1]])
+  }
+  return pts
+}
+
+function markerBox(html: string): string {
+  return `<div style="position:relative;width:0;height:0">${html}</div>`
+}
+
+function circle(color: string, size: number): string {
+  return `<div style="position:absolute;left:0;top:0;width:${size}px;height:${size}px;margin-left:-${size / 2}px;margin-top:-${size / 2}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(15,23,42,.28)"></div>`
+}
+
+function bubbleHtml(bubble: MapBubble): string {
+  const count = Math.max(1, Number(bubble.count) || 1)
+  const alertCount = Math.max(0, Number(bubble.alertCount) || 0)
+  const allAlert = alertCount > 0 && (bubble.hideCount || alertCount >= count)
+  const dotColor = allAlert ? '#f5222d' : bubble.active ? '#fa8c16' : '#1677ff'
+  const dot = `<span style="position:absolute;left:0;top:0;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:${dotColor};box-shadow:0 0 0 2px #fff"></span>`
+  if (bubble.hideCount) return markerBox(dot)
+  const numColor = alertCount > 0 ? '#cf1322' : '#1677ff'
+  const nameColor = bubble.active ? '#d46b08' : '#334155'
+  const label = bubble.name
+    ? `<span style="position:absolute;left:8px;top:0;transform:translateY(-50%);white-space:nowrap;font:500 12px/1.2 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:${nameColor};text-shadow:0 0 2px #fff,0 0 3px #fff,1px 0 #fff,-1px 0 #fff,0 1px #fff,0 -1px #fff">${bubble.name}<span style="margin-left:4px;font-weight:600;color:${numColor}">${count}</span></span>`
+    : ''
+  return markerBox(`${dot}${label}`)
+}
+
+function featureProps(feat: PulseFeature | null | undefined) {
+  return feat?.properties ?? feat?.link?.properties
+}
+
+function applyPulseStyle() {
+  if (!pulseLayer) return
+  const hot = hotId.value
+  const blue = props.mode === 'history' ? '64,150,255' : '22,119,255'
+  pulseLayer.setStyle({
+    unit: 'px',
+    dash: [16, 0, 16, 0],
+    lineWidth: (_index: number, feat: PulseFeature) => {
+      const id = featureProps(feat)?.id
+      if (hot != null && id !== hot) return [0.8, 1.2]
+      return [1.5, 3]
+    },
+    height: (_index: number, feat: PulseFeature) => Math.max(50000, (feat.distance || 0) / 2.8),
+    smoothSteps: 50,
+    speed: 18,
+    flowLength: 90,
+    lineColors: (_index: number, feat: PulseFeature) => {
+      const meta = featureProps(feat)
+      const dim = hot != null && meta?.id !== hot
+      if (meta?.alert) {
+        return dim
+          ? ['rgba(245,34,45,0.04)', 'rgba(245,34,45,0.22)']
+          : ['rgba(245,34,45,0.12)', 'rgba(245,34,45,0.95)']
+      }
+      return dim
+        ? [`rgba(${blue},0.04)`, `rgba(${blue},0.18)`]
+        : [`rgba(${blue},0.05)`, `rgba(${blue},0.92)`]
+    },
+    maxHeightScale: 0.42,
+    headColor: 'rgba(255,255,255,0.95)',
+    trailColor: 'rgba(255,255,255,0)',
   })
+}
+
+function applyHot() {
+  applyPulseStyle()
+  lines.forEach((line, id) => {
+    const hot = hotId.value != null && id === hotId.value
+    const alert = Boolean(line.getExtData()?.alert)
+    const dim = hotId.value != null && !hot
+    line.setOptions({
+      strokeOpacity: dim ? 0.12 : alert ? 0.95 : 0.88,
+      strokeWeight: hot ? 6 : alert ? 4 : 3,
+      zIndex: hot ? 80 : alert ? 62 : 50,
+    })
+  })
+}
+
+function pixelOf(pixel: unknown): number[] | null {
+  if (!pixel || typeof pixel !== 'object') return null
+  const point = pixel as { x?: number; y?: number; toArray?: () => number[] }
+  if (point.toArray) return point.toArray()
+  if (point.x == null || point.y == null) return null
+  return [point.x, point.y]
+}
+
+function linkAt(pixel: unknown): number | null {
+  const arr = pixelOf(pixel)
+  if (!arr || !pulseLayer) return null
+  try {
+    const id = Number(featureProps(pulseLayer.queryFeature(arr))?.id)
+    return Number.isFinite(id) ? id : null
+  } catch {
+    return null
+  }
 }
 
 function highlight(id: number | null) {
@@ -222,7 +317,390 @@ function highlight(id: number | null) {
   applyHot()
 }
 
-onMounted(render)
+function paintDistrict(AMap: Awaited<ReturnType<typeof loadAmap>>) {
+  if (!map || !AMap.DistrictLayer) return
+  const heat = props.heat
+  const showHeat = Boolean(heat && Object.keys(heat).length)
+  const highlighted = new Set(props.provincesHL ?? [])
+  const max = showHeat && heat ? Math.max(0, ...Object.values(heat)) : 0
+  district = new AMap.DistrictLayer.Country({
+    zIndex: 4,
+    SOC: 'CHN',
+    depth: 1,
+    styles: {
+      'nation-stroke': '#94a3b8',
+      'coastline-stroke': '#94a3b8',
+      'province-stroke': 'rgba(148,163,184,.85)',
+      fill: (feature: { NAME_CHN?: string }) => {
+        const name = shortProvince(String(feature?.NAME_CHN ?? ''))
+        if (highlighted.has(name)) return 'rgba(250,140,22,.28)'
+        if (!showHeat || !heat || !max) return 'rgba(255,255,255,0)'
+        const count = heat[name] || 0
+        if (!count) return 'rgba(255,255,255,0)'
+        return `rgba(250,140,22,${(0.14 + (count / max) * 0.36).toFixed(2)})`
+      },
+    },
+  })
+  district.setMap(map)
+}
+
+function addLine(
+  AMap: Awaited<ReturnType<typeof loadAmap>>,
+  path: Array<[number, number]>,
+  opts: { id?: number; alert?: boolean; weight?: number; color?: string; halo?: string; dashed?: boolean },
+) {
+  if (!map || path.length < 2) return null
+  const alert = Boolean(opts.alert)
+  const weight = opts.weight ?? (alert ? 4 : 3)
+  const color = opts.color ?? (alert ? '#f5222d' : props.mode === 'history' ? '#4096ff' : '#1677ff')
+  const halo = opts.halo ?? (alert ? '#ffccc7' : '#91caff')
+  const dash = opts.dashed ? { strokeStyle: 'dashed' as const, strokeDasharray: [10, 8] } : {}
+  if (halo !== 'transparent') {
+    map.add(
+      new AMap.Polyline({
+        path,
+        strokeColor: halo,
+        strokeWeight: weight + 6,
+        strokeOpacity: 0.85,
+        lineJoin: 'round',
+        lineCap: 'round',
+        zIndex: 40,
+        bubble: true,
+        ...dash,
+      }),
+    )
+  }
+  const line = new AMap.Polyline({
+    path,
+    strokeColor: color,
+    strokeWeight: weight,
+    strokeOpacity: 0.95,
+    lineJoin: 'round',
+    lineCap: 'round',
+    cursor: opts.id == null ? 'default' : 'pointer',
+    zIndex: alert ? 62 : 50,
+    extData: { id: opts.id, alert },
+    ...dash,
+  })
+  if (opts.id != null) {
+    const id = opts.id
+    line.on('click', () => {
+      overlayClicked = true
+      emit('task', id)
+    })
+    line.on('mouseover', () => {
+      hotId.value = id
+      applyHot()
+      emit('hover', id)
+    })
+    line.on('mouseout', () => {
+      if (hotId.value === id) {
+        hotId.value = null
+        applyHot()
+        emit('hover', null)
+      }
+    })
+    lines.set(id, line)
+  }
+  map.add(line)
+  return line
+}
+
+function addMarker(
+  AMap: Awaited<ReturnType<typeof loadAmap>>,
+  position: [number, number],
+  content: string,
+  opts: { title?: string; zIndex?: number; clickable?: boolean; onClick?: () => void },
+) {
+  if (!map) return
+  const marker = new AMap.Marker({
+    position,
+    content,
+    anchor: 'center',
+    offset: new AMap.Pixel(0, 0),
+    zIndex: opts.zIndex ?? 70,
+    title: opts.title ?? '',
+    cursor: opts.onClick ? 'pointer' : 'default',
+    clickable: opts.clickable !== false,
+  })
+  if (opts.onClick) {
+    marker.on('click', () => {
+      overlayClicked = true
+      opts.onClick?.()
+    })
+  }
+  map.add(marker)
+}
+
+function clearPulse() {
+  if (pulseLayer && loca) loca.remove(pulseLayer)
+  pulseLayer = null
+}
+
+function paintPulse(links: MapLink[]) {
+  const Loca = locaNs()
+  if (!Loca || !map) return false
+  if (!loca) loca = new Loca.Container({ map })
+  clearPulse()
+  const features = links
+    .map((link) => {
+      const pts = (link.points || [])
+        .map(([lng, lat]) => [Number(lng), Number(lat)] as [number, number])
+        .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat))
+      if (pts.length < 2) return null
+      return {
+        type: 'Feature',
+        properties: { id: link.id, alert: Boolean(link.alert) },
+        geometry: { type: 'LineString', coordinates: [pts[0], pts[pts.length - 1]] },
+      }
+    })
+    .filter((item) => item !== null)
+  if (!features.length) return true
+  pulseLayer = new Loca.PulseLinkLayer({
+    zIndex: 120,
+    opacity: 1,
+    visible: true,
+    zooms: [2, 22],
+    depth: true,
+  })
+  pulseLayer.setSource(new Loca.GeoJSONSource({ data: { type: 'FeatureCollection', features } }))
+  applyPulseStyle()
+  loca.add(pulseLayer)
+  loca.animate.start()
+  return true
+}
+
+function paintOverview(AMap: Awaited<ReturnType<typeof loadAmap>>) {
+  const linked = paintPulse(props.links)
+  if (!linked) {
+    for (const link of props.links) {
+      const pts = (link.points || [])
+        .map(([lng, lat]) => [Number(lng), Number(lat)] as [number, number])
+        .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat))
+      if (pts.length < 2) continue
+      addLine(AMap, arcPath(pts[0], pts[pts.length - 1]), { id: link.id, alert: link.alert })
+    }
+  }
+  for (const hub of props.hubs) {
+    const lng = Number(hub.lng)
+    const lat = Number(hub.lat)
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+    addMarker(
+      AMap,
+      [lng, lat],
+      markerBox(
+        `${circle('#1677ff', 10)}<div style="position:absolute;left:50%;top:-18px;transform:translateX(-50%);white-space:nowrap;font:600 12px/1 sans-serif;color:#0958d9;text-shadow:0 0 3px #fff,0 0 3px #fff">${hub.name}</div>`,
+      ),
+      { title: hub.tip, zIndex: 40, clickable: false },
+    )
+  }
+  for (const bubble of props.bubbles) {
+    const lng = Number(bubble.lng)
+    const lat = Number(bubble.lat)
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+    addMarker(AMap, [lng, lat], bubbleHtml(bubble), {
+      title: bubble.tip,
+      zIndex: 90,
+      onClick: () => emit('bubble', bubble.key),
+    })
+  }
+  for (const tag of props.tags) {
+    const lng = Number(tag.lng)
+    const lat = Number(tag.lat)
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+    addMarker(
+      AMap,
+      [lng, lat],
+      markerBox(
+        `<div style="position:absolute;left:50%;bottom:8px;transform:translateX(-50%);padding:2px 6px;border-radius:4px;background:#fff;border:1px solid #1677ff;color:#0958d9;font:600 11px/16px sans-serif;white-space:nowrap">${tag.name}</div>`,
+      ),
+      { zIndex: 88, onClick: () => emit('task', tag.id) },
+    )
+  }
+}
+
+function paintDetail(AMap: Awaited<ReturnType<typeof loadAmap>>) {
+  const origin = resolvePoint(props.origin, props.originLabel)
+  const dest = resolvePoint(props.dest, props.destLabel)
+  const stops = (props.stops ?? [])
+    .map((stop) => resolvePoint(stop, stop.label))
+    .filter((item): item is LngLat => item !== null)
+  const cur = resolvePoint(props.cur, props.curLabel)
+  const traveled: Array<[number, number]> = []
+  if (origin) traveled.push([origin.lng, origin.lat])
+  stops.forEach((stop) => traveled.push([stop.lng, stop.lat]))
+  if (cur) traveled.push([cur.lng, cur.lat])
+  const tail = traveled[traveled.length - 1]
+  if (props.arrived && dest) traveled.push([dest.lng, dest.lat])
+  addLine(AMap, traveled, { color: '#1677ff', halo: '#91caff', weight: 4 })
+  if (!props.arrived && dest && tail) {
+    const remain: Array<[number, number]> = [tail, [dest.lng, dest.lat]]
+    const dist = Math.hypot(dest.lng - tail[0], dest.lat - tail[1])
+    if (dist > 0.02) addLine(AMap, remain, { color: '#94a3b8', halo: 'transparent', dashed: true, weight: 3 })
+  }
+
+  if (origin) {
+    addMarker(AMap, [origin.lng, origin.lat], labeledDot('#52c41a', origin.label, 'top'), { title: origin.tip || origin.label, zIndex: 100 })
+  }
+  stops.forEach((stop, index) => {
+    const isLast = index === stops.length - 1
+    const latest = isLast && props.routeAlert && !props.arrived
+    const size = latest ? 20 : isLast ? 16 : 10
+    const color = latest ? '#f5222d' : '#1677ff'
+    const html = latest
+      ? `${circle(color, size)}<div class="cmap-latest__ring"></div>`
+      : circle(color, size)
+    addMarker(AMap, [stop.lng, stop.lat], markerBox(html), {
+      title: stop.tip,
+      zIndex: latest ? 110 : 96,
+      onClick: stop.index === undefined ? undefined : () => emit('select', stop.index as number),
+    })
+  })
+  const active = resolvePoint(props.active, '')
+  if (active) {
+    addMarker(
+      AMap,
+      [active.lng, active.lat],
+      markerBox(
+        `<div class="cmap-active"><div class="cmap-active__ring"></div></div>`,
+      ),
+      { zIndex: 120, clickable: false },
+    )
+  }
+  if (dest) {
+    addMarker(AMap, [dest.lng, dest.lat], labeledDot('#fa8c16', dest.label, 'bottom'), { title: dest.tip || dest.label, zIndex: 100 })
+  }
+}
+
+function labeledDot(color: string, label: string, place: 'top' | 'bottom'): string {
+  const textTop = place === 'top' ? '-22px' : '12px'
+  return markerBox(
+    `${circle(color, 14)}<div style="position:absolute;left:50%;top:${textTop};transform:translateX(-50%);white-space:nowrap;font:600 12px/1 sans-serif;color:#334155;text-shadow:0 0 3px #fff,0 0 3px #fff">${label}</div>`,
+  )
+}
+
+function syncView() {
+  if (!map) return
+  const key = props.fit
+    ? `d:${props.routeAlert}:${props.stops?.length ?? 0}:${props.origin?.text ?? ''}:${props.dest?.text ?? ''}`
+    : `o:${props.links.map((link) => `${link.id}:${link.alert ? 1 : 0}`).join(',')}:${props.bubbles.map((item) => item.key).join(',')}`
+  if (key === viewKey) return
+  viewKey = key
+  viewChanged = true
+  map.setPitch?.(props.fit ? 0 : 42, true)
+  map.setRotation?.(0, true)
+  if (props.fit || props.links.length || props.bubbles.length) {
+    map.setFitView(null, false, [36, 36, 36, 48], props.fit ? 11 : 6.5)
+  } else {
+    map.setZoomAndCenter(4.4, [104.2, 36.2], true)
+  }
+}
+
+/** 点击位置记录后，把地图定位到该上报点（首次打开仍自适应全局线路） */
+function focusActive(force = false) {
+  if (!map || !props.fit) return
+  const point = resolvePoint(props.active, '')
+  if (!point) {
+    lastActiveKey = ''
+    return
+  }
+  const key = `${point.lng},${point.lat}`
+  if (!force && key === lastActiveKey) return
+  lastActiveKey = key
+  const zoom = Math.max(Number(map.getZoom?.() ?? 6), 10)
+  map.setZoomAndCenter(zoom, [point.lng, point.lat], false)
+}
+
+function draw() {
+  if (!map) return
+  const AMap = (window as Window & { AMap?: Awaited<ReturnType<typeof loadAmap>> }).AMap
+  if (!AMap) return
+  lines = new Map()
+  clearPulse()
+  const existing = map.getAllOverlays?.() ?? []
+  if (existing.length) map.remove(existing)
+  if (district) {
+    district.setMap(null)
+    district = null
+  }
+  paintDistrict(AMap)
+  if (props.fit) paintDetail(AMap)
+  else paintOverview(AMap)
+  applyHot()
+  viewChanged = false
+  syncView()
+  if (!viewChanged) focusActive()
+}
+
+function onMapClick(event: { pixel?: unknown }) {
+  if (overlayClicked) {
+    overlayClicked = false
+    return
+  }
+  const id = linkAt(event.pixel)
+  if (id != null) {
+    emit('task', id)
+    return
+  }
+  if (props.fit || !district?.getDistrictByContainerPos || !event.pixel) return
+  const hit = district.getDistrictByContainerPos(event.pixel)
+  const raw = hit?.NAME_CHN || hit?.NAME || ''
+  if (!raw) return
+  emit('province', shortProvince(raw))
+}
+
+function onMapMove(event: { pixel?: unknown }) {
+  if (props.fit || !pulseLayer) return
+  const id = linkAt(event.pixel)
+  if (id === hotId.value) return
+  hotId.value = id
+  applyHot()
+  emit('hover', id)
+}
+
+async function boot() {
+  if (!amapKey()) {
+    missingKey.value = true
+    return
+  }
+  try {
+    const AMap = await loadAmap()
+    if (!canvas.value) return
+    map = new AMap.Map(canvas.value, {
+      zoom: 4.4,
+      center: [104.2, 36.2],
+      mapStyle: 'amap://styles/whitesmoke',
+      viewMode: '3D',
+      pitch: 42,
+      showBuildingBlock: false,
+      zooms: [3.4, 18],
+    })
+    if (AMap.ToolBar) map.addControl(new AMap.ToolBar({ position: 'RT' }))
+    if (AMap.Scale) map.addControl(new AMap.Scale({ position: 'RB' }))
+    map.on('click', onMapClick)
+    map.on('mousemove', onMapMove)
+    ready.value = true
+    draw()
+    resizeObserver = new ResizeObserver(() => map?.resize())
+    if (root.value) resizeObserver.observe(root.value)
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : '高德地图加载失败'
+  }
+}
+
+function render() {
+  draw()
+}
+
+onMounted(boot)
+onUnmounted(() => {
+  resizeObserver?.disconnect()
+  clearPulse()
+  loca?.destroy?.()
+  loca = null
+  map?.destroy()
+  map = null
+})
 
 watch(
   () => [
@@ -231,9 +709,6 @@ watch(
     props.stops,
     props.cur,
     props.active,
-    props.originLabel,
-    props.destLabel,
-    props.curLabel,
     props.provincesHL,
     props.mode,
     props.fit,
@@ -242,483 +717,169 @@ watch(
     props.tags,
     props.links,
     props.hubs,
-    props.legend,
     props.routeAlert,
+    props.arrived,
   ],
-  render,
+  () => {
+    if (ready.value) draw()
+  },
   { deep: true },
 )
 
-defineExpose({ render, highlight })
+defineExpose({ render, highlight, locate: () => focusActive(true) })
 </script>
 
 <template>
   <div
-    ref="el"
+    ref="root"
     class="china-map"
     :style="{ height: typeof height === 'number' ? `${height}px` : height }"
-  ></div>
+  >
+    <div ref="canvas" class="china-map__canvas"></div>
+
+    <div v-if="missingKey || loadError" class="china-map__mask">
+      <b>{{ missingKey ? '还没接上高德地图' : '高德地图没有加载成功' }}</b>
+      <p v-if="missingKey">
+        在 <code>frontend/.env</code> 填写 <code>VITE_AMAP_KEY</code> 和
+        <code>VITE_AMAP_SECURITY_JS_CODE</code>，保存后重启前端。Key 在高德开放平台创建「Web端(JS API)」应用时获取。
+      </p>
+      <p v-else>{{ loadError }}</p>
+    </div>
+
+    <div v-if="ready && legend?.length" class="mp-legend">
+      <span v-for="item in legend" :key="item.text">
+        <i
+          class="lg"
+          :class="{ 'lg-bar': item.kind === 'line', 'lg-dash': item.dashed }"
+          :style="
+            item.dashed
+              ? { background: `repeating-linear-gradient(90deg, ${item.color} 0 6px, transparent 6px 10px)` }
+              : { background: item.color }
+          "
+        ></i>
+        {{ item.text }}
+      </span>
+    </div>
+  </div>
 </template>
 
 <style>
-/*
- * 地图样式（全局，渲染器以 innerHTML 注入 DOM，scoped 不生效）
- * 类名约定：mp-* 为中国地图
- */
 .china-map {
+  position: relative;
   width: 100%;
   min-height: 320px;
-  background: #ffffff;
+  background: #f4f7fb;
   border-radius: 6px;
   overflow: hidden;
 }
 
-.china-map .mp-wrap {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-}
-
-.china-map .mp-svg {
-  flex: 1;
+.china-map__canvas {
   width: 100%;
-  min-height: 0;
-  background: #f7fafc;
-  cursor: grab;
-  touch-action: none;
+  height: 100%;
 }
 
-.china-map .mp-svg.is-dragging {
-  cursor: grabbing;
-}
-
-/* 覆盖层不参与点击命中，避免挡住省份/线路/点位 */
-.china-map .mp-outline,
-.china-map .mp-dash,
-.china-map .mp-inset,
-.china-map .mp-route,
-.china-map .mp-route-flow {
-  pointer-events: none;
-}
-
-.china-map .mp-land path[data-province] {
-  cursor: pointer;
-}
-
-/* 缩放控件 */
-.china-map .mp-zoom {
+/* 最新上报点：呼吸光圈 */
+.cmap-latest__ring {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  display: flex;
-  flex-direction: column;
-  border-radius: 4px;
-  overflow: hidden;
-  background: #ffffff;
-  box-shadow: 0 1px 4px rgba(31, 45, 61, 0.18);
-  z-index: 2;
-}
-
-.china-map .mp-zoom button {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  background: rgba(255, 255, 255, 0.96);
-  color: #262626;
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.china-map .mp-zoom button:hover {
-  background: #e6f4ff;
-  color: #1677ff;
-}
-
-.china-map .mp-zoom button + button {
-  border-top: 1px solid #f0f0f0;
-}
-
-/* 底图：浅蓝灰，干净通透 */
-.china-map .mp-land path {
-  fill: #edf3f9;
-  stroke: #c9d8e6;
-  stroke-width: 0.6;
-  transition: fill 0.2s;
-}
-
-.china-map .mp-land path:hover {
-  fill: #e4eef7;
-}
-
-.china-map .mp-land path.hl {
-  fill: #fff1e0;
-  stroke: #f97316;
-  stroke-width: 1.2;
-}
-
-/* 省份热力层：填充由渲染器内联（浅杏 → 亮橙，单量越多越深） */
-.china-map .mp-land path.mp-heat {
-  stroke: rgba(255, 255, 255, 0.9);
-}
-
-.china-map .mp-land path.mp-heat.hl {
-  stroke: #f97316;
-  stroke-width: 1.6;
-}
-
-/* 省名标注：浅灰蓝、带白色衬底，弱于线路与城市名 */
-.china-map .mp-prov-labels {
+  left: 0;
+  top: 0;
+  width: 42px;
+  height: 42px;
+  margin: -21px 0 0 -21px;
+  border-radius: 50%;
+  background: rgba(245, 34, 45, 0.16);
+  animation: cmap-latest-pulse 1.8s ease-out infinite;
   pointer-events: none;
 }
 
-.china-map .mp-prov-label {
-  fill: #93a5b7;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  paint-order: stroke;
-  stroke: rgba(247, 250, 252, 0.85);
-  stroke-width: 2px;
-  stroke-linejoin: round;
-}
-
-/* 发运枢纽：多条飞线的汇聚点 */
-.china-map .mp-hub {
-  pointer-events: none;
-}
-
-.china-map .mp-hub-ring {
-  fill: rgba(22, 119, 255, 0.1);
-  stroke: rgba(22, 119, 255, 0.38);
-  stroke-width: 1;
-}
-
-.china-map .mp-hub-core {
-  fill: #1677ff;
-  stroke: #ffffff;
-  stroke-width: 1.6;
-}
-
-.china-map .mp-hub text {
-  fill: #0958d9;
-  font-weight: 600;
-  paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.92);
-  stroke-width: 3px;
-  stroke-linejoin: round;
-}
-
-/* 飞线层：正常线路品牌蓝，异常线路危险红，悬停时压暗其余线路 */
-.china-map .mp-link {
-  fill: none;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: stroke-width 0.15s, opacity 0.15s;
-}
-
-.china-map .mp-link-hit {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 16;
-  stroke-linecap: round;
-  pointer-events: stroke;
-  cursor: pointer;
-}
-
-.china-map .mp-link.is-alert {
-  stroke-width: 2.15;
-}
-
-.china-map .mp-links.is-focus .mp-link-item {
-  opacity: 0.16;
-}
-
-.china-map .mp-links.is-focus .mp-link-item.is-hot {
-  opacity: 1;
-}
-
-.china-map .mp-link-item.is-hot .mp-link {
-  stroke-width: 2.8;
-}
-
-/* 沿线流动光点 */
-.china-map .mp-flow-dot {
-  fill: #1677ff;
-  opacity: 0.9;
-  pointer-events: none;
-}
-
-.china-map .mp-flow-dot.is-alert {
-  fill: #f5222d;
-}
-
-/* 飞线方向箭头 */
-.china-map .mp-arrow path {
-  fill: #1677ff;
-  opacity: 0.85;
-}
-
-.china-map .mp-arrow.is-alert path {
-  fill: #f5222d;
-}
-
-/* 聚合气泡：白底蓝边。单票异常才整点变红；同城多单用右上角红标 */
-.china-map .mp-bubble .mp-count {
-  fill: #0958d9;
-  font-weight: 600;
-  pointer-events: none;
-}
-
-.china-map .mp-bubble .mp-core {
-  fill: rgba(255, 255, 255, 0.94);
-  stroke: #1677ff;
-  stroke-width: 1.6;
-  transition: fill 0.15s, stroke 0.15s;
-}
-
-.china-map .mp-bubble .mp-halo {
-  fill: rgba(22, 119, 255, 0.12);
-  pointer-events: none;
-}
-
-.china-map .mp-bubble.is-dot.is-alert .mp-core {
-  fill: #f5222d;
-  stroke: #ffffff;
-}
-
-.china-map .mp-bubble.is-dot.is-alert .mp-halo {
-  fill: rgba(245, 34, 45, 0.16);
-}
-
-.china-map .mp-alert-badge {
-  pointer-events: none;
-}
-
-.china-map .mp-alert-badge circle {
-  fill: #f5222d;
-  stroke: #ffffff;
-  stroke-width: 1.2;
-}
-
-.china-map .mp-alert-badge text {
-  fill: #ffffff;
-  font-weight: 700;
-}
-
-/* 城市名标注：深灰蓝 + 白色文字衬底，避免与线路/气泡重叠时看不清 */
-.china-map .mp-city-label {
-  fill: #334155;
-  font-weight: 500;
-  paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.92);
-  stroke-width: 3px;
-  stroke-linejoin: round;
-  pointer-events: none;
-}
-
-.china-map .mp-bubble.is-dot .mp-core {
-  fill: #1677ff;
-  stroke: #ffffff;
-  stroke-width: 1.6;
-}
-
-.china-map .mp-bubble:hover .mp-core {
-  fill: #e6f4ff;
-  stroke: #1677ff;
-}
-
-.china-map .mp-bubble.is-dot:hover .mp-core {
-  fill: #4096ff;
-}
-
-.china-map .mp-bubble.is-dot.is-alert:hover .mp-core {
-  fill: #ff4d4f;
-}
-
-.china-map .mp-bubble.active .mp-core {
-  fill: #f97316;
-  stroke: #ffffff;
-}
-
-.china-map .mp-bubble.active .mp-halo {
-  fill: rgba(249, 115, 22, 0.16);
-}
-
-.china-map .mp-bubble.active .mp-count {
-  fill: #ffffff;
-}
-
-/* 单票运单号标签层 */
-.china-map .mp-tag rect {
-  fill: rgba(255, 255, 255, 0.95);
-  stroke: #1677ff;
-  stroke-width: 1;
-  transition: fill 0.15s;
-}
-
-.china-map .mp-tag text {
-  fill: #0958d9;
-  font-weight: 600;
-  pointer-events: none;
-}
-
-.china-map .mp-tag-line {
-  stroke: #1677ff;
-  stroke-width: 1;
-}
-
-.china-map .mp-tag-dot {
-  fill: #1677ff;
-  stroke: #ffffff;
-  stroke-width: 1;
-}
-
-.china-map .mp-tag:hover rect {
-  fill: #e6f4ff;
-}
-
-.china-map .mp-tag.active rect {
-  fill: #1677ff;
-}
-
-.china-map .mp-tag.active text {
-  fill: #ffffff;
-}
-
-.china-map .mp-outline {
-  fill: none;
-  stroke: #c9d8e6;
-  stroke-width: 1;
-}
-
-.china-map .mp-dash {
-  fill: none;
-  stroke: #b9ccde;
-  stroke-width: 1;
-  stroke-dasharray: 6 4;
-  opacity: 0.8;
-}
-
-.china-map .mp-route {
-  fill: none;
-  stroke: rgba(22, 119, 255, 0.35);
-  stroke-width: 2.2;
-  stroke-linecap: round;
-}
-
-.china-map .mp-route.is-alert {
-  stroke: rgba(245, 34, 45, 0.35);
-}
-
-.china-map .mp-route-flow {
-  fill: none;
-  stroke: #1677ff;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-dasharray: 6 15;
-  opacity: 0.9;
-  animation: china-map-flow 2s linear infinite;
-}
-
-.china-map .mp-route-flow.is-alert {
-  stroke: #f5222d;
-}
-
-@keyframes china-map-flow {
-  from {
-    stroke-dashoffset: 21;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-.china-map .mp-stop {
-  fill: #1677ff;
-  stroke: #fff;
-  stroke-width: 1;
-  transition: fill 0.15s;
-}
-
-.china-map .mp-clickable,
-.china-map .mp-clickable * {
-  cursor: pointer;
-}
-
-.china-map .mp-stop.mp-clickable:hover {
-  fill: #0958d9;
-}
-
-.china-map .mp-marker .mp-core {
-  fill: #1677ff;
-  stroke: #ffffff;
-  stroke-width: 1.6;
-}
-
-.china-map .mp-marker.start .mp-core {
-  fill: #52c41a;
-}
-
-.china-map .mp-marker.end .mp-core {
-  fill: #fa8c16;
-}
-
-.china-map .mp-marker text {
-  fill: #334155;
-  paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.9);
-  font-weight: 600;
-}
-
-.china-map .mp-marker .mp-pulse {
-  fill: rgba(22, 119, 255, 0.2);
-  animation: china-map-pulse 2s ease-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-@keyframes china-map-pulse {
+@keyframes cmap-latest-pulse {
   0% {
     transform: scale(0.55);
-    opacity: 0.9;
+    opacity: 0.95;
+  }
+  70% {
+    transform: scale(1.2);
+    opacity: 0;
   }
   100% {
-    transform: scale(1.6);
+    transform: scale(1.2);
     opacity: 0;
   }
 }
 
-.china-map .mp-ring {
-  fill: rgba(22, 119, 255, 0.08);
-  stroke: #1677ff;
-  stroke-width: 2;
-  stroke-dasharray: 4 3;
+/* 选中的上报点：放大光圈 + 中心点 */
+.cmap-active {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
   pointer-events: none;
 }
 
-.china-map .mp-inset .mp-prov {
-  fill: #edf3f9;
-  stroke: #ffffff;
-  stroke-width: 0.8;
+.cmap-active__ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  border: 2px solid #1677ff;
+  background: rgba(22, 119, 255, 0.14);
+  box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.12);
+  animation: cmap-active-pulse 1.6s ease-out infinite;
 }
 
-.china-map .mp-inset .mp-inset-tt {
-  font-size: 16px;
-  fill: #6a7a94;
+@keyframes cmap-active-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.25);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0.35;
+  }
 }
 
-.china-map .mp-inset .mp-inset-bd {
-  fill: none;
-  stroke: #c9d8e6;
-  stroke-width: 1;
+.china-map__mask {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(244, 247, 251, 0.94);
+  color: #334155;
 }
 
-/* 图例：白底 + 浅阴影 + 圆角，左侧青色点缀条 */
+.china-map__mask b {
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.china-map__mask p {
+  max-width: 460px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.china-map__mask code {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #e6eef8;
+  font-size: 12px;
+}
+
 .china-map .mp-legend {
   position: absolute;
   left: 14px;
@@ -750,26 +911,15 @@ defineExpose({ render, highlight })
 
 .china-map .mp-legend .lg-bar {
   width: 26px;
-  height: 8px;
-  border-radius: 4px;
-  vertical-align: 0;
-}
-
-.china-map .mp-legend .lg-start {
-  background: #52c41a;
-}
-
-.china-map .mp-legend .lg-end {
-  background: #fa8c16;
-}
-
-.china-map .mp-legend .lg-cur {
-  background: #1677ff;
-  box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.16);
-}
-
-.china-map .mp-legend .lg-stop {
-  background: #1677ff;
+  height: 4px;
   border-radius: 2px;
+  vertical-align: 2px;
 }
+
+.china-map .mp-legend .lg-dash {
+  width: 28px;
+  border-radius: 0;
+  background-color: transparent;
+}
+
 </style>

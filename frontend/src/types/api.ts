@@ -253,6 +253,9 @@ export interface ShippingTaskListItem extends AuditFields {
   delivery_address?: string | null
   carrier_name?: string | null
   driver_name?: string | null
+  plan_freight?: MoneyValue
+  /** 里程 km（CRM 发运申请下发，到达回传可覆盖） */
+  mileage?: number | string | null
   plan_pickup_date?: string | null
   outbound_date?: string | null
   ship_time?: string | null
@@ -285,7 +288,7 @@ export interface ShippingTask extends ShippingTaskListItem {
   remark?: string | null
 }
 
-/** 任务车辆明细（一任务多车；head.plan_freight = 各车之和） */
+/** 任务车辆明细（一车一单：每个任务仅 1 台车，head.plan_freight 即该车计划运费） */
 export interface ShippingTaskVehicle {
   id?: number
   task_id?: number
@@ -441,6 +444,9 @@ export interface TrackingTask {
   driver_phone?: string | null
   ship_location?: string | null
   delivery_address?: string | null
+  plan_freight?: MoneyValue
+  /** 里程 km（CRM 发运申请下发） */
+  mileage?: number | string | null
   status: TaskStatus
   ship_time?: string | null
   outbound_date?: string | null
@@ -694,7 +700,7 @@ export interface ExternalArrivePayload extends ExternalTaskRef {
   mileage?: number | string
   /** 到达时间（YYYY-MM-DD HH:mm:ss，不传取当前时间，不得晚于当前时间） */
   arriveTime?: string
-  /** 逐车实际运费 */
+  /** 逐车实际运费（一车一单，仅 1 台，兼容保留） */
   vehicles?: Array<{ vin: string; actualFreight: number | string }>
 }
 

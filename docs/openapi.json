@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
-    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
-    "version": "2.4.1"
+    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()\n- 一车一单：CRM 每次发运申请仅允许 1 台车，任务主表即单车任务；里程 mileage 由 CRM 发运申请下发，司机到达回传可覆盖，结算运费单继承",
+    "version": "2.5.0"
   },
   "servers": [
     {
@@ -979,7 +979,7 @@
           "04 运输调度·发运任务"
         ],
         "summary": "发运任务分页列表",
-        "description": "VIN 筛选走车辆明细表；list 行含 vins/vehicle_models 顿号聚合、plan_freight 线路参考价、version 乐观锁版本",
+        "description": "VIN 筛选走车辆明细表；list 行含 vins/vehicle_models 顿号聚合、plan_freight 线路参考价、mileage 里程、version 乐观锁版本（一车一单，每个任务 1 台车）",
         "parameters": [
           {
             "name": "task_no",
@@ -1087,11 +1087,12 @@
                         "task_no": "FY202610190002",
                         "apply_no": "APPLY-20261019-002",
                         "customer_name": "杭州启达供应链有限公司",
-                        "vins": "LZXBCGH48P1D20002、LZXBCGH48P1D20003",
-                        "vehicle_models": "星辰重卡H7、星辰重卡E5",
+                        "vins": "LZXBCGH48P1D20002",
+                        "vehicle_models": "星辰重卡H7",
                         "ship_location": "合肥市包河区上海路88号",
                         "delivery_address": "杭州市萧山区宁围街道鸿宁路1899号",
                         "plan_freight": "8800.00",
+                        "mileage": "420.00",
                         "carrier_name": null,
                         "driver_name": null,
                         "plan_pickup_date": null,
@@ -1164,6 +1165,7 @@
                       "arrive_time": null,
                       "finish_time": null,
                       "plan_freight": "8600.00",
+                      "mileage": "460.00",
                       "actual_freight": null,
                       "remark": "客户急单，优先安排",
                       "carrier_name": "狮桥物流股份有限公司",
@@ -2050,7 +2052,7 @@
           "08 外部接口·CRM"
         ],
         "summary": "① 发运申请任务接收",
-        "description": "CRM 多车下发：applyNo 幂等（重复 → C0001）；任务单号 STP 自动生成（FY+yyyyMMdd+4 位）；计划提车日期 planPickupDate 必填（CRM 随发运申请直接下发，承运商接单接口不再修改）；head.plan_freight=各车 planFreight 之和；交付地址必填；备注 ≤500 字落任务",
+        "description": "一车一单：每次发运申请仅允许 1 台车（多车由 CRM 拆分逐条下发，vehicles.length>1 → A0001）；applyNo 幂等（重复 → C0001）；任务单号 STP 自动生成（FY+yyyyMMdd+4 位）；计划提车日期 planPickupDate 必填；mileage 为 CRM 下发的线路里程，落 shipping_task.mileage，到达回传可覆盖，运费单继承；计划运费 planFreight 为单车运费；交付地址必填；备注 ≤500 字落任务",
         "requestBody": {
           "required": true,
           "content": {
@@ -2128,6 +2130,11 @@
                     "description": "计划提车日期（必填，YYYY-MM-DD，主来源）",
                     "title": "计划提车日期"
                   },
+                  "mileage": {
+                    "type": "number",
+                    "description": "里程 km（CRM 下发的线路里程，落任务主表；到达回传可覆盖，结算运费单继承）",
+                    "title": "里程"
+                  },
                   "remark": {
                     "type": "string",
                     "description": "备注",
@@ -2135,7 +2142,9 @@
                   },
                   "vehicles": {
                     "type": "array",
-                    "description": "车辆明细列表（必填，≥1 台）",
+                    "description": "车辆明细列表（必填，一车一单仅允许 1 台）",
+                    "maxItems": 1,
+                    "minItems": 1,
                     "items": {
                       "type": "object",
                       "required": [
@@ -2212,25 +2221,18 @@
                 "shipMethod": "送车",
                 "shipLocation": "合肥市包河区上海路88号",
                 "planPickupDate": "2026-10-21",
+                "mileage": 385,
                 "remark": "客户急单，优先安排",
                 "vehicles": [
                   {
                     "vin": "LZXBCGH48P1D30001",
                     "orderNo": "SO-2610-0201",
                     "reportNo": "BD-2610-0201",
-                    "planFreight": 5000,
+                    "planFreight": 8500,
                     "shipLocation": "合肥市包河区上海路88号",
                     "vehicleModel": "星辰重卡H9",
                     "engineConfig": "潍柴WP13H",
                     "cabinType": "高顶双卧"
-                  },
-                  {
-                    "vin": "LZXBCGH48P1D30002",
-                    "orderNo": "SO-2610-0202",
-                    "planFreight": 6000,
-                    "vehicleModel": "星辰重卡E5",
-                    "engineConfig": "特百佳TPW",
-                    "cabinType": "豪华高顶"
                   }
                 ]
               }
@@ -2246,7 +2248,8 @@
                   "code": "00000",
                   "message": "发运申请接收成功，已生成待派单任务 FY202610200001",
                   "data": {
-                    "taskNo": "FY202610200001"
+                    "taskNo": "FY202610200001",
+                    "mileage": 385
                   }
                 }
               }
@@ -2991,7 +2994,7 @@
           }
         },
         "summary": "⑫ 司机到达（回填实际运费/里程）",
-        "description": "司机到达：仅 IN_TRANSIT 可调，IN_TRANSIT→ARRIVED，回填 arrive_time、实际运费与里程，并生成待对账运费单（缺省取计划运费/当前时间/空里程）。arriveTime 须晚于提车发运时间与出库时间，且不得晚于当前时间；vehicles 逐车实际运费合计须与 actualFreight 一致；到达后重复回传仅补记日志。",
+        "description": "司机到达：仅 IN_TRANSIT 可调，IN_TRANSIT→ARRIVED，回填 arrive_time、实际运费与里程，并生成待对账运费单。里程优先级：本接口 mileage > 任务主表 mileage（CRM 下发）；缺省沿用任务里程。实际运费缺省取计划运费。arriveTime 须晚于提车发运时间与出库时间，且不得晚于当前时间；一车一单，vehicles 兼容传入但仅允许 1 台且 VIN/金额须与任务一致；到达后重复回传仅补记日志。",
         "requestBody": {
           "required": true,
           "content": {
@@ -3017,12 +3020,12 @@
                   },
                   "actualFreight": {
                     "type": "number",
-                    "description": "实际运费（action=ARRIVE 选填，不传按任务计划运费；车辆明细无逐车金额时按台数均分）",
+                    "description": "实际运费（action=ARRIVE 选填，不传按任务计划运费；一车一单直接写入该车）",
                     "title": "实际运费"
                   },
                   "mileage": {
                     "type": "number",
-                    "description": "里程 km（action=ARRIVE 选填，写入运费单 mileage）",
+                    "description": "里程 km（选填，覆盖 CRM 下发里程并写入运费单；不传沿用任务主表里程）",
                     "title": "里程"
                   },
                   "arriveTime": {
@@ -3032,7 +3035,8 @@
                   },
                   "vehicles": {
                     "type": "array",
-                    "description": "逐车实际运费（action=ARRIVE 选填）：VIN 须属于该任务，合计须与 actualFreight 一致",
+                    "description": "逐车实际运费（选填，一车一单仅允许 1 台）：VIN 须属于该任务且与 actualFreight 一致",
+                    "maxItems": 1,
                     "items": {
                       "type": "object",
                       "required": [

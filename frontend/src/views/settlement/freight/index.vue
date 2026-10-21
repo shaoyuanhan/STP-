@@ -243,6 +243,16 @@ const columns = computed<DataTableColumns<FreightBillRow>>(() => [
     render: (row) => row.carrier_name || '-',
   },
   {
+    title: '里程',
+    key: 'mileage',
+    width: 96,
+    resizable: true,
+    render: (row) =>
+      row.mileage !== null && row.mileage !== undefined && row.mileage !== ''
+        ? `${row.mileage} km`
+        : '-',
+  },
+  {
     title: '计划运费',
     key: 'plan_freight',
     width: 110,

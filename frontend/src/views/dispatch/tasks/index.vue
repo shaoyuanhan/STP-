@@ -308,6 +308,15 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
     render: (row) => (row.arrive_time ? datetime(row.arrive_time) : '-'),
   },
   {
+    title: '里程',
+    key: 'mileage',
+    width: 96,
+    render: (row) =>
+      row.mileage !== null && row.mileage !== undefined && row.mileage !== ''
+        ? `${row.mileage} km`
+        : '-',
+  },
+  {
     title: '承运商',
     key: 'carrier_name',
     width: 150,

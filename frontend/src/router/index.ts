@@ -8,7 +8,7 @@ import type { RouteRecordRaw } from 'vue-router'
  * meta.group 为菜单分组名（工作台/基础数据/运输调度/应付运费/电子签章/演示）。
  */
 
-const APP_TITLE = 'STP 智能运输管理平台'
+const APP_TITLE = 'DEEP WAY 智能运输管理平台'
 
 const routes: RouteRecordRaw[] = [
   {

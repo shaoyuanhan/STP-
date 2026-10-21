@@ -1,5 +1,6 @@
-# 环境配置（含数据库密码，切勿提交）
+# 环境配置（含数据库密码、地图 Key，切勿提交）
 backend/.env
+frontend/.env
 
 # 依赖与构建产物
 backend/node_modules/

@@ -36,7 +36,8 @@ const LATEST_TRACK_JOIN = `LEFT JOIN (
 
 /** 列表公共 SELECT 片段（VIN/车型取车辆明细聚合） */
 const LIST_FIELDS = `t.id, t.task_no, t.apply_no, t.customer_name, t.status,
-            t.ship_location, t.delivery_address, t.plan_pickup_date, t.ship_time,
+            t.ship_location, t.delivery_address, t.plan_freight, t.mileage,
+            t.plan_pickup_date, t.ship_time,
             t.outbound_date, t.arrive_time, t.finish_time, t.create_time, t.version,
             (SELECT GROUP_CONCAT(v.vin ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vins,
             (SELECT GROUP_CONCAT(v.vehicle_model ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vehicle_models,
