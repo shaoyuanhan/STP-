@@ -16,8 +16,8 @@ router.get('/', wrap(async (req, res) => {
   const where = ['c.deleted = 0'];
   const params = [];
   if (keyword) {
-    where.push('(c.carrier_name LIKE ? OR c.contact_person LIKE ? OR c.carrier_code LIKE ? OR c.contact_phone LIKE ?)');
-    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+    where.push('(c.carrier_name LIKE ? OR c.contact_person LIKE ? OR c.carrier_code LIKE ? OR c.contact_phone LIKE ? OR c.external_carrier_id LIKE ?)');
+    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
   }
   if (status !== '' && status !== undefined && status !== null) {
     where.push('c.status = ?');
@@ -51,9 +51,22 @@ function normalizeCarrierBody(body) {
   const contact_phone = assertPhone(body.contact_phone, { label: '联系电话' });
   const cooperation_routes = body.cooperation_routes?.toString().trim() || null;
   const remark = body.remark?.toString().trim() || null;
+  // 第三方承运商ID：外部系统主键，选填，全局唯一（派单/回传可用其定位）
+  const external_carrier_id = body.external_carrier_id?.toString().trim() || null;
+  if (external_carrier_id && external_carrier_id.length > 64) throw errParam('第三方承运商ID不能超过 64 字');
   if (cooperation_routes && cooperation_routes.length > 512) throw errParam('合作路线不能超过 512 字');
   if (remark && remark.length > 512) throw errParam('备注不能超过 512 字');
-  return { carrier_name, contact_person, contact_phone, cooperation_routes, remark };
+  return { carrier_name, contact_person, contact_phone, cooperation_routes, remark, external_carrier_id };
+}
+
+/** 第三方承运商ID去重（A0002） */
+async function assertExternalCarrierIdUnique(externalCarrierId, excludeId) {
+  if (!externalCarrierId) return;
+  const dup = await query(
+    `SELECT id FROM carrier WHERE external_carrier_id = ? AND deleted = 0${excludeId ? ' AND id != ?' : ''}`,
+    excludeId ? [externalCarrierId, excludeId] : [externalCarrierId]
+  );
+  if (dup.length) throw errBiz(`第三方承运商ID ${externalCarrierId} 已被其他承运商使用`);
 }
 
 /** 新增：编码系统自动生成，名称去重(A0002) */
@@ -61,12 +74,13 @@ router.post('/', wrap(async (req, res) => {
   const v = normalizeCarrierBody(req.body);
   const dup = await query('SELECT id FROM carrier WHERE carrier_name = ? AND deleted = 0', [v.carrier_name]);
   if (dup.length) throw errBiz('承运商名称已存在，请勿重复添加');
+  await assertExternalCarrierIdUnique(v.external_carrier_id);
 
   const carrier_code = await nextSeq('CAR');
   const r = await query(
-    `INSERT INTO carrier (carrier_code, carrier_name, contact_person, contact_phone, cooperation_routes, remark, status, create_name, update_name)
-     VALUES (?, ?, ?, ?, ?, ?, 1, '系统管理员', '系统管理员')`,
-    [carrier_code, v.carrier_name, v.contact_person, v.contact_phone, v.cooperation_routes, v.remark]
+    `INSERT INTO carrier (carrier_code, external_carrier_id, carrier_name, contact_person, contact_phone, cooperation_routes, remark, status, create_name, update_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, '系统管理员', '系统管理员')`,
+    [carrier_code, v.external_carrier_id, v.carrier_name, v.contact_person, v.contact_phone, v.cooperation_routes, v.remark]
   );
   const [created] = await query('SELECT * FROM carrier WHERE id = ?', [r.insertId]);
   ok(res, created);
@@ -81,10 +95,11 @@ router.put('/:id', wrap(async (req, res) => {
   const v = normalizeCarrierBody(req.body);
   const dup = await query('SELECT id FROM carrier WHERE carrier_name = ? AND deleted = 0 AND id != ?', [v.carrier_name, id]);
   if (dup.length) throw errBiz('承运商名称已存在，请勿重复添加');
+  await assertExternalCarrierIdUnique(v.external_carrier_id, id);
 
   await query(
-    `UPDATE carrier SET carrier_name = ?, contact_person = ?, contact_phone = ?, cooperation_routes = ?, remark = ?, update_name = '系统管理员' WHERE id = ?`,
-    [v.carrier_name, v.contact_person, v.contact_phone, v.cooperation_routes, v.remark, id]
+    `UPDATE carrier SET external_carrier_id = ?, carrier_name = ?, contact_person = ?, contact_phone = ?, cooperation_routes = ?, remark = ?, update_name = '系统管理员' WHERE id = ?`,
+    [v.external_carrier_id, v.carrier_name, v.contact_person, v.contact_phone, v.cooperation_routes, v.remark, id]
   );
   const [updated] = await query('SELECT * FROM carrier WHERE id = ?', [id]);
   ok(res, updated);

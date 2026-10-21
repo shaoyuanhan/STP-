@@ -29,8 +29,8 @@ router.get('/', wrap(async (req, res) => {
   const where = ['d.deleted = 0'];
   const params = [];
   if (keyword) {
-    where.push('(d.driver_name LIKE ? OR d.phone LIKE ? OR d.id_card LIKE ? OR d.license_no LIKE ?)');
-    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+    where.push('(d.driver_name LIKE ? OR d.phone LIKE ? OR d.id_card LIKE ? OR d.license_no LIKE ? OR d.external_driver_id LIKE ?)');
+    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
   }
   if (carrier_id) {
     where.push('EXISTS (SELECT 1 FROM carrier_driver cd WHERE cd.driver_id = d.id AND cd.carrier_id = ? AND cd.deleted = 0)');
@@ -65,7 +65,7 @@ router.get('/options', wrap(async (req, res) => {
   let list;
   if (carrier_id) {
     list = await query(
-      `SELECT d.id, d.driver_name AS name, d.phone, d.license_type
+      `SELECT d.id, d.driver_name AS name, d.phone, d.license_type, d.external_driver_id
        FROM driver d
        JOIN carrier_driver cd ON cd.driver_id = d.id AND cd.deleted = 0
        WHERE cd.carrier_id = ? AND d.deleted = 0 AND d.status = 1
@@ -74,7 +74,7 @@ router.get('/options', wrap(async (req, res) => {
     );
   } else {
     list = await query(
-      `SELECT d.id, d.driver_name AS name, d.phone, d.license_type
+      `SELECT d.id, d.driver_name AS name, d.phone, d.license_type, d.external_driver_id
        FROM driver d WHERE d.deleted = 0 AND d.status = 1 ORDER BY d.id`
     );
   }
@@ -98,10 +98,23 @@ function normalizeDriverBody(body) {
   const license_no = body.license_no?.toString().trim() || null;
   const license_type = body.license_type?.toString().trim() || null;
   const remark = body.remark?.toString().trim() || null;
+  // 第三方司机ID：外部系统主键，选填，全局唯一（接单/回传可用其定位）
+  const external_driver_id = body.external_driver_id?.toString().trim() || null;
+  if (external_driver_id && external_driver_id.length > 64) throw errParam('第三方司机ID不能超过 64 字');
   const carrier_ids = Array.isArray(body.carrier_ids)
     ? [...new Set(body.carrier_ids.map(Number).filter(Number.isInteger))]
     : undefined; // undefined=不维护关联；[]=清空
-  return { phone, id_card, license_no, license_type, license_valid_from: body.license_valid_from, license_valid_to: body.license_valid_to, remark, carrier_ids };
+  return { phone, id_card, license_no, license_type, license_valid_from: body.license_valid_from, license_valid_to: body.license_valid_to, remark, carrier_ids, external_driver_id };
+}
+
+/** 第三方司机ID去重（A0002） */
+async function assertExternalDriverIdUnique(externalDriverId, excludeId) {
+  if (!externalDriverId) return;
+  const dup = await query(
+    `SELECT id FROM driver WHERE external_driver_id = ? AND deleted = 0${excludeId ? ' AND id != ?' : ''}`,
+    excludeId ? [externalDriverId, excludeId] : [externalDriverId]
+  );
+  if (dup.length) throw errBiz(`第三方司机ID ${externalDriverId} 已被其他司机使用`);
 }
 
 /** 维护司机-承运商关联：全量替换 carrier_driver（软删 + 复活） */
@@ -128,12 +141,13 @@ router.post('/', wrap(async (req, res) => {
 
   const dup = await query('SELECT id FROM driver WHERE id_card = ? AND deleted = 0', [v.id_card]);
   if (dup.length) throw errBiz('该身份证号已存在，请勿重复添加');
+  await assertExternalDriverIdUnique(v.external_driver_id);
 
   const driverId = await withTransaction(async (conn) => {
     const [r] = await conn.query(
-      `INSERT INTO driver (driver_name, phone, id_card, license_no, license_type, license_valid_from, license_valid_to, source, status, remark, create_name, update_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, '系统管理员', '系统管理员')`,
-      [name, v.phone, v.id_card, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark]
+      `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, license_no, license_type, license_valid_from, license_valid_to, source, status, remark, create_name, update_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, '系统管理员', '系统管理员')`,
+      [name, v.external_driver_id, v.phone, v.id_card, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark]
     );
     if (v.carrier_ids) await replaceCarrierDrivers(conn, r.insertId, v.carrier_ids, '系统管理员');
     return r.insertId;
@@ -166,10 +180,11 @@ router.put('/:id', wrap(async (req, res) => {
   }
 
   const v = normalizeDriverBody({ ...req.body, id_card: exist.id_card });
+  await assertExternalDriverIdUnique(v.external_driver_id, id);
   await withTransaction(async (conn) => {
     await conn.query(
-      `UPDATE driver SET phone = ?, license_no = ?, license_type = ?, license_valid_from = ?, license_valid_to = ?, remark = ?, update_name = '系统管理员' WHERE id = ?`,
-      [v.phone, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark, id]
+      `UPDATE driver SET external_driver_id = ?, phone = ?, license_no = ?, license_type = ?, license_valid_from = ?, license_valid_to = ?, remark = ?, update_name = '系统管理员' WHERE id = ?`,
+      [v.external_driver_id, v.phone, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark, id]
     );
     if (v.carrier_ids) await replaceCarrierDrivers(conn, id, v.carrier_ids, '系统管理员');
   });

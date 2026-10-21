@@ -79,6 +79,13 @@ async function fetchCarriers({ page, pageSize }: { page: number; pageSize: numbe
 
 const columns: DataTableColumns<Carrier> = [
   { title: '承运商编码', key: 'carrier_code', width: 108 },
+  {
+    title: '第三方承运商ID',
+    key: 'external_carrier_id',
+    width: 150,
+    ellipsis: { tooltip: true },
+    render: (row) => row.external_carrier_id || '-',
+  },
   { title: '承运商名称', key: 'carrier_name', width: 170, ellipsis: { tooltip: true } },
   { title: '联系人', key: 'contact_person', width: 96 },
   {
@@ -153,6 +160,7 @@ const phoneRef = ref<InstanceType<typeof PhoneInput> | null>(null)
 
 const formModel = reactive({
   carrier_name: '',
+  external_carrier_id: '',
   contact_person: '',
   contact_phone: '',
   cooperation_routes: '',
@@ -178,6 +186,7 @@ const formRules: FormRules = {
 function openForm(row: Carrier | null) {
   editing.value = row
   formModel.carrier_name = row?.carrier_name ?? ''
+  formModel.external_carrier_id = row?.external_carrier_id ?? ''
   formModel.contact_person = row?.contact_person ?? ''
   formModel.contact_phone = row?.contact_phone ?? ''
   formModel.cooperation_routes = row?.cooperation_routes ?? ''
@@ -193,6 +202,7 @@ async function submitForm() {
   }
   const payload: CarrierPayload = {
     carrier_name: formModel.carrier_name.trim(),
+    external_carrier_id: formModel.external_carrier_id.trim() || null,
     contact_person: formModel.contact_person.trim(),
     contact_phone: formModel.contact_phone,
     cooperation_routes: formModel.cooperation_routes.trim() || null,
@@ -311,7 +321,7 @@ async function confirmStatusChange() {
         :columns="columns"
         :remote="fetchCarriers"
         :query="applied"
-        :scroll-x="1160"
+        :scroll-x="1320"
       />
     </n-card>
 
@@ -347,6 +357,18 @@ async function confirmStatusChange() {
             :disabled="submitting"
             placeholder="请输入承运商名称"
           />
+        </n-form-item>
+        <n-form-item label="第三方承运商ID" path="external_carrier_id">
+          <div class="readonly-field">
+            <n-input
+              v-model:value="formModel.external_carrier_id"
+              :maxlength="64"
+              clearable
+              :disabled="submitting"
+              placeholder="如 SQ-CAR-001（选填，外部系统承运商ID）"
+            />
+            <span class="field-tip">外部系统主键，选填且全局唯一；派单/回传可用该ID定位承运商</span>
+          </div>
         </n-form-item>
         <n-form-item label="联系人" path="contact_person">
           <n-input

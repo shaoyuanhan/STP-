@@ -3,7 +3,7 @@
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
     "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()",
-    "version": "2.0.0"
+    "version": "2.2.0"
   },
   "servers": [
     {
@@ -301,6 +301,12 @@
                     "type": "string",
                     "description": "承运商名称（必填，全局唯一）"
                   },
+                  "external_carrier_id": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方承运商ID（外部系统主键，选填且全局唯一）",
+                    "title": "第三方承运商ID"
+                  },
                   "contact_person": {
                     "type": "string",
                     "description": "联系人"
@@ -327,7 +333,8 @@
                 "contact_person": "刘军",
                 "contact_phone": "13800009999",
                 "cooperation_routes": "合肥—西南",
-                "remark": "新签承运商"
+                "remark": "新签承运商",
+                "external_carrier_id": "SQ-CAR-001"
               }
             }
           }
@@ -384,6 +391,12 @@
                     "type": "string",
                     "description": "承运商名称（保持唯一）"
                   },
+                  "external_carrier_id": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方承运商ID（外部系统主键，选填且全局唯一）",
+                    "title": "第三方承运商ID"
+                  },
                   "contact_person": {
                     "type": "string",
                     "description": "联系人"
@@ -407,7 +420,8 @@
                 "contact_person": "张伟",
                 "contact_phone": "13800000001",
                 "cooperation_routes": "合肥—华东",
-                "remark": "更新备注"
+                "remark": "更新备注",
+                "external_carrier_id": "SQ-CAR-001"
               }
             }
           }
@@ -598,6 +612,12 @@
                     "type": "string",
                     "description": "司机姓名（必填）"
                   },
+                  "external_driver_id": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方司机ID（外部系统主键，选填且全局唯一）",
+                    "title": "第三方司机ID"
+                  },
                   "phone": {
                     "type": "string",
                     "description": "联系电话（必填）"
@@ -651,7 +671,8 @@
                 "carrier_ids": [
                   1
                 ],
-                "remark": "自建司机"
+                "remark": "自建司机",
+                "external_driver_id": "SQD-000123"
               }
             }
           }
@@ -706,6 +727,12 @@
                     "type": "string",
                     "description": "司机姓名（与身份证一致性校验，一般不改）"
                   },
+                  "external_driver_id": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方司机ID（外部系统主键，选填且全局唯一）",
+                    "title": "第三方司机ID"
+                  },
                   "phone": {
                     "type": "string",
                     "description": "联系电话"
@@ -751,7 +778,8 @@
                 "carrier_ids": [
                   1,
                   2
-                ]
+                ],
+                "external_driver_id": "SQD-000123"
               }
             }
           }
@@ -1052,9 +1080,31 @@
                       "id": 8,
                       "task_no": "FY202610150001",
                       "apply_no": "APPLY-20261015-001",
+                      "customer_name": "上海鸿运物流有限公司",
+                      "region": "华东",
+                      "sales_person": "吴敏",
+                      "sales_phone": "+8613900000001",
+                      "create_name": "CRM 系统",
+                      "create_time": "2026-10-15 09:30:00",
                       "status": "IN_TRANSIT",
+                      "delivery_area": "江苏省苏州市",
+                      "delivery_address": "苏州市相城区太阳路国际汽车城",
+                      "receiver_name": "王建国",
+                      "receiver_phone": "+8613612340001",
+                      "factory": "合肥工厂",
+                      "storage_location": "合肥成品库",
+                      "ship_method": "送车",
+                      "plan_pickup_date": "2026-10-15",
+                      "ship_time": "2026-10-15 14:00:00",
+                      "outbound_date": "2026-10-15 11:00:00",
+                      "arrive_time": null,
+                      "finish_time": null,
+                      "plan_freight": "8600.00",
+                      "actual_freight": null,
+                      "remark": "客户急单，优先安排",
                       "carrier_name": "狮桥物流股份有限公司",
                       "driver_name": "马晓峰",
+                      "driver_phone": "+8613700000001",
                       "version": 5
                     },
                     "vehicles": [
@@ -1062,8 +1112,14 @@
                         "id": 9,
                         "task_id": 8,
                         "vin": "LZXBCGH48P1D20009",
+                        "order_no": "SO-261015-0001",
+                        "report_no": "BD-261015-0001",
                         "vehicle_model": "星辰重卡H9",
-                        "plan_freight": "8600.00"
+                        "engine_config": "潍柴WP13H",
+                        "cabin_type": "高顶双卧",
+                        "ship_location": "合肥市包河区上海路88号",
+                        "plan_freight": "8600.00",
+                        "actual_freight": null
                       }
                     ],
                     "dispatchRecords": [
@@ -1120,7 +1176,7 @@
           "04 运输调度·发运任务"
         ],
         "summary": "派单",
-        "description": "仅「待派单」可派单；承运商须合作中（停用拦截 A0002）；version 乐观锁（不匹配 D0001）；写 dispatch_record(DISPATCH) + 状态日志，触发狮桥同步模拟。线路参考价=计划运费只读不可改",
+        "description": "仅「待派单」可派单；承运商可用 carrier_id（STP 内部ID）或 external_carrier_id（第三方承运商ID）指定，须合作中（停用拦截 A0002）；version 乐观锁（不匹配 D0001）；写 dispatch_record(DISPATCH) + 状态日志，触发狮桥同步模拟。线路参考价=计划运费只读不可改",
         "requestBody": {
           "required": true,
           "content": {
@@ -1134,7 +1190,13 @@
                   },
                   "carrier_id": {
                     "type": "integer",
-                    "description": "承运商 ID（必填，须合作中）"
+                    "description": "承运商ID（STP 内部ID，与 external_carrier_id 二选一）"
+                  },
+                  "external_carrier_id": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方承运商ID（与 carrier_id 二选一，系统自动映射为内部承运商）",
+                    "title": "第三方承运商ID"
                   },
                   "remark": {
                     "type": "string",
@@ -1147,7 +1209,6 @@
                 },
                 "required": [
                   "task_id",
-                  "carrier_id",
                   "version"
                 ]
               },
@@ -1211,7 +1272,13 @@
                   },
                   "carrier_id": {
                     "type": "integer",
-                    "description": "承运商 ID（必填，须合作中）"
+                    "description": "承运商ID（STP 内部ID，与 external_carrier_id 二选一）"
+                  },
+                  "external_carrier_id": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方承运商ID（与 carrier_id 二选一，系统自动映射为内部承运商）",
+                    "title": "第三方承运商ID"
                   },
                   "remark": {
                     "type": "string",
@@ -1219,8 +1286,7 @@
                   }
                 },
                 "required": [
-                  "task_ids",
-                  "carrier_id"
+                  "task_ids"
                 ]
               },
               "example": {
@@ -1360,7 +1426,13 @@
                   },
                   "carrier_id": {
                     "type": "integer",
-                    "description": "新承运商 ID（必填，须与原承运商不同且合作中）"
+                    "description": "承运商ID（STP 内部ID，与 external_carrier_id 二选一）"
+                  },
+                  "external_carrier_id": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方承运商ID（与 carrier_id 二选一，系统自动映射为内部承运商）",
+                    "title": "第三方承运商ID"
                   },
                   "remark": {
                     "type": "string",
@@ -1373,7 +1445,6 @@
                 },
                 "required": [
                   "task_id",
-                  "carrier_id",
                   "version"
                 ]
               },
@@ -1958,6 +2029,11 @@
                     "description": "交付地址（必填）",
                     "title": "交付地址"
                   },
+                  "receiverName": {
+                    "type": "string",
+                    "description": "接车联系人",
+                    "title": "接车联系人"
+                  },
                   "receiverPhone": {
                     "type": "string",
                     "description": "接车人联系电话",
@@ -2065,6 +2141,7 @@
                 "salesPhone": "13700001111",
                 "deliveryArea": "江苏省苏州市",
                 "deliveryAddress": "苏州市相城区太阳路国际汽车城",
+                "receiverName": "王建国",
                 "receiverPhone": "13612340001",
                 "factory": "深向科技合肥工厂",
                 "storageLocation": "合肥整车库",
@@ -2387,7 +2464,7 @@
           "10 外部接口·狮桥物流"
         ],
         "summary": "⑩ 司机信息同步",
-        "description": "按身份证号 UPSERT（source=2 狮桥同步，更新时姓名以狮桥为准、未传字段保留原值）；carrierId 存在时维护 carrier_driver 多对多关联；第二次推送同身份证号为更新不新增",
+        "description": "按第三方司机ID（externalDriverId，推荐）优先 UPSERT，未传时退回身份证号（source=2 狮桥同步，更新时姓名以狮桥为准、未传字段保留原值）；carrierId / externalCarrierId 存在时维护 carrier_driver 多对多关联；重复推送同一第三方ID或身份证号为更新不新增。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2395,6 +2472,12 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "externalDriverId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方司机ID（外部系统主键，推荐传入；传入时优先按其 UPSERT）",
+                    "title": "第三方司机ID"
+                  },
                   "driverName": {
                     "type": "string",
                     "description": "司机姓名（必填）",
@@ -2430,6 +2513,12 @@
                     "description": "驾驶证有效期止（YYYY-MM-DD）",
                     "title": "驾驶证有效期止"
                   },
+                  "externalCarrierId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方承运商ID（carrierId 与 externalCarrierId 任选其一）",
+                    "title": "第三方承运商ID"
+                  },
                   "carrierId": {
                     "type": "integer",
                     "description": "关联承运商 ID（不传则不维护 carrier_driver）",
@@ -2450,7 +2539,8 @@
                 "licenseType": "A2",
                 "licenseValidFrom": "2024-01-01",
                 "licenseValidTo": "2030-01-01",
-                "carrierId": 1
+                "carrierId": 1,
+                "externalDriverId": "SQD-000123"
               }
             }
           }
@@ -2516,7 +2606,7 @@
           }
         },
         "summary": "⑫ 承运商接单（分配司机）",
-        "description": "承运商确认接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）。计划提车日期由 CRM 在 ① receive 随发运申请下发，本接口不接收。carrierName 可选，须与任务当前承运商一致防串单，不传按狮桥物流留痕。状态不允许返回 D0001。",
+        "description": "承运商确认接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）。计划提车日期由 CRM 在 ① receive 随发运申请下发，本接口不接收。司机支持 driverId（STP 内部ID）或 externalDriverId（第三方司机ID）；承运商支持 carrierId（内部ID）或 externalCarrierId（第三方ID），carrierName 为旧字段仅兼容。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2534,17 +2624,36 @@
                     "description": "任务单号（兼容）",
                     "title": "任务单号"
                   },
+                  "carrierId": {
+                    "type": "integer",
+                    "description": "承运商ID（STP 内部ID，carrierId / externalCarrierId / carrierName 三选一）",
+                    "title": "承运商ID"
+                  },
+                  "externalCarrierId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方承运商ID（与任务当前承运商校验一致）",
+                    "title": "第三方承运商ID"
+                  },
                   "carrierName": {
                     "type": "string",
-                    "description": "回传承运商名称（选填，须与任务当前承运商一致，不传按狮桥物流留痕）",
-                    "title": "承运商名称"
+                    "description": "承运商名称（旧字段，仅兼容保留，建议改用 carrierId / externalCarrierId）",
+                    "title": "承运商名称",
+                    "deprecated": true
                   },
                   "driverId": {
                     "type": "integer",
-                    "description": "司机 ID（必填，司机须启用且属于任务承运商）",
+                    "description": "司机ID（STP 内部ID，与 externalDriverId 二选一）",
                     "title": "司机ID"
+                  },
+                  "externalDriverId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "第三方司机ID（与 driverId 二选一）",
+                    "title": "第三方司机ID"
                   }
-                }
+                },
+                "required": []
               }
             }
           }

@@ -56,11 +56,21 @@ function assertVersion(task, version) {
   if (Number(task.version) !== v) throw errState('任务状态已变化，请刷新后重试');
 }
 
-/** 校验承运商存在且合作中（停用拦截新派单，契约 9.9） */
-async function assertCarrierDispatchable(conn, carrierId) {
-  const [rows] = await conn.query('SELECT * FROM carrier WHERE id = ? AND deleted = 0', [Number(carrierId)]);
-  if (!rows.length) throw errNotFound('承运商不存在');
-  if (Number(rows[0].status) !== 1) throw errBiz('该承运商已停用，不可被派单');
+/** 承运商定位：carrier_id（STP 内部ID）优先，其次 external_carrier_id（第三方承运商ID）；校验存在且合作中 */
+async function resolveCarrierDispatchable(conn, { carrierId, externalCarrierId }) {
+  const hasInternal = carrierId !== undefined && carrierId !== null && carrierId !== '';
+  const extId = String(externalCarrierId ?? '').trim();
+  let rows = [];
+  if (hasInternal) {
+    [rows] = await conn.query('SELECT * FROM carrier WHERE id = ? AND deleted = 0', [Number(carrierId)]);
+    if (!rows.length) throw errNotFound(`承运商不存在（ID: ${carrierId}）`);
+  } else if (extId) {
+    [rows] = await conn.query('SELECT * FROM carrier WHERE external_carrier_id = ? AND deleted = 0', [extId]);
+    if (!rows.length) throw errNotFound(`第三方承运商ID ${extId} 对应的承运商不存在`);
+  } else {
+    throw errParam('请选择承运商（carrier_id）或提供第三方承运商ID（external_carrier_id）');
+  }
+  if (Number(rows[0].status) !== 1) throw errBiz(`承运商「${rows[0].carrier_name}」已停用，不可被派单`);
   return rows[0];
 }
 
@@ -136,30 +146,31 @@ router.get('/:id', wrap(async (req, res) => {
 
 // ============ 派单（契约 5.4：线路参考价只读，触发狮桥同步模拟） ============
 router.post('/dispatch', wrap(async (req, res) => {
-  const { task_id, carrier_id, remark } = req.body;
+  const { task_id, carrier_id, external_carrier_id, remark } = req.body;
   if (!task_id) throw errParam('任务 ID 必填');
-  if (!carrier_id) throw errParam('请选择承运商');
+  if (!carrier_id && !external_carrier_id) throw errParam('请选择承运商（carrier_id 或 external_carrier_id）');
   if (remark && String(remark).length > 500) throw errParam('派单备注不能超过 500 字');
 
   const result = await withTransaction(async (conn) => {
     const task = await lockTask(conn, task_id);
     assertVersion(task, req.body.version);          // 乐观锁校验（D0001）
     if (task.status !== 'WAIT_DISPATCH') throw errState(`仅「待派单」状态的任务可以派单，当前状态不允许该操作`);
-    const carrier = await assertCarrierDispatchable(conn, carrier_id); // 停用拦截(A0002)
+    const carrier = await resolveCarrierDispatchable(conn, { carrierId: carrier_id, externalCarrierId: external_carrier_id });
+    const carrierId = Number(carrier.id);
 
     await conn.query(
       `UPDATE shipping_task SET carrier_id = ?, status = 'DISPATCHED', version = version + 1, update_name = '系统管理员' WHERE id = ? AND version = ?`,
-      [Number(carrier_id), task.id, task.version]
+      [carrierId, task.id, task.version]
     );
     await writeDispatchRecord(conn, {
-      taskId: task.id, taskNo: task.task_no, action: 'DISPATCH', carrierId: Number(carrier_id),
+      taskId: task.id, taskNo: task.task_no, action: 'DISPATCH', carrierId,
       dispatchPerson: '系统管理员', remark: remark?.toString().trim() || null,
     });
     await writeStatusLog(conn, {
       taskId: task.id, taskNo: task.task_no, fromStatus: 'WAIT_DISPATCH', toStatus: 'DISPATCHED',
       source: 'STP', operator: '系统管理员', remark: `派单至承运商：${carrier.carrier_name}`,
     });
-    return { task, carrier, version: Number(task.version) + 1 };
+    return { task, carrier, carrierId, version: Number(task.version) + 1 };
   });
 
   ok(res, {
@@ -167,26 +178,30 @@ router.post('/dispatch', wrap(async (req, res) => {
     task_no: result.task.task_no,
     status: 'DISPATCHED',
     version: result.version,
-    carrier_id: Number(carrier_id),
+    carrier_id: result.carrierId,
     carrier_name: result.carrier.carrier_name,
+    external_carrier_id: result.carrier.external_carrier_id ?? null,
     plan_freight: result.task.plan_freight, // 线路参考价只读回显
   }, `派单成功，任务已同步狮桥发运系统并下发 WMS（${result.carrier.carrier_name}）`);
 }));
 
 // ============ 批量派单（契约 5.4：batch_no 同批相同，返回 dispatched/total_freight/skipped） ============
 router.post('/batch-dispatch', wrap(async (req, res) => {
-  const { task_ids, carrier_id, remark } = req.body;
+  const { task_ids, carrier_id, external_carrier_id, remark } = req.body;
   if (!Array.isArray(task_ids) || !task_ids.length) throw errParam('请选择需要派单的任务');
-  if (!carrier_id) throw errParam('请选择承运商');
+  if (!carrier_id && !external_carrier_id) throw errParam('请选择承运商（carrier_id 或 external_carrier_id）');
   if (remark && String(remark).length > 500) throw errParam('批量派单备注不能超过 500 字');
 
   const skipped = [];
   let dispatched = 0;
   let totalFreight = 0;
+  let resolvedCarrier = null;
 
   await withTransaction(async (conn) => {
     // 承运商校验（存在 + 合作中）与批次号生成与首单绑定
-    const carrier = await assertCarrierDispatchable(conn, carrier_id);
+    const carrier = await resolveCarrierDispatchable(conn, { carrierId: carrier_id, externalCarrierId: external_carrier_id });
+    const carrierId = Number(carrier.id);
+    resolvedCarrier = carrier;
     let batchNo = null;
 
     for (const tid of task_ids) {
@@ -210,10 +225,10 @@ router.post('/batch-dispatch', wrap(async (req, res) => {
 
       await conn.query(
         `UPDATE shipping_task SET carrier_id = ?, status = 'DISPATCHED', version = version + 1, update_name = '系统管理员' WHERE id = ? AND version = ?`,
-        [Number(carrier_id), task.id, task.version]
+        [carrierId, task.id, task.version]
       );
       await writeDispatchRecord(conn, {
-        taskId: task.id, taskNo: task.task_no, action: 'DISPATCH', carrierId: Number(carrier_id),
+        taskId: task.id, taskNo: task.task_no, action: 'DISPATCH', carrierId,
         batchNo, dispatchPerson: '系统管理员', remark: remark?.toString().trim() || null,
       });
       await writeStatusLog(conn, {
@@ -228,6 +243,8 @@ router.post('/batch-dispatch', wrap(async (req, res) => {
   ok(res, {
     dispatched,
     total_freight: Number(totalFreight.toFixed(2)), // 成功单计划运费（参考价）合计
+    carrier_id: resolvedCarrier ? Number(resolvedCarrier.id) : null,
+    external_carrier_id: resolvedCarrier?.external_carrier_id ?? null,
     skipped,
   }, `批量派单完成：成功 ${dispatched} 单` + (skipped.length ? `，跳过 ${skipped.length} 单` : ''));
 }));
@@ -275,17 +292,18 @@ router.post('/dispatch/cancel', wrap(async (req, res) => {
 
 // ============ 改派（仅已派单，更换承运商，状态仍为已派单） ============
 router.post('/dispatch/reassign', wrap(async (req, res) => {
-  const { task_id, carrier_id, remark } = req.body;
+  const { task_id, carrier_id, external_carrier_id, remark } = req.body;
   if (!task_id) throw errParam('任务 ID 必填');
-  if (!carrier_id) throw errParam('请选择新的承运商');
+  if (!carrier_id && !external_carrier_id) throw errParam('请选择新的承运商（carrier_id 或 external_carrier_id）');
   if (remark && String(remark).length > 500) throw errParam('派单备注不能超过 500 字');
 
   const result = await withTransaction(async (conn) => {
     const task = await lockTask(conn, task_id);
     assertVersion(task, req.body.version);
     if (task.status !== 'DISPATCHED') throw errState('仅「已派单」状态的任务可以改派');
-    const carrier = await assertCarrierDispatchable(conn, carrier_id);
-    if (task.carrier_id === Number(carrier_id)) throw errBiz('新承运商与原承运商相同，无需改派');
+    const carrier = await resolveCarrierDispatchable(conn, { carrierId: carrier_id, externalCarrierId: external_carrier_id });
+    const carrierId = Number(carrier.id);
+    if (task.carrier_id === carrierId) throw errBiz('新承运商与原承运商相同，无需改派');
 
     // 原承运商名称（用于留痕文案）
     const [oldCarrierRows] = await conn.query('SELECT carrier_name FROM carrier WHERE id = ?', [task.carrier_id]);
@@ -293,10 +311,10 @@ router.post('/dispatch/reassign', wrap(async (req, res) => {
 
     await conn.query(
       `UPDATE shipping_task SET carrier_id = ?, version = version + 1, update_name = '系统管理员' WHERE id = ? AND version = ?`,
-      [Number(carrier_id), task.id, task.version]
+      [carrierId, task.id, task.version]
     );
     await writeDispatchRecord(conn, {
-      taskId: task.id, taskNo: task.task_no, action: 'REASSIGN', carrierId: Number(carrier_id),
+      taskId: task.id, taskNo: task.task_no, action: 'REASSIGN', carrierId,
       dispatchPerson: '系统管理员', remark: remark?.toString().trim() || null,
     });
     await writeStatusLog(conn, {
@@ -304,7 +322,7 @@ router.post('/dispatch/reassign', wrap(async (req, res) => {
       source: 'STP', operator: '系统管理员',
       remark: `改派：${oldName} → ${carrier.carrier_name}，原派单已同步狮桥取消并重新下发`,
     });
-    return { task, carrier, version: Number(task.version) + 1 };
+    return { task, carrier, carrierId, version: Number(task.version) + 1 };
   });
 
   ok(res, {
@@ -312,8 +330,9 @@ router.post('/dispatch/reassign', wrap(async (req, res) => {
     task_no: result.task.task_no,
     status: 'DISPATCHED',
     version: result.version,
-    carrier_id: Number(carrier_id),
+    carrier_id: result.carrierId,
     carrier_name: result.carrier.carrier_name,
+    external_carrier_id: result.carrier.external_carrier_id ?? null,
   }, `改派成功：${result.carrier.carrier_name}，原派单已同步狮桥取消`);
 }));
 

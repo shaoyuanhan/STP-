@@ -148,6 +148,8 @@ export type MoneyValue = number | string | null | undefined
 export interface Carrier extends AuditFields {
   id: number
   carrier_code: string
+  /** 第三方承运商ID（外部系统主键，派单/回传可用其定位） */
+  external_carrier_id?: string | null
   carrier_name: string
   contact_person: string
   contact_phone: string
@@ -161,6 +163,7 @@ export interface Carrier extends AuditFields {
 /** 新增/编辑承运商请求体（契约 5.2；编码后端生成只读） */
 export interface CarrierPayload {
   carrier_name: string
+  external_carrier_id?: string | null
   contact_person: string
   contact_phone: string
   cooperation_routes?: string | null
@@ -180,6 +183,8 @@ export interface CarrierQuery extends PageQuery {
 export interface Driver extends AuditFields {
   id: number
   name: string
+  /** 第三方司机ID（外部系统主键，接单/回传可用其定位） */
+  external_driver_id?: string | null
   phone: string
   /** 身份证号（唯一，姓名/身份证不可改） */
   id_card: string
@@ -197,6 +202,7 @@ export interface Driver extends AuditFields {
 /** 新增/编辑司机请求体（契约 5.3；source=1 自建） */
 export interface DriverPayload {
   name: string
+  external_driver_id?: string | null
   phone: string
   id_card: string
   license_no?: string | null
@@ -254,6 +260,7 @@ export interface ShippingTask extends ShippingTaskListItem {
   sales_person?: string | null
   sales_phone?: string | null
   delivery_area?: string | null
+  receiver_name?: string | null
   receiver_phone?: string | null
   factory?: string | null
   storage_location?: string | null
@@ -600,6 +607,7 @@ export interface ReceiveTaskPayload {
   salesPhone?: string
   deliveryArea?: string
   deliveryAddress: string
+  receiverName?: string
   receiverPhone?: string
   factory?: string
   storageLocation?: string

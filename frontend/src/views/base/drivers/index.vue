@@ -119,6 +119,13 @@ function splitCarrierNames(carriers: string | string[] | null | undefined): stri
 
 const columns: DataTableColumns<DriverRow> = [
   { title: '姓名', key: 'driver_name', width: 100 },
+  {
+    title: '第三方司机ID',
+    key: 'external_driver_id',
+    width: 150,
+    ellipsis: { tooltip: true },
+    render: (row) => row.external_driver_id || '-',
+  },
   { title: '手机号', key: 'phone', width: 140, render: (row) => formatPhone(row.phone) },
   { title: '身份证号', key: 'id_card', width: 190 },
   { title: '驾驶证号', key: 'license_no', width: 170, ellipsis: { tooltip: true }, render: (row) => row.license_no || '-' },
@@ -195,6 +202,7 @@ const phoneRef = ref<InstanceType<typeof PhoneInput> | null>(null)
 
 const formModel = reactive({
   name: '',
+  external_driver_id: '',
   phone: '',
   id_card: '',
   license_no: '',
@@ -246,6 +254,7 @@ function toDateStr(value: string | [string, string] | null | undefined): string 
 function openForm(row: DriverRow | null) {
   editing.value = row
   formModel.name = row?.driver_name ?? ''
+  formModel.external_driver_id = row?.external_driver_id ?? ''
   formModel.phone = row?.phone ?? ''
   formModel.id_card = row?.id_card ?? ''
   formModel.license_no = row?.license_no ?? ''
@@ -265,6 +274,7 @@ async function submitForm() {
   }
   const payload: DriverPayload = {
     name: formModel.name.trim(),
+    external_driver_id: formModel.external_driver_id.trim() || null,
     phone: formModel.phone,
     id_card: formModel.id_card.trim().toUpperCase(),
     license_no: formModel.license_no.trim() || null,
@@ -403,7 +413,7 @@ onActivated(loadCarrierOptions)
         :columns="columns"
         :remote="fetchDrivers"
         :query="applied"
-        :scroll-x="1440"
+        :scroll-x="1600"
       />
     </n-card>
 
@@ -433,6 +443,18 @@ onActivated(loadCarrierOptions)
             :disabled="Boolean(editing) || submitting"
             placeholder="请输入司机姓名"
           />
+        </n-form-item>
+        <n-form-item label="第三方司机ID" path="external_driver_id">
+          <div class="readonly-field">
+            <n-input
+              v-model:value="formModel.external_driver_id"
+              :maxlength="64"
+              clearable
+              :disabled="submitting"
+              placeholder="如 SQD-000123（选填，外部系统司机ID）"
+            />
+            <span class="field-tip">外部系统主键，选填且全局唯一；接单/回传可用该ID定位司机</span>
+          </div>
         </n-form-item>
         <n-form-item label="身份证号" path="id_card">
           <n-input

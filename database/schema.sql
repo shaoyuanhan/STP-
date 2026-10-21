@@ -34,6 +34,7 @@ DROP TABLE IF EXISTS sys_sequences;
 CREATE TABLE `carrier` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   `carrier_code` VARCHAR(32) NOT NULL COMMENT '承运商编码,规则CAR-三位序列号,全局递增',
+  `external_carrier_id` VARCHAR(64) DEFAULT NULL COMMENT '第三方承运商ID,外部系统主键,派单/回传可用其定位',
   `carrier_name` VARCHAR(128) NOT NULL COMMENT '承运商名称,唯一,去重校验',
   `contact_person` VARCHAR(64) NOT NULL COMMENT '联系人',
   `contact_phone` VARCHAR(20) NOT NULL COMMENT '联系电话',
@@ -49,6 +50,7 @@ CREATE TABLE `carrier` (
   `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除:0-未删除,1-已删除',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_carrier_code` (`carrier_code`),
+  UNIQUE KEY `uk_external_carrier_id` (`external_carrier_id`),
   UNIQUE KEY `uk_carrier_name` (`carrier_name`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='承运商表';
@@ -59,6 +61,7 @@ CREATE TABLE `carrier` (
 CREATE TABLE `driver` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   `driver_name` VARCHAR(64) NOT NULL COMMENT '司机姓名,必填,不可修改',
+  `external_driver_id` VARCHAR(64) DEFAULT NULL COMMENT '第三方司机ID,外部系统主键,接单/同步可用其定位',
   `phone` VARCHAR(20) NOT NULL COMMENT '手机号',
   `id_card` VARCHAR(18) NOT NULL COMMENT '身份证号,必填,唯一,不可修改',
   `license_no` VARCHAR(32) DEFAULT NULL COMMENT '驾驶证号',
@@ -77,6 +80,7 @@ CREATE TABLE `driver` (
   `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除:0-未删除,1-已删除',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_id_card` (`id_card`),
+  UNIQUE KEY `uk_external_driver_id` (`external_driver_id`),
   KEY `idx_phone` (`phone`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='司机表';
@@ -114,6 +118,7 @@ CREATE TABLE `shipping_task` (
   `sales_phone` VARCHAR(20) DEFAULT NULL COMMENT '销售人员联系方式',
   `delivery_area` VARCHAR(128) DEFAULT NULL COMMENT '交付地区',
   `delivery_address` VARCHAR(255) DEFAULT NULL COMMENT '交付地址,契约增补(PRD要求),CRM下发必填',
+  `receiver_name` VARCHAR(64) DEFAULT NULL COMMENT '接车联系人',
   `receiver_phone` VARCHAR(20) DEFAULT NULL COMMENT '接车人联系电话',
   `factory` VARCHAR(128) DEFAULT NULL COMMENT '生产工厂',
   `storage_location` VARCHAR(128) DEFAULT NULL COMMENT '存放地点',
