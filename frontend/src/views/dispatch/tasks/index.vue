@@ -18,6 +18,7 @@ import BatchDispatchModal from './BatchDispatchModal.vue'
 import CancelDispatchModal from './CancelDispatchModal.vue'
 import TaskDetailDrawer from './TaskDetailDrawer.vue'
 import { splitVins } from './shared'
+import { can } from '@/services/portal'
 import { listCarriers } from '@/services/carriers'
 import { exportShippingTasks, listShippingTasks } from '@/services/tasks'
 import { useDictionaryStore } from '@/stores/dictionary'
@@ -203,14 +204,18 @@ function renderDriver(row: ShippingTaskListItem) {
 
 function renderActions(row: ShippingTaskListItem) {
   const buttons = []
-  if (row.status === 'WAIT_DISPATCH') {
+  if (row.status === 'WAIT_DISPATCH' && can('tasks:dispatch')) {
     buttons.push(
       h(NButton, { text: true, type: 'primary', onClick: () => openDispatch(row) }, { default: () => '派单' }),
     )
   }
-  if (row.status === 'DISPATCHED') {
+  if (row.status === 'DISPATCHED' && can('tasks:reassign')) {
     buttons.push(
       h(NButton, { text: true, type: 'primary', onClick: () => openReassign(row) }, { default: () => '改派' }),
+    )
+  }
+  if (row.status === 'DISPATCHED' && can('tasks:cancel')) {
+    buttons.push(
       h(
         NButton,
         { text: true, type: 'error', onClick: () => openCancel(row) },
@@ -478,7 +483,7 @@ function refreshList() {
           />
         </div>
         <div class="page-card__actions">
-          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+          <n-button v-if="can('tasks:export')" :loading="exporting" @click="handleExport">导出</n-button>
           <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
         </div>
@@ -491,6 +496,7 @@ function refreshList() {
         仅「待派单」状态可勾选批量派单；「已派单」可改派或取消派单（需司机未接单）
       </span>
       <n-button
+        v-if="can('tasks:dispatch')"
         type="primary"
         :disabled="checkedSelectable.length === 0"
         @click="openBatchDispatch"

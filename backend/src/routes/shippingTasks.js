@@ -76,10 +76,22 @@ async function resolveCarrierDispatchable(conn, { carrierId, externalCarrierId }
 }
 
 // ============ 列表 / 导出共用筛选（契约 5.4） ============
-function taskWhere(q) {
+const { verifyToken } = require('../services/security');
+const { loadAccess, applyTaskScope } = require('../services/access');
+
+async function accessOf(req) {
+  const header = String(req.headers.authorization || '');
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  const payload = verifyToken(token);
+  if (!payload?.sub || payload.type === 'DRIVER') return null;
+  return loadAccess(payload.sub);
+}
+
+function taskWhere(q, access) {
   const { task_no = '', apply_no = '', vin = '', customer_name = '', status = '', carrier_id = '', start_date = '', end_date = '' } = q;
   const where = ['t.deleted = 0'];
   const params = [];
+  applyTaskScope(where, params, access);
   if (task_no) where.push('t.task_no LIKE ?'), params.push(`%${task_no}%`);
   if (apply_no) where.push('t.apply_no LIKE ?'), params.push(`%${apply_no}%`);
   if (vin) {
@@ -141,7 +153,7 @@ const TASK_EXPORT_COLUMNS = [
 // ============ 列表：多条件筛选（契约 5.4） ============
 router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
-  const { whereSql, params } = taskWhere(req.query);
+  const { whereSql, params } = taskWhere(req.query, await accessOf(req));
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM shipping_task t ${whereSql}`, params);
   const list = await query(
@@ -156,7 +168,7 @@ router.get('/', wrap(async (req, res) => {
 
 // ============ 导出：按当前筛选条件导出全部（不分页） ============
 router.get('/export', wrap(async (req, res) => {
-  const { whereSql, params } = taskWhere(req.query);
+  const { whereSql, params } = taskWhere(req.query, await accessOf(req));
   const rows = await query(
     `${TASK_SELECT}
      ${whereSql}

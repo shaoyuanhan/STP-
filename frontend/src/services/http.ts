@@ -14,6 +14,7 @@
 import axios from 'axios'
 import type { AxiosRequestConfig } from 'axios'
 import type { ApiEnvelope } from '@/types/api'
+import { getToken } from './portal'
 
 /** 统一业务错误（含契约错误码） */
 export class ApiError extends Error {
@@ -47,6 +48,12 @@ declare module 'axios' {
     envelope?: boolean
   }
 }
+
+http.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
 
 // 成功分支：拆信封；失败分支：HTTP 错误归一为 ApiError
 http.interceptors.response.use(

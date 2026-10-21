@@ -18,13 +18,21 @@ const trackingRoutes = require('./routes/tracking');
 const freightBillRoutes = require('./routes/freightBills');
 const esignRoutes = require('./routes/esigns');
 const externalRoutes = require('./routes/external');
+const portalAuthRoutes = require('./routes/portalAuth');
+const accountRoutes = require('./routes/accounts');
+const roleRoutes = require('./routes/roles');
+const { ensureAccess } = require('./services/access');
+const portalCarrierRoutes = require('./routes/portalCarrier');
+const portalDriverRoutes = require('./routes/portalDriver');
+const portalCommonRoutes = require('./routes/portalCommon');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 // 前后端分离：允许跨域访问（开发期前端可双击 file:// 直接打开）
 app.use(cors());
-app.use(express.json());
+// 门户图片以 base64 上传，放宽请求体上限（单张 ≤8MB）
+app.use(express.json({ limit: '25mb' }));
 
 // 提车照片等静态资源（演示环境；生产由 OSS 承载）
 app.use('/static', express.static(path.join(__dirname, '../public')));
@@ -84,13 +92,28 @@ app.use('/api/freight-bills', freightBillRoutes);
 app.use('/api/esign-records', esignRoutes);
 app.use('/api/external', externalRoutes);
 
+// 承运商端/司机端（JWT 登录态，数据按 token 内的 carrier_id / driver_id 隔离）
+app.use('/api/portal/auth', portalAuthRoutes);
+app.use('/api/portal/accounts', accountRoutes);
+app.use('/api/portal/roles', roleRoutes);
+app.use('/api/portal/carrier', portalCarrierRoutes);
+app.use('/api/portal/driver', portalDriverRoutes);
+app.use('/api/portal', portalCommonRoutes);
+
 // 404：未匹配到任何接口
 app.use((req, res) => res.status(404).json({ code: 'D0002', message: '接口不存在', data: null }));
 
 // 统一错误处理（{code, message, data} 信封 + 错误码 HTTP 映射）
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`[STP] 智能运输管理平台后端已启动: http://localhost:${PORT}`);
-  console.log(`[STP] 数据库: ${process.env.DB_HOST || '127.0.0.1'}:${process.env.DB_PORT || 3306}/${process.env.DB_NAME || 'tms_vehicle'}`);
-});
+ensureAccess()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`[STP] 智能运输管理平台后端已启动: http://localhost:${PORT}`);
+      console.log(`[STP] 数据库: ${process.env.DB_HOST || '127.0.0.1'}:${process.env.DB_PORT || 3306}/${process.env.DB_NAME || 'tms_vehicle'}`);
+    });
+  })
+  .catch((error) => {
+    console.error('[STP] 角色权限初始化失败', error);
+    process.exit(1);
+  });

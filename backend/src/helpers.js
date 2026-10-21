@@ -28,6 +28,7 @@ const CODE_HTTP = {
   '00000': 200,
   A0001: 400,
   A0002: 400,
+  A0003: 401,
   B0001: 500,
   C0001: 409,
   D0001: 409,
@@ -37,6 +38,7 @@ const CODE_HTTP = {
 /* ---------------- 常用错误构造器 ---------------- */
 const errParam = (message) => new ApiError('A0001', message);   // 参数校验失败
 const errBiz = (message) => new ApiError('A0002', message);      // 业务校验失败
+const errAuth = (message) => new ApiError('A0003', message);     // 未登录/登录失效
 const errDup = (message) => new ApiError('C0001', message);      // 重复请求（幂等拦截）
 const errState = (message) => new ApiError('D0001', message);    // 状态不允许该操作/版本冲突
 const errNotFound = (message) => new ApiError('D0002', message); // 数据不存在
@@ -143,6 +145,7 @@ module.exports = {
   ApiError,
   errParam,
   errBiz,
+  errAuth,
   errDup,
   errState,
   errNotFound,
