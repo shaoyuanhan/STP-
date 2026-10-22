@@ -61,6 +61,7 @@ async function loadCarrierOptions() {
 const filter = reactive({
   task_no: '',
   apply_no: '',
+  order_no: '',
   vin: '',
   customer_name: '',
   status: null as TaskStatus | null,
@@ -76,6 +77,7 @@ const statusOptions = computed<SelectOption[]>(() =>
 type AppliedQuery = {
   task_no?: string
   apply_no?: string
+  order_no?: string
   vin?: string
   customer_name?: string
   status?: TaskStatus
@@ -90,6 +92,7 @@ function buildAppliedQuery(): AppliedQuery {
   return {
     task_no: filter.task_no.trim() || undefined,
     apply_no: filter.apply_no.trim() || undefined,
+    order_no: filter.order_no.trim() || undefined,
     vin: filter.vin.trim() || undefined,
     customer_name: filter.customer_name.trim() || undefined,
     status: filter.status ?? undefined,
@@ -107,6 +110,7 @@ function handleSearch() {
 function handleReset() {
   filter.task_no = ''
   filter.apply_no = ''
+  filter.order_no = ''
   filter.vin = ''
   filter.customer_name = ''
   filter.status = null
@@ -268,6 +272,7 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
       ),
   },
   { title: '发运申请号', key: 'apply_no', width: 150 },
+  { title: '订单号', key: 'order_no', width: 150, render: (row) => row.order_no || '-' },
   {
     title: '客户名称',
     key: 'customer_name',
@@ -425,6 +430,16 @@ function refreshList() {
           <span class="page-card__label">发运申请号</span>
           <n-input
             v-model:value="filter.apply_no"
+            class="page-card__input page-card__input--s"
+            clearable
+            placeholder="请输入"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">订单号</span>
+          <n-input
+            v-model:value="filter.order_no"
             class="page-card__input page-card__input--s"
             clearable
             placeholder="请输入"

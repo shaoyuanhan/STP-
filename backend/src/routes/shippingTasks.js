@@ -88,12 +88,13 @@ async function accessOf(req) {
 }
 
 function taskWhere(q, access) {
-  const { task_no = '', apply_no = '', vin = '', customer_name = '', status = '', carrier_id = '', start_date = '', end_date = '' } = q;
+  const { task_no = '', apply_no = '', order_no = '', vin = '', customer_name = '', status = '', carrier_id = '', start_date = '', end_date = '' } = q;
   const where = ['t.deleted = 0'];
   const params = [];
   applyTaskScope(where, params, access);
   if (task_no) where.push('t.task_no LIKE ?'), params.push(`%${task_no}%`);
   if (apply_no) where.push('t.apply_no LIKE ?'), params.push(`%${apply_no}%`);
+  if (order_no) where.push('t.order_no LIKE ?'), params.push(`%${order_no}%`);
   if (vin) {
     where.push('EXISTS (SELECT 1 FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0 AND v.vin LIKE ?)');
     params.push(`%${vin}%`);
@@ -107,7 +108,7 @@ function taskWhere(q, access) {
 }
 
 const TASK_SELECT = `
-  SELECT t.id, t.task_no, t.apply_no, t.customer_name,
+  SELECT t.id, t.task_no, t.apply_no, t.order_no, t.customer_name,
          (SELECT GROUP_CONCAT(v.vin ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vins,
          (SELECT GROUP_CONCAT(v.vehicle_model ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0) AS vehicle_models,
          t.ship_location, t.delivery_address, t.plan_freight, t.mileage, c.carrier_name, d.driver_name,
@@ -132,6 +133,7 @@ const TASK_STATUS_LABELS = {
 /** 导出列（与列表展示一致） */
 const TASK_EXPORT_COLUMNS = [
   { header: '任务单号', value: (r) => r.task_no, width: 20 },
+  { header: '订单号', value: (r) => text(r.order_no), width: 20 },
   { header: '发运申请号', value: (r) => text(r.apply_no), width: 20 },
   { header: '客户名称', value: (r) => text(r.customer_name), width: 20 },
   { header: 'VIN', value: (r) => text(r.vins), width: 22 },
@@ -194,7 +196,13 @@ router.get('/:id', wrap(async (req, res) => {
 
   const [vehicles, dispatchRecords, statusLogs, tracks, esigns] = await Promise.all([
     query('SELECT * FROM shipping_task_vehicle WHERE task_id = ? AND deleted = 0 ORDER BY id', [id]),
-    query('SELECT * FROM dispatch_record WHERE task_id = ? AND deleted = 0 ORDER BY dispatch_time, id', [id]),
+    query(
+      `SELECT dr.*, c.carrier_name
+       FROM dispatch_record dr
+       LEFT JOIN carrier c ON c.id = dr.carrier_id
+       WHERE dr.task_id = ? AND dr.deleted = 0 ORDER BY dr.dispatch_time, dr.id`,
+      [id]
+    ),
     query('SELECT * FROM task_status_log WHERE task_id = ? AND deleted = 0 ORDER BY create_time, id', [id]),
     query('SELECT * FROM transport_track WHERE task_id = ? AND deleted = 0 ORDER BY report_time, id', [id]),
     query('SELECT * FROM esign_record WHERE task_id = ? AND deleted = 0 ORDER BY initiate_time, id', [id]),

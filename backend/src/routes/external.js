@@ -32,19 +32,27 @@ const router = Router();
 /* ======================= 通用辅助 ======================= */
 
 /**
- * 外部回调统一定位任务（非事务版）：优先 applyNo，兼容 taskNo；都无 → A0001（既有需求 4）。
+ * 外部回调统一定位任务（非事务版）：优先 orderNo（一车一单唯一标识），其次 taskNo，兼容 applyNo（须唯一对应单任务）。
  */
-async function resolveTask({ applyNo, taskNo }) {
+async function resolveTask({ orderNo, applyNo, taskNo }) {
+  const order = String(orderNo ?? '').trim();
   const apply = String(applyNo ?? '').trim();
   const no = String(taskNo ?? '').trim();
-  if (!apply && !no) throw errParam('请提供发运申请号 applyNo（推荐）或任务单号 taskNo');
-  const rows = await query(
-    `SELECT * FROM shipping_task WHERE ${apply ? 'apply_no = ?' : 'task_no = ?'} AND deleted = 0`,
-    [apply || no]
-  );
-  if (!rows.length) {
-    throw errNotFound(apply ? `发运申请号 ${apply} 对应的任务不存在` : `任务单号 ${no} 对应的任务不存在`);
+  if (!order && !no && !apply) throw errParam('请提供订单号 orderNo（推荐）、任务单号 taskNo 或发运申请号 applyNo');
+  let rows;
+  if (order) {
+    rows = await query('SELECT * FROM shipping_task WHERE order_no = ? AND deleted = 0', [order]);
+    if (!rows.length) throw errNotFound(`订单号 ${order} 对应的任务不存在`);
+    return rows[0];
   }
+  if (no) {
+    rows = await query('SELECT * FROM shipping_task WHERE task_no = ? AND deleted = 0', [no]);
+    if (!rows.length) throw errNotFound(`任务单号 ${no} 对应的任务不存在`);
+    return rows[0];
+  }
+  rows = await query('SELECT * FROM shipping_task WHERE apply_no = ? AND deleted = 0 ORDER BY id', [apply]);
+  if (!rows.length) throw errNotFound(`发运申请号 ${apply} 对应的任务不存在`);
+  if (rows.length > 1) throw errParam(`发运申请号 ${apply} 对应 ${rows.length} 条任务，请改用订单号 orderNo 定位具体车辆`);
   return rows[0];
 }
 
@@ -127,12 +135,22 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
   const deliveryAddress = String(b.deliveryAddress ?? '').trim();
   if (!deliveryAddress) throw errParam('交付地址 deliveryAddress 必填');
   if (!Array.isArray(b.vehicles) || !b.vehicles.length) throw errParam('车辆明细 vehicles 必填（至少一台车）');
-  // 一车一单：一个发运申请只承载 1 台车，多车由 CRM 拆分为多条申请逐车下发
-  if (b.vehicles.length > 1) throw errParam('一车一单：每次发运申请仅允许 1 台车，请按车拆分后逐条下发');
+  // 一车一单：一台车 = 一个订单任务；一个发运申请（applyNo）可含多台车，按 VIN 拆成多条任务
+  if (b.vehicles.length > 200) throw errParam('单次发运申请车辆数不能超过 200 台');
+  const seenVin = new Set();
+  const seenOrder = new Set();
   b.vehicles.forEach((v, i) => {
     const vin = String(v?.vin ?? '').trim();
     if (!vin) throw errParam(`第 ${i + 1} 台车的 VIN 必填`);
     if (!/^[A-HJ-NPR-Z0-9]{17}$/i.test(vin)) throw errParam(`第 ${i + 1} 台车的 VIN 格式不正确，应为 17 位`);
+    const vinUp = vin.toUpperCase();
+    if (seenVin.has(vinUp)) throw errParam(`VIN ${vinUp} 在本次申请中重复`);
+    seenVin.add(vinUp);
+    // 订单号：一车一单的唯一标识，必填且全局唯一
+    const orderNo = String(v?.orderNo ?? '').trim();
+    if (!orderNo) throw errParam(`第 ${i + 1} 台车的订单号 orderNo 必填（一车一单）`);
+    if (seenOrder.has(orderNo)) throw errParam(`订单号 ${orderNo} 在本次申请中重复`);
+    seenOrder.add(orderNo);
   });
   if (b.remark && String(b.remark).length > 500) throw errParam('备注 remark 不能超过 500 字');
   // CRM 操作人账号：随申请推送，状态日志「操作人」展示用；缺省记「CRM 系统」
@@ -157,80 +175,90 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
     }
   });
 
-  // ---- applyNo 幂等：重复下发 → C0001（既有需求 1：任务单号 STP 自动生成，CRM 不传）----
-  const dup = await query('SELECT id, task_no FROM shipping_task WHERE apply_no = ? AND deleted = 0', [applyNo]);
-  if (dup.length) throw errDup(`发运申请号 ${applyNo} 已下发过，任务单号 ${dup[0].task_no}，请勿重复下发`);
+  // ---- orderNo 全局唯一校验（一车一单，跨申请也不可重复）----
+  const orderNos = b.vehicles.map((v) => String(v.orderNo).trim());
+  const dupOrders = await query(
+    `SELECT order_no, task_no FROM shipping_task WHERE order_no IN (${orderNos.map(() => '?').join(',')}) AND deleted = 0`,
+    orderNos
+  );
+  if (dupOrders.length) {
+    throw errDup(`订单号 ${dupOrders[0].order_no} 已下发过，任务单号 ${dupOrders[0].task_no}，请勿重复下发`);
+  }
 
-  // 计划运费：head.plan_freight = 各车 planFreight 之和；全部未传时兼容顶层 planFreight（技术方案 3.1 示例）
-  const vehicleFreights = b.vehicles.map((v) => (v?.planFreight === undefined || v?.planFreight === null || v?.planFreight === ''
-    ? null : assertAmount(v.planFreight, { label: '车辆计划运费 planFreight' })));
-  const hasVehicleFreight = vehicleFreights.some((f) => f !== null);
-  const planFreight = hasVehicleFreight
-    ? Number(vehicleFreights.reduce((s, f) => s + (f || 0), 0).toFixed(2))
-    : (b.planFreight === undefined || b.planFreight === null || b.planFreight === ''
-      ? null
-      : assertAmount(b.planFreight, { label: '计划运费 planFreight' }));
-  // 里程：CRM 发运申请下发（线路里程），一车一单即该车里程，到达回传可覆盖
+  // 里程：CRM 发运申请下发（线路里程），到达回传可覆盖
   const mileage = assertAmount(b.mileage, { label: '里程 mileage', required: false });
 
-  const taskNo = await withTransaction(async (conn) => {
-    const no = await nextSeq('FY', conn); // 任务单号 FY+yyyyMMdd+4 位（系统自动生成）
-    const [r] = await conn.query(
-      `INSERT INTO shipping_task
-        (task_no, apply_no, customer_name, region, sales_person, sales_phone, delivery_area, delivery_address,
-         receiver_name, receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date,
-         plan_freight, mileage, status, remark, create_name, update_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'WAIT_DISPATCH', ?, 'CRM 系统', 'CRM 系统')`,
-      [no, applyNo, cutStr(customerName, 128),
-       cutStr(String(b.region ?? '').trim(), 64) || null,
-       cutStr(String(b.salesPerson ?? '').trim(), 64) || null,
-       salesPhone,
-       cutStr(String(b.deliveryArea ?? '').trim(), 128) || null,
-       cutStr(deliveryAddress, 255),
-       receiverName,
-       receiverPhone,
-       cutStr(factory, 128),
-       cutStr(storageLocation, 128),
-       cutStr(String(b.shipMethod ?? '送车').trim(), 16) || '送车',
-       // head 发运地点：顶层优先，未传取首台车（列表页展示 head 级，保证不为空）
-       cutStr(headShipLocation || String(b.vehicles[0]?.shipLocation ?? '').trim(), 128),
-       b.planPickupDate ? String(b.planPickupDate).trim() : null,
-       planFreight,
-       mileage,
-       cutStr(String(b.remark ?? '').trim(), 500) || null]
-    );
-    const taskId = r.insertId;
+  // ---- 按 VIN 拆任务：一台车一条任务，applyNo 共享，orderNo 各自唯一 ----
+  const results = [];
+  for (let i = 0; i < b.vehicles.length; i++) {
+    const v = b.vehicles[i];
+    const vin = String(v.vin).trim().toUpperCase();
+    const orderNo = String(v.orderNo).trim();
+    const vehicleFreight = (v.planFreight === undefined || v.planFreight === null || v.planFreight === '')
+      ? (b.planFreight === undefined || b.planFreight === null || b.planFreight === '' ? null : assertAmount(b.planFreight, { label: '计划运费 planFreight' }))
+      : assertAmount(v.planFreight, { label: `第 ${i + 1} 台车计划运费 planFreight` });
 
-    // 车辆明细写入（一车一单，仅 1 台车；VIN 下沉明细表）
-    const rows = b.vehicles.map((v, i) => [
-      taskId, no, String(v.vin).trim().toUpperCase(),
-      v.orderNo ? cutStr(String(v.orderNo).trim(), 64) : null,
-      v.reportNo ? cutStr(String(v.reportNo).trim(), 64) : null,
-      vehicleFreights[i],
-      null,
-      v.shipLocation ? cutStr(String(v.shipLocation).trim(), 128) : (b.shipLocation ? cutStr(String(b.shipLocation).trim(), 128) : null),
-      v.vehicleModel ? cutStr(String(v.vehicleModel).trim(), 64) : null,
-      v.engineConfig ? cutStr(String(v.engineConfig).trim(), 64) : null,
-      v.cabinType ? cutStr(String(v.cabinType).trim(), 32) : null,
-      'CRM 系统', 'CRM 系统',
-    ]);
-    await conn.query(
-      `INSERT INTO shipping_task_vehicle
-        (task_id, task_no, vin, order_no, report_no, plan_freight, actual_freight, ship_location,
-         vehicle_model, engine_config, cabin_type, create_name, update_name)
-       VALUES ${rows.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}`,
-      rows.flat()
-    );
+    const taskNo = await withTransaction(async (conn) => {
+      const no = await nextSeq('FY', conn); // 任务单号 FY+yyyyMMdd+4 位（系统自动生成）
+      const [r] = await conn.query(
+        `INSERT INTO shipping_task
+          (task_no, apply_no, order_no, customer_name, region, sales_person, sales_phone, delivery_area, delivery_address,
+           receiver_name, receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date,
+           plan_freight, mileage, status, remark, create_name, update_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'WAIT_DISPATCH', ?, 'CRM 系统', 'CRM 系统')`,
+        [no, applyNo, cutStr(orderNo, 64), cutStr(customerName, 128),
+         cutStr(String(b.region ?? '').trim(), 64) || null,
+         cutStr(String(b.salesPerson ?? '').trim(), 64) || null,
+         salesPhone,
+         cutStr(String(b.deliveryArea ?? '').trim(), 128) || null,
+         cutStr(deliveryAddress, 255),
+         receiverName,
+         receiverPhone,
+         cutStr(factory, 128),
+         cutStr(storageLocation, 128),
+         cutStr(String(b.shipMethod ?? '送车').trim(), 16) || '送车',
+         cutStr(headShipLocation || String(v?.shipLocation ?? '').trim(), 128),
+         b.planPickupDate ? String(b.planPickupDate).trim() : null,
+         vehicleFreight,
+         mileage,
+         cutStr(String(b.remark ?? '').trim(), 500) || null]
+      );
+      const taskId = r.insertId;
 
-    await writeStatusLog(conn, {
-      taskId, taskNo: no, fromStatus: null, toStatus: 'WAIT_DISPATCH',
-      source: 'CRM', operator,
-      remark: `接收CRM发运申请，生成待派单任务（VIN ${String(b.vehicles[0].vin).trim().toUpperCase()}）`,
+      // 车辆明细：一车一单，仅 1 台车
+      await conn.query(
+        `INSERT INTO shipping_task_vehicle
+          (task_id, task_no, vin, order_no, report_no, plan_freight, actual_freight, ship_location,
+           vehicle_model, engine_config, cabin_type, create_name, update_name)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'CRM 系统', 'CRM 系统')`,
+        [taskId, no, vin, cutStr(orderNo, 64),
+         v.reportNo ? cutStr(String(v.reportNo).trim(), 64) : null,
+         vehicleFreight,
+         v.shipLocation ? cutStr(String(v.shipLocation).trim(), 128) : (headShipLocation ? cutStr(headShipLocation, 128) : null),
+         v.vehicleModel ? cutStr(String(v.vehicleModel).trim(), 64) : null,
+         v.engineConfig ? cutStr(String(v.engineConfig).trim(), 64) : null,
+         v.cabinType ? cutStr(String(v.cabinType).trim(), 32) : null]
+      );
+
+      await writeStatusLog(conn, {
+        taskId, taskNo: no, fromStatus: null, toStatus: 'WAIT_DISPATCH',
+        source: 'CRM', operator,
+        remark: `接收CRM发运申请，生成待派单任务（VIN ${vin}，订单号 ${orderNo}）`,
+      });
+      return no;
     });
-    return no;
-  });
+    results.push({ taskNo, orderNo, vin });
+  }
 
-  ok(res, { taskNo, mileage }, `发运申请接收成功，已生成待派单任务 ${taskNo}`);
+  const first = results[0];
+  ok(res, {
+    applyNo,
+    total: results.length,
+    taskNo: first.taskNo,
+    orderNo: first.orderNo,
+    mileage,
+    tasks: results,
+  }, `发运申请接收成功，已生成 ${results.length} 条待派单任务`);
 }));
 
 /* ======================= ② CRM：物流电子签同步 ======================= */
@@ -275,7 +303,7 @@ router.post('/esign/sync', wrap(async (req, res) => {
 /* ======================= ③ CRM：取消前状态查询 ======================= */
 // GET /api/external/shipping-tasks/cancel-check?applyNo=
 router.get('/shipping-tasks/cancel-check', wrap(async (req, res) => {
-  const task = await resolveTask({ applyNo: req.query.applyNo, taskNo: req.query.taskNo });
+  const task = await resolveTask({ orderNo: req.query.orderNo, applyNo: req.query.applyNo, taskNo: req.query.taskNo });
   const rule = cancelRule(task.status);
   ok(res, { taskNo: task.task_no, status: task.status, cancellable: rule.cancellable, message: rule.message });
 }));
@@ -298,7 +326,7 @@ router.post('/shipping-tasks/cancel', wrap(async (req, res) => {
   // CRM 操作人账号：随取消推送，状态日志「操作人」展示用；缺省记「CRM 系统」
   const operator = cutStr(String(b.operator ?? '').trim(), 64) || 'CRM 系统';
   const result = await withTransaction(async (conn) => {
-    const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
+    const task = await lockTaskByRef(conn, { orderNo: b.orderNo, applyNo: b.applyNo, taskNo: b.taskNo });
     const rule = cancelRule(task.status);
 
     // 幂等：已取消的任务重复取消直接成功返回
@@ -341,7 +369,7 @@ router.post('/wms/outbound-status', wrap(async (req, res) => {
   assertNotFuture(outboundTime, '出库时间 outboundTime');
 
   const result = await withTransaction(async (conn) => {
-    const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
+    const task = await lockTaskByRef(conn, { orderNo: b.orderNo, applyNo: b.applyNo, taskNo: b.taskNo });
 
     // 正常链：已提车 → 已出库 → 在途（提车在前、出库在后，出库完成即发车进入在途）
     if (task.status === 'PICKED') {
@@ -647,7 +675,7 @@ router.post('/tracking/report', wrap(async (req, res) => {
   assertNotFuture(reportTime, '上报时间 reportTime');
 
   const result = await withTransaction(async (conn) => {
-    const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
+    const task = await lockTaskByRef(conn, { orderNo: b.orderNo, applyNo: b.applyNo, taskNo: b.taskNo });
 
     if (['WAIT_DISPATCH', 'DISPATCHED', 'CARRIER_ACCEPTED'].includes(task.status)) {
       throw errState(`当前任务状态不允许上报位置（${task.status}），车辆尚未提车`);
@@ -705,7 +733,7 @@ async function runStatusAction(req, action) {
   const b = req.body || {};
 
   const result = await withTransaction(async (conn) => {
-    const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
+    const task = await lockTaskByRef(conn, { orderNo: b.orderNo, applyNo: b.applyNo, taskNo: b.taskNo });
 
     // ---- 回传方身份（通用接口：任意承运商/三方物流可调）----
     // 优先 carrierId（STP 内部ID）→ externalCarrierId（第三方ID）→ carrierName（旧字段，仅兼容保留）
@@ -1013,18 +1041,26 @@ router.post('/esign/sign-status', wrap(async (req, res) => {
 }));
 
 /* ======================= 辅助：统一定位 + 行锁 ======================= */
-/** 统一定位并锁定任务（FOR UPDATE）：applyNo 优先 taskNo 兼容 */
-async function lockTaskByRef(conn, { applyNo, taskNo }) {
+/** 统一定位并锁定任务（FOR UPDATE）：orderNo 优先，其次 taskNo，兼容 applyNo（须唯一对应单任务） */
+async function lockTaskByRef(conn, { orderNo, applyNo, taskNo }) {
+  const order = String(orderNo ?? '').trim();
   const apply = String(applyNo ?? '').trim();
   const no = String(taskNo ?? '').trim();
-  if (!apply && !no) throw errParam('请提供发运申请号 applyNo（推荐）或任务单号 taskNo');
-  const [rows] = await conn.query(
-    `SELECT * FROM shipping_task WHERE ${apply ? 'apply_no = ?' : 'task_no = ?'} AND deleted = 0 FOR UPDATE`,
-    [apply || no]
-  );
-  if (!rows.length) {
-    throw errNotFound(apply ? `发运申请号 ${apply} 对应的任务不存在` : `任务单号 ${no} 对应的任务不存在`);
+  if (!order && !no && !apply) throw errParam('请提供订单号 orderNo（推荐）、任务单号 taskNo 或发运申请号 applyNo');
+  let rows;
+  if (order) {
+    [rows] = await conn.query('SELECT * FROM shipping_task WHERE order_no = ? AND deleted = 0 FOR UPDATE', [order]);
+    if (!rows.length) throw errNotFound(`订单号 ${order} 对应的任务不存在`);
+    return rows[0];
   }
+  if (no) {
+    [rows] = await conn.query('SELECT * FROM shipping_task WHERE task_no = ? AND deleted = 0 FOR UPDATE', [no]);
+    if (!rows.length) throw errNotFound(`任务单号 ${no} 对应的任务不存在`);
+    return rows[0];
+  }
+  [rows] = await conn.query('SELECT * FROM shipping_task WHERE apply_no = ? AND deleted = 0 ORDER BY id FOR UPDATE', [apply]);
+  if (!rows.length) throw errNotFound(`发运申请号 ${apply} 对应的任务不存在`);
+  if (rows.length > 1) throw errParam(`发运申请号 ${apply} 对应 ${rows.length} 条任务，请改用订单号 orderNo 定位具体车辆`);
   return rows[0];
 }
 

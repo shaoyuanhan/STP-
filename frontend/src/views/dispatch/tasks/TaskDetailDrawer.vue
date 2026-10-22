@@ -93,7 +93,7 @@ const dispatchRemark = computed(() => {
   return hit?.remark || ''
 })
 
-/** 取消记录：CRM 取消 + STP 取消派单记录 */
+/** 取消记录：CRM 取消 + STP 取消派单记录（含当时承运商） */
 const cancelRecords = computed<string[]>(() => {
   const list: string[] = []
   const t = task.value
@@ -103,8 +103,9 @@ const cancelRecords = computed<string[]>(() => {
   for (const record of detail.value?.dispatchRecords ?? []) {
     if (record.action !== 'CANCEL_DISPATCH') continue
     const time = record.dispatch_time ? `${datetime(record.dispatch_time)} ` : ''
+    const carrier = record.carrier_name ? `（承运商：${record.carrier_name}）` : ''
     const text = [record.cancel_reason, record.remark].filter(Boolean).join('——')
-    list.push(`${time}取消派单：${text}`)
+    list.push(`${time}取消派单${carrier}：${text}`)
   }
   return list
 })
@@ -250,6 +251,7 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
               <StatusTag type="task" :value="task.status" />
             </n-descriptions-item>
             <n-descriptions-item label="发运申请单号">{{ task.apply_no || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="订单号">{{ task.order_no || '-' }}</n-descriptions-item>
             <n-descriptions-item label="客户名称（合同主体）">{{ task.customer_name || '-' }}</n-descriptions-item>
             <n-descriptions-item label="大区">{{ task.region || '-' }}</n-descriptions-item>
             <n-descriptions-item label="销售人员姓名">{{ task.sales_person || '-' }}</n-descriptions-item>
@@ -342,15 +344,12 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
             <n-descriptions-item label="派单备注" :span="3">
               <span class="pre-wrap">{{ dispatchRemark || '-' }}</span>
             </n-descriptions-item>
-            <n-descriptions-item label="取消记录" :span="3">
-              <template v-if="cancelRecords.length">
-                <div class="cancel-records">
-                  <div v-for="(item, index) in cancelRecords" :key="index" class="cancel-records__item">
-                    {{ item }}
-                  </div>
+            <n-descriptions-item v-if="cancelRecords.length" label="取消记录" :span="3">
+              <div class="cancel-records">
+                <div v-for="(item, index) in cancelRecords" :key="index" class="cancel-records__item">
+                  {{ item }}
                 </div>
-              </template>
-              <span v-else>-</span>
+              </div>
             </n-descriptions-item>
           </DetailSection>
 

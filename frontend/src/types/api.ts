@@ -245,6 +245,8 @@ export interface ShippingTaskListItem extends AuditFields {
   id: number
   task_no: string
   apply_no: string
+  /** 订单号：一车一单唯一标识（CRM 下发，全局唯一） */
+  order_no?: string | null
   customer_name: string
   /** GROUP_CONCAT 顿号连接 */
   vins?: string
@@ -304,13 +306,14 @@ export interface ShippingTaskVehicle {
   cabin_type?: string | null
 }
 
-/** 派单记录（dispatch_record） */
+/** 派单记录（dispatch_record；详情接口关联 carrier 带出 carrier_name） */
 export interface DispatchRecord {
   id?: number
   task_id: number
   task_no?: string
   action: DispatchRecordAction
   carrier_id?: number | null
+  carrier_name?: string | null
   driver_id?: number | null
   batch_no?: string | null
   dispatch_person?: string | null
@@ -362,6 +365,7 @@ export interface ShippingTaskDetail {
 export interface ShippingTaskQuery extends PageQuery {
   task_no?: string
   apply_no?: string
+  order_no?: string
   vin?: string
   customer_name?: string
   status?: TaskStatus | '' | null
