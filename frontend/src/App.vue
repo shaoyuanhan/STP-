@@ -131,6 +131,11 @@ body {
   padding: 14px 16px 26px;
 }
 
+/* 司机端 H5 页面（#/m/**）：body 高度受 .app-provider 影响，须显式拉满，否则布局 height:100% 失效、内容无法滚动 */
+.app-provider:has(.driver) {
+  height: 100%;
+}
+
 .stp-page__header {
   display: flex;
   align-items: center;
@@ -143,5 +148,15 @@ body {
   font-weight: 600;
   line-height: 1.4;
   margin: 0;
+}
+
+/* 表格列宽拖拽手柄：默认隐藏竖杠，悬停/拖动时才显示高亮条，拖拽热区与 col-resize 光标保持不变 */
+.n-data-table-resize-button::after {
+  background-color: transparent !important;
+}
+
+.n-data-table-resize-button:hover::after,
+.n-data-table-resize-button--active::after {
+  background-color: var(--n-th-icon-color-active) !important;
 }
 </style>

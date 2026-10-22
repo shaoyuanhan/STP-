@@ -86,14 +86,9 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/portal/carrier',
     component: () => import('@/layouts/BasicLayout.vue'),
-    redirect: '/portal/carrier/dashboard',
+    redirect: '/portal/carrier/tasks',
     children: [
-      {
-        path: 'dashboard',
-        name: 'portal-carrier-dashboard',
-        component: () => import('@/views/portal/carrier/Dashboard.vue'),
-        meta: { title: '工作台', group: '工作台' },
-      },
+      { path: 'dashboard', redirect: '/portal/carrier/tasks' },
       {
         path: 'tasks',
         name: 'portal-carrier-tasks',
@@ -101,22 +96,16 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '运输任务', group: '运输协同' },
       },
       {
-        path: 'tasks/:id',
-        name: 'portal-carrier-task-detail',
-        component: () => import('@/views/portal/carrier/TaskDetail.vue'),
-        meta: { title: '任务详情', group: '运输协同' },
-      },
-      {
         path: 'drivers',
         name: 'portal-carrier-drivers',
         component: () => import('@/views/portal/carrier/Drivers.vue'),
-        meta: { title: '司机管理', group: '运输协同' },
+        meta: { title: '司机管理', group: '运力管理' },
       },
       {
         path: 'messages',
         name: 'portal-carrier-messages',
         component: () => import('@/views/portal/carrier/Messages.vue'),
-        meta: { title: '消息中心', group: '运输协同' },
+        meta: { title: '消息中心', group: '消息中心' },
       },
     ],
   },
@@ -174,7 +163,7 @@ const router = createRouter({
 
 function homeOf(type: string) {
   if (type === 'DRIVER') return '/m/tasks'
-  if (type === 'CARRIER') return '/portal/carrier/dashboard'
+  if (type === 'CARRIER') return '/portal/carrier/tasks'
   return '/dashboard'
 }
 
@@ -203,7 +192,7 @@ router.beforeEach((to) => {
     if (need && profile.permissions && !profile.permissions.includes(need)) return homeOf(profile.type)
     return true
   }
-  if (profile.type === 'CARRIER') return '/portal/carrier/dashboard'
+  if (profile.type === 'CARRIER') return '/portal/carrier/tasks'
   return true
 })
 

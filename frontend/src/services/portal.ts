@@ -45,6 +45,7 @@ export interface PortalTask {
   finish_time?: string | null
   create_time?: string | null
   version: number
+  carrier_id?: number | null
   vins?: string | null
   vehicle_models?: string | null
   driver_name?: string | null
@@ -61,6 +62,8 @@ export interface PortalVehicle {
   engine_config?: string | null
   cabin_type?: string | null
   order_no?: string | null
+  report_no?: string | null
+  ship_location?: string | null
   plan_freight?: string | number | null
   actual_freight?: string | number | null
 }
@@ -144,11 +147,11 @@ class PortalApiError extends Error {
 }
 
 export function getToken(): string {
-  return localStorage.getItem(TOKEN_KEY) ?? ''
+  return sessionStorage.getItem(TOKEN_KEY) ?? ''
 }
 
 export function getProfile(): PortalProfile | null {
-  const raw = localStorage.getItem(PROFILE_KEY)
+  const raw = sessionStorage.getItem(PROFILE_KEY)
   if (!raw) return null
   try {
     return JSON.parse(raw) as PortalProfile
@@ -158,12 +161,12 @@ export function getProfile(): PortalProfile | null {
 }
 
 export function setSession(token: string, profile: PortalProfile): void {
-  localStorage.setItem(TOKEN_KEY, token)
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+  sessionStorage.setItem(TOKEN_KEY, token)
+  sessionStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
 }
 
 export function updateProfile(profile: PortalProfile): void {
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+  sessionStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
 }
 
 export function can(code: string): boolean {
@@ -173,8 +176,8 @@ export function can(code: string): boolean {
 }
 
 export function clearSession(): void {
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(PROFILE_KEY)
+  sessionStorage.removeItem(TOKEN_KEY)
+  sessionStorage.removeItem(PROFILE_KEY)
 }
 
 const http = axios.create({ baseURL: '/api', timeout: 30000 })
@@ -296,8 +299,11 @@ export function assignCarrierTask(
   return post(`/portal/carrier/tasks/${id}/assign`, payload)
 }
 
-export function fetchCarrierDrivers(keyword = ''): Promise<PortalDriver[]> {
-  return get('/portal/carrier/drivers', keyword ? { keyword } : undefined)
+export function fetchCarrierDrivers(keyword = '', carrierId?: number | null): Promise<PortalDriver[]> {
+  const params: Record<string, unknown> = {}
+  if (keyword) params.keyword = keyword
+  if (carrierId) params.carrier_id = carrierId
+  return get('/portal/carrier/drivers', Object.keys(params).length ? params : undefined)
 }
 
 export interface DriverPayload {
@@ -449,7 +455,7 @@ export interface RoleRow {
   id: number
   role_code: string
   role_name: string
-  role_kind: 'PLATFORM' | 'CARRIER' | 'DRIVER'
+  role_kind: 'SUPER' | 'PLATFORM' | 'CARRIER' | 'DRIVER'
   remark?: string | null
   status: number
   builtin: number

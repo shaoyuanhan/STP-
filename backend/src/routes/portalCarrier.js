@@ -63,14 +63,15 @@ const TASK_SELECT = `
   SELECT t.id, t.task_no, t.apply_no, t.customer_name, t.status,
          t.ship_location, t.delivery_area, t.delivery_address, t.plan_freight, t.mileage,
          t.plan_pickup_date, t.outbound_date, t.ship_time, t.arrive_time, t.finish_time,
-         t.create_time, t.version,
+         t.create_time, t.version, t.carrier_id,
          (SELECT GROUP_CONCAT(v.vin ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v
            WHERE v.task_id = t.id AND v.deleted = 0) AS vins,
          (SELECT GROUP_CONCAT(v.vehicle_model ORDER BY v.id SEPARATOR '、') FROM shipping_task_vehicle v
            WHERE v.task_id = t.id AND v.deleted = 0) AS vehicle_models,
-         d.driver_name, d.phone AS driver_phone
+         d.driver_name, d.phone AS driver_phone, c.carrier_name
   FROM shipping_task t
-  LEFT JOIN driver d ON d.id = t.driver_id`;
+  LEFT JOIN driver d ON d.id = t.driver_id
+  LEFT JOIN carrier c ON c.id = t.carrier_id`;
 
 async function taskWhere(req) {
   const { status = '', keyword = '' } = req.query;
@@ -180,11 +181,17 @@ router.post('/tasks/:id/assign', wrap(async (req, res) => {
   ok(res, result, `接单成功，已指派司机（任务 ${result.task_no}）`);
 }));
 
-/** 本承运商司机列表 */
+/** 本承运商司机列表；传 carrier_id 时只返回该承运商司机（接单指派用） */
 router.get('/drivers', wrap(async (req, res) => {
   const keyword = String(req.query.keyword ?? '').trim();
+  const carrierIdParam = Number(req.query.carrier_id || 0);
   const scope = await carrierScope(req);
-  const filter = carrierFilter(scope, 'cd.carrier_id');
+  if (carrierIdParam && !inScope(scope, carrierIdParam)) {
+    throw errBiz('该任务不属于当前承运商');
+  }
+  const filter = carrierIdParam
+    ? { sql: 'cd.carrier_id = ?', params: [carrierIdParam] }
+    : carrierFilter(scope, 'cd.carrier_id');
   const params = [...filter.params];
   let kwSql = '';
   if (keyword) {

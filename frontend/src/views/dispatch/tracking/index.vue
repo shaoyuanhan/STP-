@@ -89,12 +89,15 @@ const tasks = ref<TrackingOverviewTask[]>([])
 
 const isHistory = computed(() => scope.value === 'history')
 
+let lastLoadAt = 0
+
 async function loadOverview(silent = false) {
   if (!silent) loading.value = true
   error.value = null
   try {
     const result = await getTrackingOverview(scope.value)
     tasks.value = result?.tasks ?? []
+    lastLoadAt = Date.now()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     tasks.value = []
@@ -642,15 +645,32 @@ async function refreshAll(silent = false) {
   }
 }
 
+/** 窄屏下筛选区默认收起，避免换行多行把地图挤出首屏 */
+const isNarrow = ref(false)
+const filtersOpen = ref(false)
+let narrowMql: MediaQueryList | null = null
+
+function onNarrowChange(event: MediaQueryListEvent) {
+  isNarrow.value = event.matches
+  if (!event.matches) filtersOpen.value = false
+}
+
 onMounted(() => {
   loadOverview()
   startAutoRefresh()
   window.addEventListener('keydown', handleKeydown)
+  if (window.matchMedia) {
+    narrowMql = window.matchMedia('(max-width: 1280px)')
+    isNarrow.value = narrowMql.matches
+    narrowMql.addEventListener('change', onNarrowChange)
+  }
 })
 
 onUnmounted(() => {
   stopAutoRefresh()
   window.removeEventListener('keydown', handleKeydown)
+  narrowMql?.removeEventListener('change', onNarrowChange)
+  narrowMql = null
 })
 
 onDeactivated(stopAutoRefresh)
@@ -662,6 +682,8 @@ onActivated(() => {
     activatedOnce = true
     return
   }
+  // 数据仍然新鲜时不重复拉取，避免切回页签触发整图重绘
+  if (Date.now() - lastLoadAt < 20000) return
   refreshAll(true)
 })
 
@@ -692,7 +714,7 @@ function onMapHover(id: number | null) {
 </script>
 
 <template>
-  <div class="stp-page overview">
+  <div class="stp-page overview" :class="{ 'has-drawer': selectedId !== null }">
     <!-- 视图切换 + 关键字 + 刷新 -->
     <section class="card ov-toolbar">
       <div class="ov-tabs">
@@ -714,7 +736,7 @@ function onMapHover(id: number | null) {
         </button>
       </div>
 
-      <div class="ov-filters">
+      <div v-show="!isNarrow || filtersOpen" class="ov-filters">
         <n-input
           v-model:value="taskNoFilter"
           class="ov-filter"
@@ -758,10 +780,13 @@ function onMapHover(id: number | null) {
       </div>
 
       <div class="ov-toolbar__actions">
+        <n-button v-if="isNarrow" size="small" quaternary @click="filtersOpen = !filtersOpen">
+          {{ filtersOpen ? '收起筛选' : '筛选' }}{{ activeFilterCount ? `（${activeFilterCount}）` : '' }}
+        </n-button>
         <n-button v-if="activeFilterCount" size="small" quaternary @click="clearFilters">
           清除筛选（{{ activeFilterCount }}）
         </n-button>
-        <span v-if="!isHistory" class="ov-toolbar__live">每 30 秒自动刷新</span>
+        <span v-if="!isHistory && !isNarrow" class="ov-toolbar__live">每 30 秒自动刷新</span>
         <n-button size="small" :loading="loading" @click="refreshAll()">刷新</n-button>
       </div>
     </section>
@@ -1159,7 +1184,7 @@ function onMapHover(id: number | null) {
 /* ---- KPI ---- */
 .ov-kpis {
   display: grid;
-  /* 窄屏自动换行，宽屏 5 张卡片同排 */
+  /* 窄屏自动换行，列数随宽度平滑变化（5/4/3/2） */
   grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
   gap: 12px;
   margin-bottom: 12px;
@@ -1442,12 +1467,35 @@ function onMapHover(id: number | null) {
 }
 
 /* ---- 抽屉 ---- */
+.overview {
+  --ov-drawer-w: clamp(360px, 38vw, 480px);
+}
+
+/* 抽屉展开时主内容让位，避免被面板整块遮住 */
+.overview.has-drawer {
+  padding-right: calc(var(--ov-drawer-w) + 16px);
+}
+
+.overview.has-drawer .ov-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.overview.has-drawer .ov-list {
+  max-height: 380px;
+}
+
+@media (max-width: 1100px) {
+  .overview.has-drawer {
+    padding-right: 16px;
+  }
+}
+
 .ov-drawer {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
-  width: 480px;
+  width: var(--ov-drawer-w);
   max-width: 100vw;
   background: #ffffff;
   box-shadow: -6px 0 24px rgba(31, 45, 61, 0.16);
@@ -1779,6 +1827,23 @@ function onMapHover(id: number | null) {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* 筛选区展开时两列网格，避免 152px 定宽换行成多行 */
+  .ov-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-basis: 100%;
+  }
+
+  .ov-filter,
+  .ov-filter--range {
+    width: auto;
+    min-width: 0;
+  }
+
+  .ov-filter--range {
+    grid-column: span 2;
+  }
+
   .ov-list {
     max-height: 380px;
   }
@@ -1789,12 +1854,18 @@ function onMapHover(id: number | null) {
 }
 
 @media (max-width: 1100px) {
-  .ov-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .ov-toolbar__actions {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .ov-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  }
+
+  .ov-list__body {
+    max-height: 260px;
   }
 }
 </style>

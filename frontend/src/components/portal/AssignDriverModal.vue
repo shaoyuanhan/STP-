@@ -13,6 +13,7 @@ const props = defineProps<{
   taskId: number | null
   taskNo?: string
   version?: number
+  carrierId?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -56,7 +57,7 @@ watch(
     driverId.value = null
     loading.value = true
     try {
-      drivers.value = await fetchCarrierDrivers()
+      drivers.value = await fetchCarrierDrivers('', props.carrierId)
     } catch (e) {
       message.error(e instanceof Error ? e.message : '司机列表加载失败')
     } finally {
@@ -103,9 +104,6 @@ async function submit() {
   >
     <n-spin :show="loading">
       <div class="assign">
-        <div class="assign__hint">
-          接单后不可取消，请确认司机可按时到场提车。司机驾驶证过期或账号停用时不可分派。
-        </div>
         <n-select
           v-model:value="driverId"
           :options="options"
@@ -132,15 +130,6 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.assign__hint {
-  font-size: 12px;
-  line-height: 1.7;
-  color: #ad6800;
-  background: #fffbe6;
-  border: 1px solid #ffe58f;
-  border-radius: 6px;
-  padding: 8px 10px;
 }
 .assign__empty {
   font-size: 12px;

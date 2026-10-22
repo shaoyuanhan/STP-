@@ -21,6 +21,12 @@ interface PageTableHandle {
 }
 
 const message = useMessage()
+const KIND_TEXT: Record<string, string> = {
+  SUPER: '超级管理员',
+  PLATFORM: '平台后台',
+  CARRIER: '承运商后台',
+  DRIVER: '司机小程序',
+}
 const tableRef = ref<PageTableHandle | null>(null)
 const keyword = ref('')
 const applied = ref({ keyword: '', _t: 0 })
@@ -50,7 +56,7 @@ const rules: FormRules = {
 }
 
 const roleOptions = computed(() => roles.value.map((item) => ({
-  label: `${item.role_name}（${item.role_kind === 'DRIVER' ? '小程序' : item.role_kind === 'CARRIER' ? '承运商后台' : '平台后台'}）`,
+  label: `${item.role_name}（${KIND_TEXT[item.role_kind || ''] || '平台后台'}）`,
   value: item.id,
 })))
 const currentRole = computed(() => roles.value.find((item) => item.id === form.role_id) ?? null)

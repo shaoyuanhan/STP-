@@ -135,7 +135,7 @@ router.put('/:id', wrap(async (req, res) => {
   const status = req.body.status === undefined ? Number(current.status) : (Number(req.body.status) === 1 ? 1 : 0);
   const refs = await assertRefs(role, req.body.carrier_id ?? current.carrier_id, req.body.driver_id ?? current.driver_id);
 
-  if (Number(req.auth.sub) === id && (role.role_kind !== 'PLATFORM' || status !== 1)) {
+  if (Number(req.auth.sub) === id && (!['SUPER', 'PLATFORM'].includes(role.role_kind) || status !== 1)) {
     throw errBiz('不能取消自己的管理员权限');
   }
   if (username) {

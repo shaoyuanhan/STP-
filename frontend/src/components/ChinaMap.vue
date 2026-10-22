@@ -7,7 +7,7 @@
  * 城市坐标库与高德同为 GCJ-02，可直接落点。
  * 未配置 VITE_AMAP_KEY 时只显示配置说明，不回退到手绘简图。
  */
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { matchCityGeo } from '@/lib/china-map'
 import { amapKey, loadAmap, type AMapDistrict, type AMapInstance, type AMapOverlay } from '@/lib/amap'
 
@@ -151,7 +151,7 @@ interface LocaContainer {
   add: (layer: unknown) => void
   remove: (layer: unknown) => void
   destroy?: () => void
-  animate: { start: () => void }
+  animate: { start: () => void; stop?: () => void }
 }
 
 interface LocaNamespace {
@@ -162,6 +162,7 @@ interface LocaNamespace {
 
 let map: AMapInstance | null = null
 let district: AMapDistrict | null = null
+let districtKey = ''
 let loca: LocaContainer | null = null
 let pulseLayer: PulseLayer | null = null
 let lines = new Map<number, AMapOverlay>()
@@ -170,6 +171,17 @@ let viewKey = ''
 let viewChanged = false
 let lastActiveKey = ''
 let resizeObserver: ResizeObserver | null = null
+let drawFrame = 0
+let moveFrame = 0
+let hidden = false
+let dirty = false
+
+function boxSize() {
+  const el = root.value
+  if (!el) return { width: 0, height: 0 }
+  const box = el.getBoundingClientRect()
+  return { width: box.width, height: box.height }
+}
 
 function locaNs(): LocaNamespace | null {
   return (window as Window & { Loca?: LocaNamespace }).Loca ?? null
@@ -317,31 +329,48 @@ function highlight(id: number | null) {
   applyHot()
 }
 
-function paintDistrict(AMap: Awaited<ReturnType<typeof loadAmap>>) {
-  if (!map || !AMap.DistrictLayer) return
+function districtStyles() {
   const heat = props.heat
   const showHeat = Boolean(heat && Object.keys(heat).length)
   const highlighted = new Set(props.provincesHL ?? [])
   const max = showHeat && heat ? Math.max(0, ...Object.values(heat)) : 0
+  return {
+    'nation-stroke': '#94a3b8',
+    'coastline-stroke': '#94a3b8',
+    'province-stroke': 'rgba(148,163,184,.85)',
+    fill: (feature: { NAME_CHN?: string }) => {
+      const name = shortProvince(String(feature?.NAME_CHN ?? ''))
+      if (highlighted.has(name)) return 'rgba(250,140,22,.28)'
+      if (!showHeat || !heat || !max) return 'rgba(255,255,255,0)'
+      const count = heat[name] || 0
+      if (!count) return 'rgba(255,255,255,0)'
+      return `rgba(250,140,22,${(0.14 + (count / max) * 0.36).toFixed(2)})`
+    },
+  }
+}
+
+/** 省界图层代价很高（全国边界解析），仅在热度或高亮省份变化时更新 */
+function paintDistrict(AMap: Awaited<ReturnType<typeof loadAmap>>) {
+  if (!map || !AMap.DistrictLayer) return
+  const key = `${JSON.stringify(props.heat ?? {})}|${(props.provincesHL ?? []).join(',')}`
+  if (district) {
+    if (key === districtKey) return
+    if (district.setStyles) {
+      district.setStyles(districtStyles())
+      districtKey = key
+      return
+    }
+    district.setMap(null)
+    district = null
+  }
   district = new AMap.DistrictLayer.Country({
     zIndex: 4,
     SOC: 'CHN',
     depth: 1,
-    styles: {
-      'nation-stroke': '#94a3b8',
-      'coastline-stroke': '#94a3b8',
-      'province-stroke': 'rgba(148,163,184,.85)',
-      fill: (feature: { NAME_CHN?: string }) => {
-        const name = shortProvince(String(feature?.NAME_CHN ?? ''))
-        if (highlighted.has(name)) return 'rgba(250,140,22,.28)'
-        if (!showHeat || !heat || !max) return 'rgba(255,255,255,0)'
-        const count = heat[name] || 0
-        if (!count) return 'rgba(255,255,255,0)'
-        return `rgba(250,140,22,${(0.14 + (count / max) * 0.36).toFixed(2)})`
-      },
-    },
+    styles: districtStyles(),
   })
   district.setMap(map)
+  districtKey = key
 }
 
 function addLine(
@@ -441,7 +470,6 @@ function paintPulse(links: MapLink[]) {
   const Loca = locaNs()
   if (!Loca || !map) return false
   if (!loca) loca = new Loca.Container({ map })
-  clearPulse()
   const features = links
     .map((link) => {
       const pts = (link.points || [])
@@ -455,18 +483,27 @@ function paintPulse(links: MapLink[]) {
       }
     })
     .filter((item) => item !== null)
-  if (!features.length) return true
-  pulseLayer = new Loca.PulseLinkLayer({
-    zIndex: 120,
-    opacity: 1,
-    visible: true,
-    zooms: [2, 22],
-    depth: true,
-  })
+  if (!features.length) {
+    clearPulse()
+    return true
+  }
+  // 复用图层：只换数据源，避免每次刷新重建 Loca 渲染对象
+  if (!pulseLayer) {
+    pulseLayer = new Loca.PulseLinkLayer({
+      zIndex: 120,
+      opacity: 1,
+      visible: true,
+      zooms: [2, 22],
+      depth: true,
+    })
+    pulseLayer.setSource(new Loca.GeoJSONSource({ data: { type: 'FeatureCollection', features } }))
+    applyPulseStyle()
+    loca.add(pulseLayer)
+    loca.animate.start()
+    return true
+  }
   pulseLayer.setSource(new Loca.GeoJSONSource({ data: { type: 'FeatureCollection', features } }))
   applyPulseStyle()
-  loca.add(pulseLayer)
-  loca.animate.start()
   return true
 }
 
@@ -613,19 +650,24 @@ function focusActive(force = false) {
 
 function draw() {
   if (!map) return
+  const { width, height } = boxSize()
+  if (hidden || width < 2 || height < 2) {
+    dirty = true
+    return
+  }
   const AMap = (window as Window & { AMap?: Awaited<ReturnType<typeof loadAmap>> }).AMap
   if (!AMap) return
+  dirty = false
   lines = new Map()
-  clearPulse()
-  const existing = map.getAllOverlays?.() ?? []
+  const existing = (map.getAllOverlays?.() ?? []).filter((overlay) => overlay !== district)
   if (existing.length) map.remove(existing)
-  if (district) {
-    district.setMap(null)
-    district = null
-  }
   paintDistrict(AMap)
-  if (props.fit) paintDetail(AMap)
-  else paintOverview(AMap)
+  if (props.fit) {
+    clearPulse()
+    paintDetail(AMap)
+  } else {
+    paintOverview(AMap)
+  }
   applyHot()
   viewChanged = false
   syncView()
@@ -650,12 +692,39 @@ function onMapClick(event: { pixel?: unknown }) {
 }
 
 function onMapMove(event: { pixel?: unknown }) {
-  if (props.fit || !pulseLayer) return
-  const id = linkAt(event.pixel)
-  if (id === hotId.value) return
-  hotId.value = id
-  applyHot()
-  emit('hover', id)
+  if (hidden || props.fit || !pulseLayer) return
+  const pixel = event.pixel
+  if (moveFrame) return
+  moveFrame = requestAnimationFrame(() => {
+    moveFrame = 0
+    if (hidden) return
+    const id = linkAt(pixel)
+    if (id === hotId.value) return
+    hotId.value = id
+    applyHot()
+    emit('hover', id)
+  })
+}
+
+function pauseMap() {
+  hidden = true
+  loca?.animate.stop?.()
+}
+
+function resumeMap(left = 8) {
+  hidden = false
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      const { width, height } = boxSize()
+      if (width < 2 || height < 2) {
+        if (left > 0) resumeMap(left - 1)
+        return
+      }
+      map?.resize()
+      if (dirty) draw()
+      loca?.animate.start()
+    })
+  })
 }
 
 async function boot() {
@@ -681,7 +750,12 @@ async function boot() {
     map.on('mousemove', onMapMove)
     ready.value = true
     draw()
-    resizeObserver = new ResizeObserver(() => map?.resize())
+    resizeObserver = new ResizeObserver(() => {
+      if (hidden) return
+      const { width, height } = boxSize()
+      if (width < 2 || height < 2) return
+      map?.resize()
+    })
     if (root.value) resizeObserver.observe(root.value)
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '高德地图加载失败'
@@ -692,8 +766,23 @@ function render() {
   draw()
 }
 
+/** 同一帧内的多次数据变化合并成一次重绘 */
+function scheduleDraw() {
+  if (drawFrame) return
+  drawFrame = requestAnimationFrame(() => {
+    drawFrame = 0
+    if (ready.value) draw()
+  })
+}
+
 onMounted(boot)
+onActivated(resumeMap)
+onDeactivated(pauseMap)
 onUnmounted(() => {
+  if (drawFrame) cancelAnimationFrame(drawFrame)
+  if (moveFrame) cancelAnimationFrame(moveFrame)
+  drawFrame = 0
+  moveFrame = 0
   resizeObserver?.disconnect()
   clearPulse()
   loca?.destroy?.()
@@ -721,7 +810,7 @@ watch(
     props.arrived,
   ],
   () => {
-    if (ready.value) draw()
+    scheduleDraw()
   },
   { deep: true },
 )

@@ -686,7 +686,7 @@ export interface ExternalAcceptPayload extends ExternalTaskRef {
 
 /** #12 司机确认提车（=发运，含提车照片） */
 export interface ExternalPickupPayload extends ExternalTaskRef {
-  /** 实际提车日期（YYYY-MM-DD，即发运时间，不得晚于当天） */
+  /** 实际提车时间（YYYY-MM-DD HH:mm:ss，即发运时间，不得晚于当前时间） */
   actualPickupDate?: string
   /** 提车照片 URL 列表 */
   photos?: string[]

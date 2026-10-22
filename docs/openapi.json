@@ -2140,6 +2140,11 @@
                     "description": "备注",
                     "title": "备注"
                   },
+                  "operator": {
+                    "type": "string",
+                    "description": "CRM 操作人账号（随申请推送，写状态日志 task_status_log.operator 用于时间线「操作人」展示；缺省记「CRM 系统」）",
+                    "title": "操作人账号"
+                  },
                   "vehicles": {
                     "type": "array",
                     "description": "车辆明细列表（必填，一车一单仅允许 1 台）",
@@ -2426,6 +2431,11 @@
                     "type": "string",
                     "description": "取消原因（必填）",
                     "title": "取消原因"
+                  },
+                  "operator": {
+                    "type": "string",
+                    "description": "CRM 操作人账号（随取消推送，写状态日志用于「操作人」展示；缺省记「CRM 系统」）",
+                    "title": "操作人账号"
                   }
                 },
                 "required": [
@@ -2435,7 +2445,8 @@
               },
               "example": {
                 "applyNo": "APPLY-20261012-001",
-                "cancelReason": "发运转自提，客户改为自提"
+                "cancelReason": "发运转自提，客户改为自提",
+                "operator": "zhangsan"
               }
             }
           }
@@ -2531,7 +2542,7 @@
           "10 外部接口·狮桥物流"
         ],
         "summary": "⑩ 司机信息同步（支持单条 / 批量）",
-        "description": "按第三方司机ID（externalDriverId，推荐）优先 UPSERT，未传时退回身份证号（source=2 狮桥同步，更新时姓名以狮桥为准、未传字段保留原值）；carrier_ids / carrierId / externalCarrierId 存在时维护 carrier_driver 多对多关联；重复推送同一第三方ID或身份证号为更新不新增。\n\n**字段命名**：camelCase（driverName/idCard/...）与 snake_case（name 或 driver_name/id_card/...）两种写法均接受，同义字段 camelCase 优先。\n\n**支持批量**：请求体可直接传司机对象数组，或 {\"drivers\":[...]}，单次最多 200 条；每条独立事务，单条失败不影响其余，data 返回 { total, success, created, updated, failed, results[] }，results 按入参顺序给出每条的成功/失败与原因。",
+        "description": "按第三方司机ID（externalDriverId，推荐）优先 UPSERT，未传时退回身份证号（source=2 狮桥同步，更新时姓名以狮桥为准、未传字段保留原值）；carrier_ids / carrierId / externalCarrierId 存在时维护 carrier_driver 多对多关联；重复推送同一第三方ID或身份证号为更新不新增。同步时自动保证司机登录账号存在（sys_account，account_type=DRIVER，无账号按默认密码补建，默认密码取环境变量 DEFAULT_DRIVER_PASSWORD，缺省 123456；已有账号同步姓名/手机号）。\n\n**字段命名**：camelCase（driverName/idCard/...）与 snake_case（name 或 driver_name/id_card/...）两种写法均接受，同义字段 camelCase 优先。\n\n**支持批量**：请求体可直接传司机对象数组，或 {\"drivers\":[...]}，单次最多 200 条；每条独立事务，单条失败不影响其余，data 返回 { total, success, created, updated, failed, results[] }，results 按入参顺序给出每条的成功/失败与原因。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2916,7 +2927,7 @@
           }
         },
         "summary": "⑫ 司机确认提车（=发运，含提车照片）",
-        "description": "司机确认提车并拍照：仅 CARRIER_ACCEPTED 可调，CARRIER_ACCEPTED→PICKED，回填 ship_time（发运时间），提车后待 ⑧ WMS 出库回传进入在途。actualPickupDate 为实际提车日期（YYYY-MM-DD，允许早于计划提车日期，不得晚于当前日期）；photos 提车照片结构化写入 status_log.photos。已提车及之后重复回传仅补记日志、不回退状态。",
+        "description": "司机确认提车并拍照：仅 CARRIER_ACCEPTED 可调，CARRIER_ACCEPTED→PICKED，回填 ship_time（发运时间），提车后待 ⑧ WMS 出库回传进入在途。actualPickupDate 为实际提车时间（YYYY-MM-DD HH:mm:ss，兼容仅日期，允许早于计划提车日期，不得晚于当前时间）；photos 提车照片结构化写入 status_log.photos。已提车及之后重复回传仅补记日志、不回退状态。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2942,8 +2953,8 @@
                   },
                   "actualPickupDate": {
                     "type": "string",
-                    "description": "实际提车日期（action=PICKUP 选填，YYYY-MM-DD，即发运时间；允许早于计划提车日期；提车后待仓库出库；不传取当前时间）",
-                    "title": "实际提车日期"
+                    "description": "实际提车时间（action=PICKUP 选填，YYYY-MM-DD HH:mm:ss，兼容仅日期，即发运时间；允许早于计划提车日期，不得晚于当前时间；提车后待仓库出库；不传取当前时间）",
+                    "title": "实际提车时间"
                   },
                   "photos": {
                     "type": "array",

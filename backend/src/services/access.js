@@ -129,13 +129,14 @@ const CODES_BY_KIND = {
 };
 
 function codesOf(kind) {
+  if (kind === 'SUPER') return [...ALL_CODES];
   return [...(CODES_BY_KIND[kind] || [])];
 }
 
 function accountTypeOf(role) {
-  if (role.role_kind === 'PLATFORM') return 'ADMIN';
+  if (role.role_kind === 'SUPER' || role.role_kind === 'PLATFORM') return 'ADMIN';
   if (role.role_kind === 'DRIVER') return 'DRIVER';
-  return role.role_code === 'CARRIER_DISPATCHER' ? 'CARRIER_DISPATCHER' : 'CARRIER_ADMIN';
+  return role.role_code === 'CARRIER002' ? 'CARRIER_DISPATCHER' : 'CARRIER_ADMIN';
 }
 
 async function columnExists(table, column) {
@@ -181,11 +182,29 @@ async function ensureAccess() {
     await query("ALTER TABLE shipping_task ADD COLUMN material_type VARCHAR(16) DEFAULT NULL COMMENT '物料类型:FINISHED-成品,LOOSE-散件' AFTER ship_method");
   }
 
+  // 内置角色编码统一为「端前缀 + 三位流水」，历史编码先迁移
+  const legacyCodes = {
+    PLATFORM_ADMIN: 'PLATFORM001',
+    CARRIER_ADMIN: 'CARRIER001',
+    CARRIER_DISPATCHER: 'CARRIER002',
+    DRIVER: 'DRIVER001',
+  };
+  for (const [oldCode, newCode] of Object.entries(legacyCodes)) {
+    const [oldRows, newRows] = await Promise.all([
+      query('SELECT id FROM sys_role WHERE role_code = ? LIMIT 1', [oldCode]),
+      query('SELECT id FROM sys_role WHERE role_code = ? LIMIT 1', [newCode]),
+    ]);
+    if (oldRows.length && !newRows.length) {
+      await query('UPDATE sys_role SET role_code = ? WHERE id = ?', [newCode, oldRows[0].id]);
+      await query('UPDATE sys_account SET role = ? WHERE role = ?', [newCode, oldCode]);
+    }
+  }
+
   const builtins = [
-    { code: 'PLATFORM_ADMIN', name: '平台管理员', kind: 'PLATFORM', remark: '后台全部功能，全部承运商运单，成品和散件' },
-    { code: 'CARRIER_ADMIN', name: '承运商管理员', kind: 'CARRIER', remark: '承运商后台；运单范围取账号所属承运商' },
-    { code: 'CARRIER_DISPATCHER', name: '承运商调度', kind: 'CARRIER', remark: '承运商后台，不含司机新增与停用' },
-    { code: 'DRIVER', name: '司机', kind: 'DRIVER', remark: '只能登录小程序' },
+    { code: 'PLATFORM001', name: '超级管理员', kind: 'SUPER', remark: '超级管理员，全部功能与全部数据' },
+    { code: 'CARRIER001', name: '承运商管理员', kind: 'CARRIER', remark: '承运商后台；运单范围取账号所属承运商' },
+    { code: 'CARRIER002', name: '承运商调度', kind: 'CARRIER', remark: '承运商后台，不含司机新增与停用' },
+    { code: 'DRIVER001', name: '司机', kind: 'DRIVER', remark: '只能登录小程序' },
   ];
   for (const role of builtins) {
     const rows = await query('SELECT id FROM sys_role WHERE role_code = ? AND deleted = 0', [role.code]);
@@ -197,11 +216,13 @@ async function ensureAccess() {
         [role.code, role.name, role.kind, role.remark]
       );
       id = ins.insertId;
+    } else if (role.code === 'PLATFORM001') {
+      await query('UPDATE sys_role SET role_kind = \'SUPER\' WHERE id = ? AND role_kind <> \'SUPER\'', [id]);
     }
     const permCount = await query('SELECT COUNT(*) AS n FROM sys_role_perm WHERE role_id = ?', [id]);
     if (!Number(permCount[0].n)) {
       let perms = codesOf(role.kind);
-      if (role.code === 'CARRIER_DISPATCHER') {
+      if (role.code === 'CARRIER002') {
         perms = perms.filter((code) => code !== 'portal.drivers:create' && code !== 'portal.drivers:status');
       }
       for (const code of perms) {
@@ -217,10 +238,10 @@ async function ensureAccess() {
   }
 
   const typeToCode = {
-    ADMIN: 'PLATFORM_ADMIN',
-    CARRIER_ADMIN: 'CARRIER_ADMIN',
-    CARRIER_DISPATCHER: 'CARRIER_DISPATCHER',
-    DRIVER: 'DRIVER',
+    ADMIN: 'PLATFORM001',
+    CARRIER_ADMIN: 'CARRIER001',
+    CARRIER_DISPATCHER: 'CARRIER002',
+    DRIVER: 'DRIVER001',
   };
   const roles = await query('SELECT id, role_code FROM sys_role WHERE deleted = 0');
   const roleId = Object.fromEntries(roles.map((row) => [row.role_code, row.id]));

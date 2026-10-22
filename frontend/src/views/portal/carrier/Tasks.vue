@@ -3,19 +3,23 @@
  * 承运商 - 运输任务列表
  * 服务端分页 + 状态/关键字筛选；待接单任务可直接指派司机
  */
-import { h, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, h, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { NButton } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import StatusBadge from '@/components/portal/StatusBadge.vue'
 import AssignDriverModal from '@/components/portal/AssignDriverModal.vue'
+import TaskDetailDrawer from './TaskDetailDrawer.vue'
 import { fetchCarrierTasks } from '@/services/portal'
 import type { PortalTask } from '@/services/portal'
+import { useSessionStore } from '@/stores/session'
 
 const route = useRoute()
-const router = useRouter()
 const message = useMessage()
+const session = useSessionStore()
+/** 平台账号能看到所有承运商的任务，需要承运商列 */
+const showCarrier = computed(() => !String(session.user.role ?? '').startsWith('CARRIER'))
 
 const loading = ref(false)
 const list = ref<PortalTask[]>([])
@@ -83,26 +87,39 @@ function onAssigned() {
   load()
 }
 
-const columns: DataTableColumns<PortalTask> = [
+const detailState = reactive({
+  show: false,
+  id: null as number | null,
+})
+
+function openDetail(row: PortalTask) {
+  detailState.id = row.id
+  detailState.show = true
+}
+
+const baseColumns: DataTableColumns<PortalTask> = [
   {
     title: '任务单号',
     key: 'task_no',
     width: 150,
+    resizable: true,
     render: (row) =>
       h(
         'a',
         {
           class: 'link',
-          onClick: () => router.push(`/portal/carrier/tasks/${row.id}`),
+          onClick: () => openDetail(row),
         },
         row.task_no
       ),
   },
-  { title: '客户', key: 'customer_name', width: 140, ellipsis: { tooltip: true } },
+  { title: '客户', key: 'customer_name', width: 140, resizable: true, ellipsis: { tooltip: true } },
   {
     title: '运输路线',
     key: 'route',
-    minWidth: 200,
+    width: 260,
+    resizable: true,
+    ellipsis: { tooltip: true },
     render: (row) =>
       h('span', { class: 'route' }, `${row.ship_location || '-'} → ${row.delivery_area || '-'}`),
   },
@@ -110,13 +127,15 @@ const columns: DataTableColumns<PortalTask> = [
     title: '车辆',
     key: 'vins',
     width: 170,
+    resizable: true,
     ellipsis: { tooltip: true },
     render: (row) => row.vins || '-',
   },
   {
     title: '计划运费',
     key: 'plan_freight',
-    width: 100,
+    width: 110,
+    resizable: true,
     align: 'right',
     render: (row) => (row.plan_freight == null ? '-' : `¥ ${Number(row.plan_freight).toFixed(2)}`),
   },
@@ -124,15 +143,17 @@ const columns: DataTableColumns<PortalTask> = [
     title: '状态',
     key: 'status',
     width: 100,
+    resizable: true,
     render: (row) => h(StatusBadge, { status: row.status, size: 'small' }),
   },
   {
     title: '司机',
     key: 'driver_name',
     width: 110,
+    resizable: true,
     render: (row) => (row.driver_name ? `${row.driver_name}` : '待指派'),
   },
-  { title: '计划提车', key: 'plan_pickup_date', width: 110, render: (row) => row.plan_pickup_date || '-' },
+  { title: '计划提车', key: 'plan_pickup_date', width: 120, resizable: true, render: (row) => row.plan_pickup_date || '-' },
   {
     title: '操作',
     key: 'actions',
@@ -142,7 +163,7 @@ const columns: DataTableColumns<PortalTask> = [
       h('div', { class: 'actions' }, [
         h(
           NButton,
-          { size: 'tiny', quaternary: true, type: 'primary', onClick: () => router.push(`/portal/carrier/tasks/${row.id}`) },
+          { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '详情' }
         ),
         row.status === 'DISPATCHED'
@@ -155,6 +176,19 @@ const columns: DataTableColumns<PortalTask> = [
       ]),
   },
 ]
+
+const columns = computed<DataTableColumns<PortalTask>>(() => {
+  if (!showCarrier.value) return baseColumns
+  const carrierColumn: DataTableColumns<PortalTask>[number] = {
+    title: '承运商',
+    key: 'carrier_name',
+    width: 170,
+    resizable: true,
+    ellipsis: { tooltip: true },
+    render: (row) => row.carrier_name || '-',
+  }
+  return [baseColumns[0], carrierColumn, ...baseColumns.slice(1)]
+})
 
 onMounted(load)
 </script>
@@ -192,7 +226,9 @@ onMounted(load)
 
     <!-- 工具栏 -->
     <div class="page-toolbar">
-      <span class="page-toolbar__hint">共 {{ total }} 条任务，仅展示本承运商数据</span>
+      <span class="page-toolbar__hint">
+        共 {{ total }} 条任务，{{ showCarrier ? '展示权限范围内的全部承运商' : '仅展示本承运商数据' }}
+      </span>
     </div>
 
     <!-- 列表 -->
@@ -205,7 +241,7 @@ onMounted(load)
         :row-key="(row: PortalTask) => row.id"
         :bordered="false"
         :single-line="false"
-        :scroll-x="1150"
+        :scroll-x="1460"
         size="small"
       />
       <div class="page-pager">
@@ -226,8 +262,11 @@ onMounted(load)
       :task-id="assign.task?.id ?? null"
       :task-no="assign.task?.task_no"
       :version="assign.task?.version"
+      :carrier-id="assign.task?.carrier_id"
       @assigned="onAssigned"
     />
+
+    <TaskDetailDrawer v-model:show="detailState.show" :task-id="detailState.id" @changed="load" />
   </div>
 </template>
 

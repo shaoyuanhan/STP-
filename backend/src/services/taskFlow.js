@@ -11,7 +11,7 @@ const {
 } = require('../helpers');
 const { notify } = require('./notify');
 
-const PICKUP_PHOTO_MIN = Number(process.env.PICKUP_PHOTO_MIN) || 1;
+const PICKUP_PHOTO_MIN = Number(process.env.PICKUP_PHOTO_MIN) || 4;
 
 function pad(n) { return n < 10 ? `0${n}` : String(n); }
 
@@ -137,13 +137,20 @@ async function pickupTask({ taskId, driverId, version, photos, pickupDate, opera
   if (list.length < PICKUP_PHOTO_MIN) {
     throw errParam(`提车照片为必传项，至少上传 ${PICKUP_PHOTO_MIN} 张`);
   }
-  if (pickupDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(pickupDate))) {
-    throw errParam('实际提车日期格式不正确，应为 YYYY-MM-DD');
+  let shipTime = null;
+  if (pickupDate) {
+    const raw = String(pickupDate).trim().replace('T', ' ');
+    if (!/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$/.test(raw)) {
+      throw errParam('实际提车时间格式不正确，应为 YYYY-MM-DD HH:mm:ss');
+    }
+    // 仅传日期时沿用 09:00:00，兼容旧调用；传时分则按分钟补齐秒
+    if (raw.length === 10) shipTime = `${raw} 09:00:00`;
+    else if (raw.length === 16) shipTime = `${raw}:00`;
+    else shipTime = raw;
+    if (shipTime > localDateTime()) {
+      throw errParam('实际提车时间不能晚于当前时间');
+    }
   }
-  if (pickupDate && String(pickupDate) > localDateStr()) {
-    throw errParam('实际提车日期不能晚于今天');
-  }
-  const shipTime = pickupDate ? `${pickupDate} 09:00:00` : null;
 
   const result = await withTransaction(async (conn) => {
     const task = await lockTask(conn, taskId);
@@ -166,7 +173,7 @@ async function pickupTask({ taskId, driverId, version, photos, pickupDate, opera
       taskId: task.id, taskNo: task.task_no,
       fromStatus: 'CARRIER_ACCEPTED', toStatus: 'PICKED',
       source: 'DRIVER', operator,
-      remark: `司机确认提车，上传 ${list.length} 张照片${pickupDate ? `，实际提车日期 ${pickupDate}` : ''}`,
+      remark: `司机确认提车，上传 ${list.length} 张照片${shipTime ? `，实际提车时间 ${shipTime}` : ''}`,
       photos: list,
     });
     return { task, version: Number(task.version) + 1 };

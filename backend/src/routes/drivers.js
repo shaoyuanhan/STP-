@@ -10,8 +10,32 @@ const {
   assertPhone, assertIdCard,
 } = require('../helpers');
 const { sendXlsx, text, dateOnly, dateTime, phoneText } = require('../exporter');
+const { verifyToken } = require('../services/security');
+const { loadAccess } = require('../services/access');
 
 const router = Router();
+
+/** 登录账号的数据权限；未登录/司机端不按承运商范围过滤（司机端不走本接口） */
+async function accessOf(req) {
+  const header = String(req.headers.authorization || '');
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  const payload = verifyToken(token);
+  if (!payload?.sub || payload.type === 'DRIVER') return null;
+  return loadAccess(payload.sub);
+}
+
+/** 角色的承运商范围：司机须至少挂靠一个在范围内的承运商 */
+function applyCarrierScope(where, params, access) {
+  if (!access || access.carriers === 'ALL') return;
+  if (!access.carriers.length) {
+    where.push('1 = 0');
+    return;
+  }
+  where.push(
+    `EXISTS (SELECT 1 FROM carrier_driver cds WHERE cds.driver_id = d.id AND cds.deleted = 0 AND cds.carrier_id IN (${access.carriers.map(() => '?').join(',')}))`
+  );
+  params.push(...access.carriers);
+}
 
 /** 行后处理：carriers 逗号连接字符串 + carrier_ids 数组 */
 function decorateDriver(row) {
@@ -23,14 +47,15 @@ function decorateDriver(row) {
   };
 }
 
-/** 列表与导出共用的筛选条件（姓名/手机号/身份证号/驾驶证号/第三方ID/承运商/状态） */
-function driverWhere(q) {
+/** 列表与导出共用的筛选条件（姓名/手机号/身份证号/驾驶证号/第三方ID/承运商/状态 + 数据权限） */
+function driverWhere(q, access) {
   const {
     driver_name = '', phone = '', id_card = '', license_no = '',
     external_driver_id = '', carrier_id = '', status = '',
   } = q;
   const where = ['d.deleted = 0'];
   const params = [];
+  applyCarrierScope(where, params, access);
   const kw = (v) => `%${String(v).trim()}%`;
   if (driver_name) where.push('d.driver_name LIKE ?'), params.push(kw(driver_name));
   if (phone) where.push('d.phone LIKE ?'), params.push(kw(phone));
@@ -71,7 +96,7 @@ const DRIVER_EXPORT_COLUMNS = [
 /** 列表：按字段分项筛选，含所属承运商（逗号连接） */
 router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
-  const { whereSql, params } = driverWhere(req.query);
+  const { whereSql, params } = driverWhere(req.query, await accessOf(req));
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM driver d ${whereSql}`, params);
   const rows = await query(
@@ -92,7 +117,7 @@ router.get('/', wrap(async (req, res) => {
 
 /** 导出：按当前筛选条件导出全部（不分页） */
 router.get('/export', wrap(async (req, res) => {
-  const { whereSql, params } = driverWhere(req.query);
+  const { whereSql, params } = driverWhere(req.query, await accessOf(req));
   const rows = await query(
     `SELECT d.*,
             GROUP_CONCAT(c.carrier_name ORDER BY c.id SEPARATOR ',') AS carriers,

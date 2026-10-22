@@ -25,6 +25,7 @@ const {
   wrap, ok, errParam, errBiz, errDup, errState, errNotFound,
   localDateStr, assertPhone, assertIdCard, assertAmount, cutStr,
 } = require('../helpers');
+const { hashPassword } = require('../services/security');
 
 const router = Router();
 
@@ -134,6 +135,8 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
     if (!/^[A-HJ-NPR-Z0-9]{17}$/i.test(vin)) throw errParam(`第 ${i + 1} 台车的 VIN 格式不正确，应为 17 位`);
   });
   if (b.remark && String(b.remark).length > 500) throw errParam('备注 remark 不能超过 500 字');
+  // CRM 操作人账号：随申请推送，状态日志「操作人」展示用；缺省记「CRM 系统」
+  const operator = cutStr(String(b.operator ?? '').trim(), 64) || 'CRM 系统';
 
   const salesPhone = assertPhone(b.salesPhone, { label: '销售人员电话 salesPhone', required: false });
   const receiverPhone = assertPhone(b.receiverPhone, { label: '接车人电话 receiverPhone', required: false });
@@ -221,7 +224,7 @@ router.post('/shipping-tasks/receive', wrap(async (req, res) => {
 
     await writeStatusLog(conn, {
       taskId, taskNo: no, fromStatus: null, toStatus: 'WAIT_DISPATCH',
-      source: 'CRM', operator: 'CRM 系统',
+      source: 'CRM', operator,
       remark: `接收CRM发运申请，生成待派单任务（VIN ${String(b.vehicles[0].vin).trim().toUpperCase()}）`,
     });
     return no;
@@ -292,6 +295,8 @@ router.post('/esign/receipt-sync', wrap(async (req, res) => {
 // POST /api/external/shipping-tasks/cancel （按取消规则；关联待签署电子签置 CANCELLED）
 router.post('/shipping-tasks/cancel', wrap(async (req, res) => {
   const b = req.body || {};
+  // CRM 操作人账号：随取消推送，状态日志「操作人」展示用；缺省记「CRM 系统」
+  const operator = cutStr(String(b.operator ?? '').trim(), 64) || 'CRM 系统';
   const result = await withTransaction(async (conn) => {
     const task = await lockTaskByRef(conn, { applyNo: b.applyNo, taskNo: b.taskNo });
     const rule = cancelRule(task.status);
@@ -317,7 +322,7 @@ router.post('/shipping-tasks/cancel', wrap(async (req, res) => {
     );
     await writeStatusLog(conn, {
       taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: 'CANCELLED',
-      source: 'CRM', operator: 'CRM 系统',
+      source: 'CRM', operator,
       remark: `CRM同步取消：${cancelReason}，${ec.affectedRows} 条待签署电子签置为已取消`,
     });
     return { taskNo: task.task_no, status: 'CANCELLED', cancelledEsigens: ec.affectedRows, idempotent: false };
@@ -410,6 +415,57 @@ function normalizeDriverInput(raw) {
 }
 
 /**
+ * 司机登录账号：狮桥同步的司机需能登录小程序，无账号时按默认密码补建；
+ * 已存在则同步姓名/手机号（手机号被其他司机账号占用时不动，避免唯一索引冲突）
+ */
+async function ensureDriverAccount(conn, { driverId, driverName, phone }) {
+  const name = cutStr(driverName, 64);
+  const [byDriver] = await conn.query(
+    "SELECT id FROM sys_account WHERE driver_id = ? AND account_type = 'DRIVER' AND deleted = 0",
+    [driverId]
+  );
+  if (byDriver.length) {
+    const accountId = byDriver[0].id;
+    const [conflict] = await conn.query(
+      "SELECT id FROM sys_account WHERE phone = ? AND account_type = 'DRIVER' AND deleted = 0 AND id <> ?",
+      [phone, accountId]
+    );
+    if (conflict.length) {
+      await conn.query(
+        'UPDATE sys_account SET display_name = ?, update_name = ? WHERE id = ?',
+        [name, '狮桥物流', accountId]
+      );
+    } else {
+      await conn.query(
+        'UPDATE sys_account SET display_name = ?, phone = ?, update_name = ? WHERE id = ?',
+        [name, phone, '狮桥物流', accountId]
+      );
+    }
+    return accountId;
+  }
+  // 手机号已有司机账号（如司机档案重建）：直接关联到当前司机
+  const [byPhone] = await conn.query(
+    "SELECT id FROM sys_account WHERE phone = ? AND account_type = 'DRIVER' AND deleted = 0",
+    [phone]
+  );
+  if (byPhone.length) {
+    const accountId = byPhone[0].id;
+    await conn.query(
+      'UPDATE sys_account SET driver_id = ?, display_name = ?, update_name = ? WHERE id = ?',
+      [driverId, name, '狮桥物流', accountId]
+    );
+    return accountId;
+  }
+  const [r] = await conn.query(
+    `INSERT INTO sys_account
+      (account_type, phone, password_hash, display_name, driver_id, role, status, create_name, update_name)
+     VALUES ('DRIVER', ?, ?, ?, ?, 'DRIVER001', 1, '狮桥物流', '狮桥物流')`,
+    [phone, hashPassword(process.env.DEFAULT_DRIVER_PASSWORD || '123456'), name, driverId]
+  );
+  return r.insertId;
+}
+
+/**
  * 单条司机同步：校验 + UPSERT + 承运商关联，调用方需提供事务连接
  * 匹配优先级：externalDriverId（第三方ID）→ idCard（身份证号）
  */
@@ -494,6 +550,7 @@ async function syncOneDriver(conn, raw) {
     }
     carrierBound = boundNames.join('、');
   }
+  await ensureDriverAccount(conn, { driverId, driverName, phone });
   return { driverId, idCard, externalDriverId, created, carrierBound };
 }
 
@@ -733,13 +790,17 @@ async function runStatusAction(req, action) {
     /* ---- 司机确认提车（=发运，回填 ship_time 发运时间；photos 结构化存 status_log.photos） ---- */
     if (action === 'PICKUP') {
       const photos = normalizePhotos(b.photos);
-      // 实际提车日期 = 发运时间：选填 YYYY-MM-DD，允许早于计划提车日期（提前提车），缺省取当前时间
-      if (b.actualPickupDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.actualPickupDate).trim())) {
-        throw errParam('实际提车日期 actualPickupDate 格式不正确，应为 YYYY-MM-DD');
-      }
-      const shipTime = b.actualPickupDate ? String(b.actualPickupDate).trim() : null;
-      if (shipTime && shipTime > localDateStr()) {
-        throw errParam(`实际提车日期（${shipTime}）不能晚于当前日期（${localDateStr()}）`);
+      // 实际提车时间 = 发运时间：选填 YYYY-MM-DD HH:mm:ss（兼容仅日期），允许早于计划提车日期（提前提车），缺省取当前时间
+      let shipTime = null;
+      if (b.actualPickupDate) {
+        const raw = String(b.actualPickupDate).trim().replace('T', ' ');
+        if (!/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$/.test(raw)) {
+          throw errParam('实际提车时间 actualPickupDate 格式不正确，应为 YYYY-MM-DD HH:mm:ss');
+        }
+        shipTime = raw.length === 10 ? `${raw} 00:00:00` : (raw.length === 16 ? `${raw}:00` : raw);
+        if (shipTime > nowStr()) {
+          throw errParam(`实际提车时间（${shipTime}）不能晚于当前时间（${nowStr()}）`);
+        }
       }
       const photoNote = photos ? `，${photos.length} 张提车照片已同步` : '';
 

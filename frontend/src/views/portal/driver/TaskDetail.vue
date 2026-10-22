@@ -31,11 +31,13 @@ const sheet = reactive<{ show: boolean; type: 'PICKUP' | 'ARRIVE' | 'FINISH' | '
   type: '',
 })
 
+const activeTab = ref<'log' | 'vehicle'>('log')
+
 const pickupForm = reactive({ photos: [] as string[], pickup_date: null as string | null })
 const arriveForm = reactive({ photos: [] as string[], actual_freight: null as number | null, mileage: null as number | null })
 const finishForm = reactive({ photos: [] as string[], receiver: '', remark: '' })
 
-const minPhotos = computed(() => detail.value?.pickup_photo_min ?? 1)
+const minPhotos = computed(() => detail.value?.pickup_photo_min ?? 4)
 
 const timeline = computed(() =>
   (detail.value?.status_logs ?? []).map((log) => ({
@@ -49,15 +51,11 @@ const timeline = computed(() =>
   }))
 )
 
-const photoGroups = computed(() => {
-  const labels: Record<string, string> = { PICKUP: '提车照片', ARRIVE: '到达照片', FINISH: '结单照片' }
-  const map = new Map<string, NonNullable<PortalTaskDetail['files']>>()
-  ;(detail.value?.files ?? []).forEach((f) => {
-    if (!map.has(f.biz_type)) map.set(f.biz_type, [])
-    map.get(f.biz_type)!.push(f)
-  })
-  return [...map.entries()].map(([type, items]) => ({ type, label: labels[type] || type, items }))
-})
+const timelineExpanded = ref(false)
+const TIMELINE_COLLAPSED_COUNT = 4
+const visibleTimeline = computed(() =>
+  timelineExpanded.value ? timeline.value : timeline.value.slice(0, TIMELINE_COLLAPSED_COUNT)
+)
 
 const sheetTitle = computed(() => {
   if (sheet.type === 'PICKUP') return '确认提车'
@@ -107,6 +105,13 @@ async function submit() {
       if (pickupForm.photos.length < minPhotos.value) {
         message.warning(`请至少上传 ${minPhotos.value} 张提车照片`)
         return
+      }
+      if (pickupForm.pickup_date) {
+        const picked = new Date(pickupForm.pickup_date.replace(' ', 'T')).getTime()
+        if (picked > Date.now()) {
+          message.warning('实际提车时间不能晚于当前时间')
+          return
+        }
       }
       await driverPickup(taskId.value, {
         version,
@@ -163,6 +168,18 @@ function money(v: string | number | null | undefined) {
   return v == null ? '-' : `¥${Number(v).toFixed(2)}`
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  CRM: 'CRM 系统', STP: 'STP 系统', CARRIER: '承运商', DRIVER: '司机', WMS: 'WMS 系统', SQ: '狮桥物流',
+}
+
+function sourceKey(source?: string | null) {
+  return source && SOURCE_LABELS[source] ? source : 'STP'
+}
+
+function sourceLabel(source?: string | null) {
+  return (source && SOURCE_LABELS[source]) || '系统'
+}
+
 onMounted(load)
 </script>
 
@@ -178,7 +195,10 @@ onMounted(load)
       <template v-if="detail && task">
         <section class="ddetail__hero">
           <div class="ddetail__hero-top">
-            <span class="ddetail__no">{{ task.task_no }}</span>
+            <div class="ddetail__no-wrap">
+              <span class="ddetail__no-label">任务单号</span>
+              <span class="ddetail__no">{{ task.task_no }}</span>
+            </div>
             <StatusBadge :status="task.status" size="small" />
           </div>
           <div class="ddetail__route">
@@ -234,30 +254,65 @@ onMounted(load)
         </section>
 
         <section class="ddetail__card">
-          <div class="ddetail__title">节点记录</div>
-          <div v-if="!timeline.length" class="ddetail__empty">暂无记录</div>
-          <div v-for="item in timeline" :key="item.id" class="dlog">
-            <i class="dlog__dot" />
-            <div class="dlog__body">
-              <div class="dlog__head">
-                <span class="dlog__title">{{ item.title }}</span>
-                <span class="dlog__time">{{ item.time }}</span>
-              </div>
-              <div class="dlog__meta">{{ item.source }} · {{ item.operator || '-' }}</div>
-              <div v-if="item.remark" class="dlog__remark">{{ item.remark }}</div>
-            </div>
+          <div class="ddetail__tabs">
+            <button
+              type="button"
+              class="ddetail__tab"
+              :class="{ 'ddetail__tab--active': activeTab === 'log' }"
+              @click="activeTab = 'log'"
+            >节点记录</button>
+            <button
+              type="button"
+              class="ddetail__tab"
+              :class="{ 'ddetail__tab--active': activeTab === 'vehicle' }"
+              @click="activeTab = 'vehicle'"
+            >车辆信息</button>
           </div>
-        </section>
 
-        <section v-if="photoGroups.length" class="ddetail__card">
-          <div class="ddetail__title">节点照片</div>
-          <div v-for="group in photoGroups" :key="group.type" class="ddetail__photos">
-            <div class="ddetail__photos-label">{{ group.label }}</div>
-            <div class="ddetail__photos-grid">
-              <a v-for="file in group.items" :key="file.id" :href="file.file_url" target="_blank" class="ddetail__photo">
-                <img :src="file.file_url" :alt="group.label" />
-              </a>
+          <div v-if="activeTab === 'log'">
+            <div v-if="!timeline.length" class="ddetail__empty">暂无记录</div>
+            <div v-for="item in visibleTimeline" :key="item.id" class="dlog">
+              <i class="dlog__dot" :class="`dlog__dot--${sourceKey(item.source)}`" />
+              <div class="dlog__body">
+                <div class="dlog__head">
+                  <span class="dlog__title">{{ item.title }}</span>
+                  <span class="dlog__time">{{ item.time }}</span>
+                </div>
+                <div class="dlog__meta">
+                  <span class="dlog__chip" :class="`dlog__chip--${sourceKey(item.source)}`">{{ sourceLabel(item.source) }}</span>
+                  <span class="dlog__operator">{{ item.operator || '-' }}</span>
+                </div>
+                <div v-if="item.remark" class="dlog__remark">{{ item.remark }}</div>
+                <div v-if="item.photos.length" class="dlog__photos">
+                  <a v-for="(url, idx) in item.photos" :key="idx" :href="url" target="_blank" class="dlog__photo">
+                    <img :src="url" :alt="item.title" />
+                  </a>
+                </div>
+              </div>
             </div>
+            <button
+              v-if="timeline.length > TIMELINE_COLLAPSED_COUNT"
+              type="button"
+              class="ddetail__toggle"
+              @click="timelineExpanded = !timelineExpanded"
+            >
+              {{ timelineExpanded ? '收起记录' : `展开全部 ${timeline.length} 条记录` }}
+              <span class="ddetail__toggle-arrow" :class="{ 'ddetail__toggle-arrow--up': timelineExpanded }" />
+            </button>
+          </div>
+
+          <div v-else class="dvehicle">
+            <template v-if="detail.vehicles?.length">
+              <div v-for="v in detail.vehicles" :key="v.id" class="dvehicle__block">
+                <div class="dvehicle__row"><span>VIN</span><b>{{ v.vin }}</b></div>
+                <div class="dvehicle__row"><span>车型</span><b>{{ v.vehicle_model || '-' }}</b></div>
+                <div class="dvehicle__row"><span>发动机配置</span><b>{{ v.engine_config || '-' }}</b></div>
+                <div class="dvehicle__row"><span>驾驶室类型</span><b>{{ v.cabin_type || '-' }}</b></div>
+                <div class="dvehicle__row"><span>订单号</span><b>{{ v.order_no || '-' }}</b></div>
+                <div class="dvehicle__row"><span>计划运费</span><b class="ddetail__money">{{ money(v.plan_freight) }}</b></div>
+              </div>
+            </template>
+            <div v-else class="ddetail__empty">暂无车辆信息</div>
           </div>
         </section>
       </template>
@@ -276,13 +331,13 @@ onMounted(load)
 
         <div class="sheet__body">
           <template v-if="sheet.type === 'PICKUP'">
-            <div class="sheet__label">提车照片 <em>必传，至少 {{ minPhotos }} 张</em></div>
-            <PhotoUploader v-model="pickupForm.photos" :min="minPhotos" :max="6" />
-            <div class="sheet__label">实际提车日期（选填）</div>
+            <div class="sheet__label">提车照片 <em>必传，固定 {{ minPhotos }} 张</em></div>
+            <PhotoUploader v-model="pickupForm.photos" :min="minPhotos" :max="minPhotos" />
+            <div class="sheet__label">实际提车时间（选填）</div>
             <n-date-picker
               v-model:formatted-value="pickupForm.pickup_date"
-              type="date"
-              value-format="yyyy-MM-dd"
+              type="datetime"
+              value-format="yyyy-MM-dd HH:mm:ss"
               :is-date-disabled="(ts: number) => ts > Date.now()"
               clearable
               style="width: 100%"
@@ -366,73 +421,100 @@ onMounted(load)
   width: 30px;
 }
 .ddetail__hero {
-  background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(31, 45, 61, 0.04);
-  padding: 14px 16px;
+  background: linear-gradient(135deg, #1677ff 0%, #0b5ed7 100%);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.16);
+  padding: 16px;
+  color: #fff;
 }
 .ddetail__hero-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 10px;
+}
+.ddetail__no-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.ddetail__no-label {
+  font-size: 11px;
+  opacity: 0.85;
 }
 .ddetail__no {
-  font-size: 15px;
-  font-weight: 600;
-  color: #262626;
+  display: inline-block;
+  margin-top: 6px;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-family: 'DIN Alternate', 'Roboto Mono', Menlo, monospace;
+  color: #fff;
+  word-break: break-all;
+}
+.ddetail__hero :deep(.status-badge) {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #fff !important;
+  border: none;
+  backdrop-filter: blur(2px);
 }
 .ddetail__route {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #f0f0f0;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
 }
 .ddetail__route-row {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
-  color: #595959;
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 500;
 }
 .ddetail__pin {
   flex: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  font-size: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 11px;
   font-style: normal;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: #1677ff;
+  background: #fff;
   margin-top: 1px;
-}
-.ddetail__pin--from {
-  background: #1677ff;
+  font-weight: 600;
 }
 .ddetail__pin--to {
-  background: #389e0d;
+  color: #389e0d;
 }
 .ddetail__route-line {
-  width: 1px;
-  height: 8px;
-  margin-left: 8px;
-  background: #e8e8e8;
+  width: 2px;
+  height: 10px;
+  margin-left: 9px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.35);
 }
 .ddetail__card {
   background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(31, 45, 61, 0.04);
-  padding: 13px 14px;
-  margin-top: 10px;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(31, 45, 61, 0.06);
+  padding: 14px 16px;
+  margin-top: 12px;
 }
 .ddetail__row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 5px 0;
-  font-size: 12px;
+  padding: 6px 0;
+  font-size: 13px;
 }
 .ddetail__row span {
   color: #8c8c8c;
@@ -446,13 +528,14 @@ onMounted(load)
 }
 .ddetail__money {
   color: #fa8c16 !important;
+  font-weight: 600 !important;
 }
 .ddetail__action {
   background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(31, 45, 61, 0.04);
-  padding: 14px;
-  margin-top: 10px;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(31, 45, 61, 0.06);
+  padding: 14px 16px;
+  margin-top: 12px;
 }
 .ddetail__hint {
   font-size: 12px;
@@ -473,11 +556,113 @@ onMounted(load)
   font-size: 12px;
   color: #8c8c8c;
 }
-.ddetail__title {
+.ddetail__tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 14px;
+}
+.ddetail__tab {
+  position: relative;
+  padding: 0 2px 10px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: #8c8c8c;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ddetail__tab--active {
+  color: #262626;
+  font-weight: 600;
+}
+.ddetail__tab--active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+  background: #1677ff;
+}
+.ddetail__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 0;
+  border: none;
+  border-top: 1px solid #f5f5f5;
+  background: none;
+  font-size: 12px;
+  color: #1677ff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ddetail__toggle-arrow {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-1px);
+  transition: transform 0.2s;
+}
+.ddetail__toggle-arrow--up {
+  transform: rotate(225deg) translateY(-1px);
+}
+.dvehicle__block + .dvehicle__block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f5f5f5;
+}
+.dvehicle__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 0;
   font-size: 13px;
+}
+.dvehicle__row span {
+  color: #8c8c8c;
+  flex: none;
+}
+.dvehicle__row b {
+  font-weight: 500;
+  color: #262626;
+  text-align: right;
+  word-break: break-all;
+}
+.dlog__photos {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+.dlog__photo {
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+}
+.dlog__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ddetail__title {
+  font-size: 14px;
   font-weight: 600;
   color: #262626;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .ddetail__empty {
   padding: 24px 0;
@@ -498,9 +683,10 @@ onMounted(load)
   content: '';
   position: absolute;
   left: 4px;
-  top: 12px;
+  top: 14px;
   bottom: 0;
-  width: 1px;
+  width: 2px;
+  border-radius: 1px;
   background: #f0f0f0;
 }
 .dlog:last-child::before {
@@ -508,14 +694,38 @@ onMounted(load)
 }
 .dlog__dot {
   flex: none;
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   margin-top: 4px;
   border-radius: 50%;
-  background: #1677ff;
-  box-shadow: 0 0 0 3px #e6f4ff;
   position: relative;
   z-index: 1;
+  background: #1677ff;
+  box-shadow: 0 0 0 3px #e6f4ff;
+}
+.dlog__dot--CRM {
+  background: #722ed1;
+  box-shadow: 0 0 0 3px #f9f0ff;
+}
+.dlog__dot--STP {
+  background: #1677ff;
+  box-shadow: 0 0 0 3px #e6f4ff;
+}
+.dlog__dot--CARRIER {
+  background: #fa8c16;
+  box-shadow: 0 0 0 3px #fff7e6;
+}
+.dlog__dot--DRIVER {
+  background: #389e0d;
+  box-shadow: 0 0 0 3px #f6ffed;
+}
+.dlog__dot--WMS {
+  background: #08979c;
+  box-shadow: 0 0 0 3px #e6fffb;
+}
+.dlog__dot--SQ {
+  background: #fa541c;
+  box-shadow: 0 0 0 3px #fff2e8;
 }
 .dlog__body {
   flex: 1;
@@ -528,7 +738,7 @@ onMounted(load)
   gap: 10px;
 }
 .dlog__title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: #262626;
 }
@@ -537,47 +747,63 @@ onMounted(load)
   color: #8c8c8c;
 }
 .dlog__meta {
-  margin-top: 2px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: #8c8c8c;
 }
+.dlog__chip {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  background: #e6f4ff;
+  color: #1677ff;
+}
+.dlog__chip--CRM {
+  background: #f9f0ff;
+  color: #722ed1;
+}
+.dlog__chip--STP {
+  background: #e6f4ff;
+  color: #1677ff;
+}
+.dlog__chip--CARRIER {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+.dlog__chip--DRIVER {
+  background: #f6ffed;
+  color: #389e0d;
+}
+.dlog__chip--WMS {
+  background: #e6fffb;
+  color: #08979c;
+}
+.dlog__chip--SQ {
+  background: #fff2e8;
+  color: #fa541c;
+}
+.dlog__operator {
+  color: #595959;
+}
 .dlog__remark {
-  margin-top: 3px;
+  margin-top: 4px;
   font-size: 12px;
   line-height: 1.6;
   color: #595959;
-}
-.ddetail__photos + .ddetail__photos {
-  margin-top: 10px;
-}
-.ddetail__photos-label {
-  font-size: 12px;
-  color: #8c8c8c;
-  margin-bottom: 6px;
-}
-.ddetail__photos-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-.ddetail__photo {
-  display: block;
-  aspect-ratio: 1;
-  border-radius: 4px;
-  overflow: hidden;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
-}
-.ddetail__photo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
 }
 .sheet {
   position: fixed;
   inset: 0;
   z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
 }
 .sheet__mask {
   position: absolute;
@@ -585,27 +811,26 @@ onMounted(load)
   background: rgba(0, 0, 0, 0.45);
 }
 .sheet__panel {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
+  position: relative;
   width: 100%;
-  max-width: 480px;
-  transform: translateX(-50%);
-  max-height: 86%;
+  max-width: 440px;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   display: flex;
   flex-direction: column;
   background: #fff;
-  border-radius: 8px 8px 0 0;
-  padding-bottom: env(safe-area-inset-bottom);
-  animation: sheet-up 0.2s ease-out;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+  animation: sheet-pop 0.18s ease-out;
 }
-@keyframes sheet-up {
+@keyframes sheet-pop {
   from {
-    transform: translateX(-50%) translateY(14px);
-    opacity: 0.6;
+    transform: scale(0.96) translateY(8px);
+    opacity: 0;
   }
   to {
-    transform: translateX(-50%) translateY(0);
+    transform: scale(1) translateY(0);
     opacity: 1;
   }
 }
@@ -614,11 +839,11 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 13px 16px;
-  font-size: 14px;
+  padding: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #262626;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #f5f5f5;
 }
 .sheet__close {
   border: none;

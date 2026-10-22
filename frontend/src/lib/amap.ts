@@ -46,6 +46,7 @@ export interface AMapOverlay {
 
 export interface AMapDistrict {
   setMap: (map: AMapInstance | null) => void
+  setStyles?: (styles: Record<string, unknown>) => void
   getDistrictByContainerPos?: (pixel: unknown) => { NAME_CHN?: string; NAME?: string } | null
 }
 

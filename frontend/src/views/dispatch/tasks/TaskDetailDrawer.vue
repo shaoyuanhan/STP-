@@ -171,7 +171,7 @@ function logPhotos(log: TaskStatusLog): string[] {
     try {
       const parsed = JSON.parse(log.photos)
       if (Array.isArray(parsed)) {
-        return parsed.map((url) => String(url)).filter((url) => /^https?:\/\//i.test(url))
+        return parsed.map((url) => String(url)).filter((url) => url.startsWith('/static/') || /^https?:\/\//i.test(url))
       }
     } catch {
       // 非 JSON 时走 remark 兜底

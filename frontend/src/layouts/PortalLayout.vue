@@ -57,26 +57,21 @@ const currentTitle = computed(() => {
 const unread = computed(() => profile.value?.unread ?? 0)
 const avatarText = computed(() => (profile.value?.name || '承').slice(0, 1))
 
-/** 页签：详情页归入「运输任务」页签，避免堆叠 */
+/** 页签：按路由 path 聚合 */
 interface PageTab {
   path: string
   title: string
 }
 
-function tabPathOf(path: string) {
-  return /^\/portal\/carrier\/tasks\/\d+$/.test(path) ? '/portal/carrier/tasks' : path
-}
-
 const tabs = ref<PageTab[]>([{ path: '/portal/carrier/dashboard', title: '工作台' }])
-const activeTab = computed(() => tabPathOf(route.path))
+const activeTab = computed(() => route.path)
 
 watch(
   () => route.path,
   (path) => {
-    const key = tabPathOf(path)
-    if (tabs.value.some((tab) => tab.path === key)) return
-    const title = flatItems.find((item) => item.path === key)?.title
-    if (title) tabs.value.push({ path: key, title })
+    if (tabs.value.some((tab) => tab.path === path)) return
+    const title = flatItems.find((item) => item.path === path)?.title
+    if (title) tabs.value.push({ path, title })
   },
   { immediate: true }
 )
