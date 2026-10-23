@@ -27,6 +27,8 @@ const message = useMessage()
 const loading = ref(false)
 const detail = ref<PortalTaskDetail | null>(null)
 const showAssign = ref(false)
+/** 状态流转折叠（默认展开） */
+const timelineCollapsed = ref(false)
 
 /** 节点照片：status_log.photos 存 JSON 数组（/static 相对路径或完整 URL） */
 function logPhotos(log: { photos?: string | null }) {
@@ -195,8 +197,17 @@ function money(value: string | number | null | undefined, fallback: string) {
             <div class="drawer-section__header">
               <span class="drawer-section__bar"></span>
               <h3 class="drawer-section__title">状态流转</h3>
+              <button
+                v-if="timeline.length"
+                type="button"
+                class="drawer-section__toggle"
+                @click="timelineCollapsed = !timelineCollapsed"
+              >
+                {{ timelineCollapsed ? '展开' : '收起' }}
+                <span class="drawer-section__arrow" :class="{ 'is-collapsed': timelineCollapsed }">▾</span>
+              </button>
             </div>
-            <n-timeline v-if="timeline.length">
+            <n-timeline v-if="timeline.length" v-show="!timelineCollapsed">
               <n-timeline-item
                 v-for="item in timeline"
                 :key="item.key"
@@ -224,7 +235,7 @@ function money(value: string | number | null | undefined, fallback: string) {
                 </n-image-group>
               </n-timeline-item>
             </n-timeline>
-            <div v-else class="empty-row">暂无流转记录</div>
+            <div v-if="!timeline.length" class="empty-row">暂无流转记录</div>
           </section>
         </template>
 
@@ -285,6 +296,30 @@ function money(value: string | number | null | undefined, fallback: string) {
 .drawer-section__extra {
   color: #8c8c8c;
   font-size: 12px;
+}
+.drawer-section__toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: #8c8c8c;
+  cursor: pointer;
+}
+.drawer-section__toggle:hover {
+  color: #1677ff;
+}
+.drawer-section__arrow {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+.drawer-section__arrow.is-collapsed {
+  transform: rotate(-90deg);
 }
 .table-scroll-x {
   overflow-x: auto;
