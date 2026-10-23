@@ -224,7 +224,7 @@ router.get('/me', requireAuth(), wrap(async (req, res) => {
   const profile = await loadProfile(rows[0]);
   const unread = await query(
     `SELECT COUNT(*) AS n FROM notification
-     WHERE receiver_type = ? AND receiver_id = ? AND read_status = 0 AND deleted = 0`,
+     WHERE receiver_type = ? AND receiver_id = ? AND channel = 'INBOX' AND read_status = 0 AND deleted = 0`,
     [profile.type, profile.type === 'CARRIER' ? profile.carrier_id : profile.driver_id]
   );
   ok(res, { ...profile, unread: Number(unread[0].n) });

@@ -164,7 +164,7 @@ router.post('/tasks/:id/finish', wrap(async (req, res) => {
 router.get('/notifications', wrap(async (req, res) => {
   const rows = await query(
     `SELECT * FROM notification
-     WHERE receiver_type = 'DRIVER' AND receiver_id = ? AND deleted = 0
+     WHERE receiver_type = 'DRIVER' AND receiver_id = ? AND channel = 'INBOX' AND deleted = 0
      ORDER BY id DESC LIMIT 100`,
     [req.auth.driverId]
   );

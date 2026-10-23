@@ -395,7 +395,7 @@ router.get('/notifications', wrap(async (req, res) => {
   const filter = carrierFilter(scope, 'receiver_id');
   const rows = await query(
     `SELECT * FROM notification
-     WHERE receiver_type = 'CARRIER' AND deleted = 0 AND ${filter.sql}
+     WHERE receiver_type = 'CARRIER' AND channel = 'INBOX' AND deleted = 0 AND ${filter.sql}
      ORDER BY id DESC LIMIT 100`,
     filter.params
   );
