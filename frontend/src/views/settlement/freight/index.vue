@@ -42,6 +42,7 @@ const message = useMessage()
 const filters = reactive({
   freight_no: '',
   task_no: '',
+  order_no: '',
   carrier_id: null as number | null,
   reconcile_status: null as ReconcileStatus | null,
 })
@@ -91,6 +92,7 @@ async function loadPage() {
       size: pageSize.value,
       freight_no: filters.freight_no.trim() || undefined,
       task_no: filters.task_no.trim() || undefined,
+      order_no: filters.order_no.trim() || undefined,
       carrier_id: filters.carrier_id ?? undefined,
       reconcile_status: filters.reconcile_status ?? undefined,
     }

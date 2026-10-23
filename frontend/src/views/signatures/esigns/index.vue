@@ -24,6 +24,7 @@ const filters = reactive({
   esign_id: '',
   task_no: '',
   vin: '',
+  order_no: '',
   apply_no: '',
   sign_status: null as EsignStatus | null,
 })
@@ -60,6 +61,7 @@ async function loadPage() {
       esign_id: filters.esign_id.trim() || undefined,
       task_no: filters.task_no.trim() || undefined,
       vin: filters.vin.trim() || undefined,
+      order_no: filters.order_no.trim() || undefined,
       apply_no: filters.apply_no.trim() || undefined,
       sign_status: filters.sign_status ?? undefined,
     }
