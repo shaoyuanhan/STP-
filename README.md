@@ -188,7 +188,7 @@ npm run preview    # 本地预览构建产物
 | POST | `/shipping-tasks/cancel` | CRM | 取消任务（仅待派单） |
 | POST | `/wms/outbound-status` | WMS | 出库回传（PICKED→IN_TRANSIT） |
 | POST | `/drivers/sync` | 狮桥 | 司机同步（`externalDriverId` 优先，其次身份证号；支持数组批量，≤200 条；camelCase / snake_case 字段均接受） |
-| POST | `/tracking/report` | 狮桥 | 在途点位上报（写轨迹，不改任务状态） |
+| POST | `/tracking/report` | 狮桥 | **已停用（兼容保留）**：原在途点位上报；点位取数已改为 STP 定时拉取狮桥（见「关键设计 · 在途点位拉取」） |
 | POST | `/shipping-tasks/accept` | 承运商 | 接单并指派司机（`driverId` 或 `externalDriverId`） |
 | POST | `/shipping-tasks/pickup` | 承运商 | 提车发运（含照片） |
 | POST | `/shipping-tasks/arrive` | 承运商 | 到达回传（生成运费单） |
@@ -204,6 +204,9 @@ npm run preview    # 本地预览构建产物
 - **幂等与去重**：发运申请号、电子签 ID、司机身份证号、承运商名称、第三方承运商/司机 ID 均做唯一性校验，重复下发会被拒绝或安全更新。
 - **ID 定位优先**：派单/接单/回传均以 STP 内部 ID 或第三方 ID 定位承运商与司机，名称仅作旧字段兼容。
 - **乐观锁**：派单/取消派单/改派须携带 `version`，不匹配返回 `D0001「任务状态已变化，请刷新后重试」`。
+- **一车一单**：一个发运申请可下发多台车（≤200 台），STP 按 VIN 逐台拆分生成独立任务；每台车 `order_no` 订单号必填且全局唯一（`shipping_task.order_no` 非空唯一索引），`apply_no` 退化为普通索引、由同申请多任务共享；外部回调定位优先 `orderNo`，其次 `taskNo`，兼容 `applyNo`（须唯一对应单任务）。
+- **订单号全链路**：发运任务、承运商任务、司机任务、电子签台账、应付运费、在途监控均展示并可筛选订单号，详情页订单号排在发运申请号之前。
+- **在途点位拉取**：STP 启动后按周期（`LQ_TRACKING_INTERVAL_MS`，默认 5 分钟）主动请求狮桥点位接口（`LQ_TRACKING_URL`），按订单号→任务单号→VIN 匹配任务，同任务同上报时间幂等写入 `transport_track`，仅「在途」任务落库（其余状态不记点位）；未配置 URL 不启用；联调可用 `POST /api/tracking/pull` 手动触发一次。原推送接口 `/api/external/tracking/report` 保留兼容，后续停用。
 - **留痕**：任务每次状态流转写入 `task_status_log`，派单/改派/取消派单写入 `dispatch_record`，运费修改写入 `freight_adjust_log`（前后金额 + 原因）。
 
 ## 验证状态
@@ -211,6 +214,14 @@ npm run preview    # 本地预览构建产物
 已完成全链路测试与浏览器全页面验证：CRM 下发 → 派单 → 接单 → 提车 → 出库 → 在途回传 → 到达 → 完结 → 运费修改/对账，以及取消链路，全部通过；第三方承运商 ID 派单 → 第三方司机 ID 接单链路已验证通过。
 
 ## 更新记录
+
+### V2.8（2026-10-23）一车一单模型修订与在途点位拉取
+
+- **一车一单修订**：由「每次申请仅 1 台车」改为「一个申请多台车、每台车一个订单号一条任务」；`shipping_task` 新增 `order_no`（非空唯一），`apply_no` 去掉唯一约束改普通索引，存量数据已回填
+- **CRM 下发**：`POST /api/external/shipping-tasks/receive` 支持单次多台（≤200），每台 `orderNo` 必填且全局唯一，返回 `{applyNo,total,tasks:[{taskNo,orderNo,vin}]}`
+- **回调定位**：取消/出库/接单/提车/到达/完结/电子签统一按 `orderNo` 优先定位，`taskNo` 兼容，`applyNo` 仅在其唯一对应单任务时可用
+- **在途点位**：改为「STP 定时拉取狮桥」（`LQ_TRACKING_URL` / `LQ_TRACKING_INTERVAL_MS`），新增 `POST /api/tracking/pull` 手动触发；原 `/api/external/tracking/report` 标记停用（兼容保留）
+- **文档**：`docs/openapi.json`（2.6.0）、`docs/api-contract.md`、`文档资料/STP-V2.0功能清单.xlsx` 同步更新
 
 ### V2.7（2026-10-21）司机同步接口兼容 snake_case 入参
 
@@ -263,7 +274,7 @@ npm run preview    # 本地预览构建产物
 
 ### V2.3（2026-10-21）一车一单与里程字段
 
-- **一车一单**：CRM 发运申请每次仅允许 1 台车（`vehicles` 超过 1 台返回 A0001），任务主表即单车任务；到达回传的逐车 `vehicles` 仅兼容保留 1 台
+- **一车一单**：CRM 发运申请每次仅允许 1 台车（`vehicles` 超过 1 台返回 A0001），任务主表即单车任务；到达回传的逐车 `vehicles` 仅兼容保留 1 台（**该规则已被 V2.8 修订：现支持一个申请多台车，每台车一个订单号一条任务**）
 - **里程**：CRM 发运申请新增 `mileage`（线路里程），落 `shipping_task.mileage`；司机到达回传 `mileage` 时覆盖，生成运费单时继承该里程（运费单不再依赖到达入参）
 - **页面**：发运任务列表/详情、运输监控列表/详情、结算运费单列表均展示里程，导出补充「里程(km)」列
 - **文档**：`docs/openapi.json`、`docs/api-contract.md` 同步一车一单校验与里程字段

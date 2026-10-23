@@ -6,7 +6,8 @@
  */
 const { Router } = require('express');
 const { query } = require('../db');
-const { wrap, ok, errNotFound, errParam, pageOf, pageData } = require('../helpers');
+const { wrap, ok, errNotFound, errParam, errBiz, pageOf, pageData } = require('../helpers');
+const { pullTrackingOnce } = require('../services/trackingSync');
 
 const router = Router();
 
@@ -174,6 +175,14 @@ router.get('/tasks/:id', wrap(async (req, res) => {
     query('SELECT * FROM transport_track WHERE task_id = ? AND deleted = 0 ORDER BY report_time, id', [id]),
   ]);
   ok(res, { task, statusLogs, tracks });
+}));
+
+/** 手动触发一次在途点位拉取（联调/演示用，需 PORTAL_DEV_TOOLS=1） */
+router.post('/pull', wrap(async (req, res) => {
+  if ((process.env.PORTAL_DEV_TOOLS || '1') !== '1') throw errBiz('演示工具未开启');
+  const { from, to } = req.query;
+  const result = await pullTrackingOnce({ from: from || undefined, to: to || undefined });
+  ok(res, result, result.message);
 }));
 
 module.exports = router;

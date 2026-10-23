@@ -22,6 +22,7 @@ const portalAuthRoutes = require('./routes/portalAuth');
 const accountRoutes = require('./routes/accounts');
 const roleRoutes = require('./routes/roles');
 const { ensureAccess } = require('./services/access');
+const { startTrackingSync } = require('./services/trackingSync');
 const portalCarrierRoutes = require('./routes/portalCarrier');
 const portalDriverRoutes = require('./routes/portalDriver');
 const portalCommonRoutes = require('./routes/portalCommon');
@@ -112,6 +113,7 @@ ensureAccess()
       console.log(`[STP] 智能运输管理平台后端已启动: http://localhost:${PORT}`);
       console.log(`[STP] 数据库: ${process.env.DB_HOST || '127.0.0.1'}:${process.env.DB_PORT || 3306}/${process.env.DB_NAME || 'tms_vehicle'}`);
     });
+    startTrackingSync();
   })
   .catch((error) => {
     console.error('[STP] 角色权限初始化失败', error);
