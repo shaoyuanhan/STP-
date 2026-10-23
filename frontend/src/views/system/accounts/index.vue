@@ -28,8 +28,12 @@ const KIND_TEXT: Record<string, string> = {
   DRIVER: '司机小程序',
 }
 const tableRef = ref<PageTableHandle | null>(null)
-const keyword = ref('')
-const applied = ref({ keyword: '', _t: 0 })
+const filters = reactive({
+  username: '',
+  display_name: '',
+  phone: '',
+})
+const applied = ref({ username: '', display_name: '', phone: '', _t: 0 })
 const show = ref(false)
 const saving = ref(false)
 const formRef = ref<FormInst | null>(null)
@@ -62,7 +66,19 @@ const roleOptions = computed(() => roles.value.map((item) => ({
 const currentRole = computed(() => roles.value.find((item) => item.id === form.role_id) ?? null)
 
 function search() {
-  applied.value = { keyword: keyword.value.trim(), _t: Date.now() }
+  applied.value = {
+    username: filters.username.trim(),
+    display_name: filters.display_name.trim(),
+    phone: filters.phone.trim(),
+    _t: Date.now(),
+  }
+}
+
+function reset() {
+  filters.username = ''
+  filters.display_name = ''
+  filters.phone = ''
+  search()
 }
 
 async function loadOptions() {
@@ -188,7 +204,9 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
   return listAccounts({
     page,
     size: pageSize,
-    keyword: applied.value.keyword || undefined,
+    username: applied.value.username || undefined,
+    display_name: applied.value.display_name || undefined,
+    phone: applied.value.phone || undefined,
   })
 }
 </script>
@@ -200,8 +218,11 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
       <n-button type="primary" @click="openCreate">新增账号</n-button>
     </div>
     <div class="accounts__filter">
-      <n-input v-model:value="keyword" placeholder="账号 / 姓名 / 手机号" clearable @keyup.enter="search" />
+      <n-input v-model:value="filters.username" placeholder="登录账号" clearable @keyup.enter="search" />
+      <n-input v-model:value="filters.display_name" placeholder="姓名" clearable @keyup.enter="search" />
+      <n-input v-model:value="filters.phone" placeholder="手机号" clearable @keyup.enter="search" />
       <n-button @click="search">查询</n-button>
+      <n-button @click="reset">重置</n-button>
     </div>
     <p class="accounts__note">账号只绑定一个角色。能看哪些模块、按钮，以及哪些承运商的运单、成品或散件，都在角色管理里配置。</p>
     <PageTable ref="tableRef" :columns="columns" :remote="remote" :query="applied" :scroll-x="980" />
@@ -253,7 +274,7 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
   margin-bottom: 8px;
 }
 .accounts__filter .n-input {
-  width: 260px;
+  width: 200px;
 }
 .accounts__note {
   margin: 0 0 10px;

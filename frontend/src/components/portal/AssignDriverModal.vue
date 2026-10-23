@@ -57,7 +57,7 @@ watch(
     driverId.value = null
     loading.value = true
     try {
-      drivers.value = await fetchCarrierDrivers('', props.carrierId)
+      drivers.value = await fetchCarrierDrivers({ carrier_id: props.carrierId })
     } catch (e) {
       message.error(e instanceof Error ? e.message : '司机列表加载失败')
     } finally {

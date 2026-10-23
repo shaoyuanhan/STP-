@@ -23,8 +23,19 @@ interface PageTableHandle {
 const message = useMessage()
 const session = useSessionStore()
 const tableRef = ref<PageTableHandle | null>(null)
-const keyword = ref('')
-const applied = ref({ keyword: '', _t: 0 })
+const filters = reactive({
+  role_name: '',
+  role_code: '',
+  role_kind: null as string | null,
+  status: null as number | null,
+})
+const applied = ref({
+  role_name: '',
+  role_code: '',
+  role_kind: null as string | null,
+  status: null as number | null,
+  _t: 0,
+})
 const show = ref(false)
 const saving = ref(false)
 const formRef = ref<FormInst | null>(null)
@@ -120,7 +131,21 @@ function checkAll(on: boolean) {
 }
 
 function search() {
-  applied.value = { keyword: keyword.value.trim(), _t: Date.now() }
+  applied.value = {
+    role_name: filters.role_name.trim(),
+    role_code: filters.role_code.trim(),
+    role_kind: filters.role_kind,
+    status: filters.status,
+    _t: Date.now(),
+  }
+}
+
+function reset() {
+  filters.role_name = ''
+  filters.role_code = ''
+  filters.role_kind = null
+  filters.status = null
+  search()
 }
 
 function openCreate() {
@@ -257,7 +282,14 @@ const pageShown = computed(() => {
 })
 
 function remote({ page, pageSize }: { page: number; pageSize: number }) {
-  return listRoles({ page, size: pageSize, keyword: applied.value.keyword || undefined })
+  return listRoles({
+    page,
+    size: pageSize,
+    role_name: applied.value.role_name || undefined,
+    role_code: applied.value.role_code || undefined,
+    role_kind: applied.value.role_kind || undefined,
+    status: applied.value.status,
+  })
 }
 </script>
 
@@ -268,8 +300,17 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
       <n-button type="primary" @click="openCreate">新增角色</n-button>
     </div>
     <div class="roles__filter">
-      <n-input v-model:value="keyword" placeholder="角色名称 / 编码" clearable @keyup.enter="search" />
+      <n-input v-model:value="filters.role_name" placeholder="角色名称" clearable @keyup.enter="search" />
+      <n-input v-model:value="filters.role_code" placeholder="角色编码" clearable @keyup.enter="search" />
+      <n-select v-model:value="filters.role_kind" placeholder="全部类型" clearable :options="kindOptions" />
+      <n-select
+        v-model:value="filters.status"
+        placeholder="全部状态"
+        clearable
+        :options="[{ label: '启用', value: 1 }, { label: '停用', value: 0 }]"
+      />
       <n-button @click="search">查询</n-button>
+      <n-button @click="reset">重置</n-button>
     </div>
     <div class="roles__bar">
       <span>共 <b>{{ tableRef?.total ?? 0 }}</b> 条记录，当前页显示 <b>{{ pageShown }}</b> 条</span>
@@ -413,7 +454,12 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
   gap: 8px;
   margin-bottom: 8px;
 }
-.roles__filter .n-input { width: 260px; }
+.roles__filter .n-input {
+  width: 180px;
+}
+.roles__filter .n-select {
+  width: 150px;
+}
 .roles__bar {
   display: flex;
   align-items: center;

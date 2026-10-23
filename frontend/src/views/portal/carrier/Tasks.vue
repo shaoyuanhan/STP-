@@ -27,10 +27,18 @@ const total = ref(0)
 
 const query = reactive({
   status: typeof route.query.status === 'string' ? route.query.status : '',
+  task_no: '',
+  order_no: '',
+  apply_no: '',
+  vin: '',
+  customer_name: '',
   keyword: '',
   page: 1,
   size: 10,
 })
+
+// 筛选区收起/展开：收起时仅显示首行高频字段，已填值不丢失
+const filterExpanded = ref(false)
 
 const statusOptions: SelectOption[] = [
   { label: '全部状态', value: '' },
@@ -55,6 +63,11 @@ async function load() {
       page: query.page,
       size: query.size,
       status: query.status || undefined,
+      task_no: query.task_no.trim() || undefined,
+      order_no: query.order_no.trim() || undefined,
+      apply_no: query.apply_no.trim() || undefined,
+      vin: query.vin.trim() || undefined,
+      customer_name: query.customer_name.trim() || undefined,
       keyword: query.keyword.trim() || undefined,
     })
     list.value = res.list
@@ -73,6 +86,11 @@ function search() {
 
 function reset() {
   query.status = ''
+  query.task_no = ''
+  query.order_no = ''
+  query.apply_no = ''
+  query.vin = ''
+  query.customer_name = ''
   query.keyword = ''
   query.page = 1
   load()
@@ -201,11 +219,11 @@ onMounted(load)
     <n-card class="page-card" :bordered="false">
       <div class="page-card__filters">
         <div class="page-card__field">
-          <span class="page-card__label">关键字</span>
+          <span class="page-card__label">任务号</span>
           <n-input
-            v-model:value="query.keyword"
+            v-model:value="query.task_no"
             class="page-card__input"
-            placeholder="任务号 / 客户 / VIN"
+            placeholder="请输入"
             clearable
             @keydown.enter="search"
           />
@@ -219,9 +237,53 @@ onMounted(load)
             placeholder="全部状态"
           />
         </div>
+        <div class="page-card__field">
+          <span class="page-card__label">VIN</span>
+          <n-input
+            v-model:value="query.vin"
+            class="page-card__input"
+            placeholder="请输入车架号"
+            clearable
+            @keydown.enter="search"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">客户名称</span>
+          <n-input
+            v-model:value="query.customer_name"
+            class="page-card__input"
+            placeholder="请输入"
+            clearable
+            @keydown.enter="search"
+          />
+        </div>
+        <div v-show="filterExpanded" class="page-card__field">
+          <span class="page-card__label">订单号</span>
+          <n-input
+            v-model:value="query.order_no"
+            class="page-card__input"
+            placeholder="请输入"
+            clearable
+            @keydown.enter="search"
+          />
+        </div>
+        <div v-show="filterExpanded" class="page-card__field">
+          <span class="page-card__label">发运申请号</span>
+          <n-input
+            v-model:value="query.apply_no"
+            class="page-card__input"
+            placeholder="请输入"
+            clearable
+            @keydown.enter="search"
+          />
+        </div>
         <div class="page-card__actions">
           <n-button @click="reset">重置</n-button>
           <n-button type="primary" @click="search">查询</n-button>
+          <n-button quaternary class="page-card__toggle" @click="filterExpanded = !filterExpanded">
+            {{ filterExpanded ? '收起' : '展开' }}
+            <span class="page-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
+          </n-button>
         </div>
       </div>
     </n-card>
@@ -302,6 +364,15 @@ onMounted(load)
   margin-left: auto;
   display: flex;
   gap: 8px;
+}
+.page-card__caret {
+  display: inline-block;
+  margin-left: 2px;
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+.page-card__caret.is-open {
+  transform: rotate(180deg);
 }
 .page-toolbar {
   display: flex;

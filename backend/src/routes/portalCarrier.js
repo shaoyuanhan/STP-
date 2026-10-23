@@ -74,13 +74,30 @@ const TASK_SELECT = `
   LEFT JOIN carrier c ON c.id = t.carrier_id`;
 
 async function taskWhere(req) {
-  const { status = '', keyword = '' } = req.query;
+  const { status = '', keyword = '', task_no = '', order_no = '', apply_no = '', vin = '', customer_name = '' } = req.query;
   const scope = await carrierScope(req);
   const filter = carrierFilter(scope, 't.carrier_id');
   const where = ['t.deleted = 0', filter.sql, "t.status <> 'WAIT_DISPATCH'"];
   const params = [...filter.params];
   applyTaskScope(where, params, { ...scope.access, carriers: 'ALL' });
   if (status) { where.push('t.status = ?'); params.push(String(status)); }
+  const exact = (sql, value) => {
+    const v = String(value).trim();
+    if (!v) return;
+    where.push(sql);
+    params.push(`%${v}%`);
+  };
+  exact('t.task_no LIKE ?', task_no);
+  exact('t.order_no LIKE ?', order_no);
+  exact('t.apply_no LIKE ?', apply_no);
+  exact('t.customer_name LIKE ?', customer_name);
+  const vinValue = String(vin).trim();
+  if (vinValue) {
+    where.push(`EXISTS (
+      SELECT 1 FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0 AND v.vin LIKE ?
+    )`);
+    params.push(`%${vinValue}%`);
+  }
   if (keyword) {
     const kw = `%${String(keyword).trim()}%`;
     where.push(`(t.task_no LIKE ? OR t.customer_name LIKE ? OR EXISTS (
@@ -183,7 +200,6 @@ router.post('/tasks/:id/assign', wrap(async (req, res) => {
 
 /** 本承运商司机列表；传 carrier_id 时只返回该承运商司机（接单指派用） */
 router.get('/drivers', wrap(async (req, res) => {
-  const keyword = String(req.query.keyword ?? '').trim();
   const carrierIdParam = Number(req.query.carrier_id || 0);
   const scope = await carrierScope(req);
   if (carrierIdParam && !inScope(scope, carrierIdParam)) {
@@ -193,12 +209,27 @@ router.get('/drivers', wrap(async (req, res) => {
     ? { sql: 'cd.carrier_id = ?', params: [carrierIdParam] }
     : carrierFilter(scope, 'cd.carrier_id');
   const params = [...filter.params];
-  let kwSql = '';
+  const conditions = [];
+  const like = (col, value) => {
+    const v = String(value ?? '').trim();
+    if (!v) return;
+    conditions.push(`${col} LIKE ?`);
+    params.push(`%${v}%`);
+  };
+  like('d.driver_name', req.query.driver_name);
+  like('d.phone', req.query.phone);
+  like('d.license_no', req.query.license_no);
+  if (req.query.status !== '' && req.query.status !== undefined && req.query.status !== null) {
+    conditions.push('d.status = ?');
+    params.push(Number(req.query.status));
+  }
+  const keyword = String(req.query.keyword ?? '').trim();
   if (keyword) {
-    kwSql = 'AND (d.driver_name LIKE ? OR d.phone LIKE ? OR d.license_no LIKE ?)';
+    conditions.push('(d.driver_name LIKE ? OR d.phone LIKE ? OR d.license_no LIKE ?)');
     const kw = `%${keyword}%`;
     params.push(kw, kw, kw);
   }
+  const kwSql = conditions.length ? `AND ${conditions.join(' AND ')}` : '';
   const rows = await query(
     `SELECT d.id, d.driver_name, d.phone, d.id_card, d.license_no, d.license_type,
             d.license_valid_from, d.license_valid_to, d.source, d.status, d.remark, d.create_time,

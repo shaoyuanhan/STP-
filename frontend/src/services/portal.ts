@@ -284,6 +284,11 @@ export function fetchCarrierTasks(params: {
   page?: number
   size?: number
   status?: string
+  task_no?: string
+  order_no?: string
+  apply_no?: string
+  vin?: string
+  customer_name?: string
   keyword?: string
 }): Promise<PageData<PortalTask>> {
   return get('/portal/carrier/tasks', params)
@@ -300,11 +305,21 @@ export function assignCarrierTask(
   return post(`/portal/carrier/tasks/${id}/assign`, payload)
 }
 
-export function fetchCarrierDrivers(keyword = '', carrierId?: number | null): Promise<PortalDriver[]> {
-  const params: Record<string, unknown> = {}
-  if (keyword) params.keyword = keyword
-  if (carrierId) params.carrier_id = carrierId
-  return get('/portal/carrier/drivers', Object.keys(params).length ? params : undefined)
+export function fetchCarrierDrivers(params: {
+  keyword?: string
+  carrier_id?: number | null
+  driver_name?: string
+  phone?: string
+  license_no?: string
+  status?: number | '' | null
+} = {}): Promise<PortalDriver[]> {
+  const { carrier_id: carrierId, ...rest } = params
+  const query: Record<string, unknown> = {}
+  Object.entries(rest).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query[key] = value
+  })
+  if (carrierId) query.carrier_id = carrierId
+  return get('/portal/carrier/drivers', Object.keys(query).length ? query : undefined)
 }
 
 export interface DriverPayload {
@@ -438,6 +453,9 @@ export interface AccountRow {
 export function listAccounts(params: {
   page?: number
   size?: number
+  username?: string
+  display_name?: string
+  phone?: string
   keyword?: string
   account_type?: string
 }): Promise<PageData<AccountRow>> {
@@ -474,7 +492,15 @@ export interface PermModule {
   actions: Array<{ code: string; name: string }>
 }
 
-export function listRoles(params: { page?: number; size?: number; keyword?: string } = {}): Promise<PageData<RoleRow>> {
+export function listRoles(params: {
+  page?: number
+  size?: number
+  role_name?: string
+  role_code?: string
+  role_kind?: string
+  status?: number | '' | null
+  keyword?: string
+} = {}): Promise<PageData<RoleRow>> {
   return get('/portal/roles', params)
 }
 

@@ -30,6 +30,22 @@ router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
   const where = ['deleted = 0'];
   const params = [];
+  const like = (col, value) => {
+    const v = String(value ?? '').trim();
+    if (!v) return;
+    where.push(`${col} LIKE ?`);
+    params.push(`%${v}%`);
+  };
+  like('role_name', req.query.role_name);
+  like('role_code', req.query.role_code);
+  if (req.query.role_kind) {
+    where.push('role_kind = ?');
+    params.push(String(req.query.role_kind));
+  }
+  if (req.query.status !== '' && req.query.status !== undefined && req.query.status !== null) {
+    where.push('status = ?');
+    params.push(Number(req.query.status));
+  }
   const keyword = String(req.query.keyword ?? '').trim();
   if (keyword) {
     where.push('(role_name LIKE ? OR role_code LIKE ?)');

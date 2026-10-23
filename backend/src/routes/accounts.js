@@ -55,6 +55,15 @@ router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
   const where = ['a.deleted = 0'];
   const params = [];
+  const like = (col, value) => {
+    const v = String(value ?? '').trim();
+    if (!v) return;
+    where.push(`${col} LIKE ?`);
+    params.push(`%${v}%`);
+  };
+  like('a.username', req.query.username);
+  like('a.display_name', req.query.display_name);
+  like('a.phone', req.query.phone);
   const keyword = String(req.query.keyword ?? '').trim();
   if (keyword) {
     where.push('(a.username LIKE ? OR a.phone LIKE ? OR a.display_name LIKE ?)');

@@ -16,7 +16,12 @@ const message = useMessage()
 const dialog = useDialog()
 
 const loading = ref(false)
-const keyword = ref('')
+const filters = reactive({
+  driver_name: '',
+  phone: '',
+  license_no: '',
+  status: null as number | null,
+})
 const list = ref<PortalDriver[]>([])
 
 const modal = reactive({
@@ -55,12 +60,25 @@ const rules: FormRules = {
 async function load() {
   loading.value = true
   try {
-    list.value = await fetchCarrierDrivers(keyword.value.trim())
+    list.value = await fetchCarrierDrivers({
+      driver_name: filters.driver_name.trim() || undefined,
+      phone: filters.phone.trim() || undefined,
+      license_no: filters.license_no.trim() || undefined,
+      status: filters.status,
+    })
   } catch (e) {
     message.error(e instanceof Error ? e.message : '司机列表加载失败')
   } finally {
     loading.value = false
   }
+}
+
+function resetFilters() {
+  filters.driver_name = ''
+  filters.phone = ''
+  filters.license_no = ''
+  filters.status = null
+  load()
 }
 
 function openCreate() {
@@ -211,18 +229,52 @@ onMounted(load)
     <n-card class="page-card" :bordered="false">
       <div class="page-card__filters">
         <div class="page-card__field">
-          <span class="page-card__label">关键字</span>
+          <span class="page-card__label">司机姓名</span>
           <n-input
-            v-model:value="keyword"
+            v-model:value="filters.driver_name"
             class="page-card__input"
-            placeholder="姓名 / 手机号 / 驾驶证号"
+            placeholder="请输入"
             clearable
             @keydown.enter="load"
             @clear="load"
           />
         </div>
+        <div class="page-card__field">
+          <span class="page-card__label">手机号</span>
+          <n-input
+            v-model:value="filters.phone"
+            class="page-card__input"
+            placeholder="请输入"
+            clearable
+            @keydown.enter="load"
+            @clear="load"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">驾驶证号</span>
+          <n-input
+            v-model:value="filters.license_no"
+            class="page-card__input"
+            placeholder="请输入"
+            clearable
+            @keydown.enter="load"
+            @clear="load"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">状态</span>
+          <n-select
+            v-model:value="filters.status"
+            class="page-card__input"
+            placeholder="全部状态"
+            clearable
+            :options="[{ label: '启用', value: 1 }, { label: '停用', value: 0 }]"
+            @update:value="load"
+          />
+        </div>
         <div class="page-card__actions">
           <n-button @click="load">查询</n-button>
+          <n-button @click="resetFilters">重置</n-button>
           <n-button type="primary" @click="openCreate">+ 新增司机</n-button>
         </div>
       </div>
