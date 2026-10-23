@@ -13,6 +13,14 @@ const account = ref('')
 const password = ref('')
 const loading = ref(false)
 
+// 自动填充/输入法常带入空格或横线，统一过滤为连续字符，避免用户看到 "139 1111 0008" 这类分组
+function onAccountInput(e: Event) {
+  const el = e.target as HTMLInputElement
+  const cleaned = el.value.replace(/[\s-]/g, '')
+  if (el.value !== cleaned) el.value = cleaned
+  account.value = cleaned
+}
+
 async function onSubmit() {
   if (!account.value.trim()) {
     message.warning('请输入账号')
@@ -24,7 +32,7 @@ async function onSubmit() {
   }
   loading.value = true
   try {
-    const res = await driverPasswordLogin(account.value.trim(), password.value)
+    const res = await driverPasswordLogin(account.value, password.value)
     setSession(res.token, res.profile)
     message.success(`登录成功，${res.profile.driver_name || res.profile.name}`)
     router.replace('/m/tasks')
@@ -51,7 +59,12 @@ async function onSubmit() {
         <p class="mini__title">司机小程序</p>
         <form @submit.prevent="onSubmit">
           <label>
-            <input v-model="account" placeholder="请输入账号或手机号" autocomplete="username" />
+            <input
+              :value="account"
+              placeholder="请输入账号或手机号"
+              autocomplete="username"
+              @input="onAccountInput"
+            />
           </label>
           <label>
             <input v-model="password" type="password" placeholder="请输入密码" autocomplete="current-password" />
