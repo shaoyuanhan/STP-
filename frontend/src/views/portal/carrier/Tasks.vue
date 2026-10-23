@@ -113,6 +113,8 @@ const baseColumns: DataTableColumns<PortalTask> = [
         row.task_no
       ),
   },
+  { title: '订单号', key: 'order_no', width: 150, resizable: true, render: (row) => row.order_no || '-' },
+  { title: '发运申请号', key: 'apply_no', width: 150, resizable: true, render: (row) => row.apply_no || '-' },
   { title: '客户', key: 'customer_name', width: 140, resizable: true, ellipsis: { tooltip: true } },
   {
     title: '运输路线',

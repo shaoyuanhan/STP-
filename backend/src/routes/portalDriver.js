@@ -19,7 +19,7 @@ const TAB_STATUS = {
 };
 
 const TASK_SELECT = `
-  SELECT t.id, t.task_no, t.apply_no, t.customer_name, t.status,
+  SELECT t.id, t.task_no, t.order_no, t.apply_no, t.customer_name, t.status,
          t.ship_location, t.delivery_area, t.delivery_address,
          t.plan_freight, t.actual_freight, t.mileage,
          t.plan_pickup_date, t.outbound_date, t.ship_time, t.arrive_time, t.finish_time,

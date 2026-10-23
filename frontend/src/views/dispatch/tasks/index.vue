@@ -2,7 +2,7 @@
 /**
  * 运输调度 - 发运任务（契约 5.4 / 既有需求 2/3/5/6）
  *
- * - 筛选：任务单号/发运申请号/VIN/客户名称/状态（9 态）/承运商/创建日期区间
+ * - 筛选：任务单号/订单号/发运申请号/VIN/客户名称/状态（9 态）/承运商/创建日期区间
  * - 列表：交付地址完整展示、承运商司机合并列、计划提车/出库/发运/到达四列、操作竖排
  * - 行多选：仅「待派单」可勾选，选中后顶部「批量派单（N）」
  * - 派单/改派/取消派单携带列表行 version，D0001 冲突时提示并刷新列表
@@ -271,8 +271,8 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
         { default: () => row.task_no },
       ),
   },
-  { title: '发运申请号', key: 'apply_no', width: 150 },
   { title: '订单号', key: 'order_no', width: 150, render: (row) => row.order_no || '-' },
+  { title: '发运申请号', key: 'apply_no', width: 150 },
   {
     title: '客户名称',
     key: 'customer_name',
@@ -427,9 +427,9 @@ function refreshList() {
           />
         </div>
         <div class="page-card__field">
-          <span class="page-card__label">发运申请号</span>
+          <span class="page-card__label">订单号</span>
           <n-input
-            v-model:value="filter.apply_no"
+            v-model:value="filter.order_no"
             class="page-card__input page-card__input--s"
             clearable
             placeholder="请输入"
@@ -437,9 +437,9 @@ function refreshList() {
           />
         </div>
         <div class="page-card__field">
-          <span class="page-card__label">订单号</span>
+          <span class="page-card__label">发运申请号</span>
           <n-input
-            v-model:value="filter.order_no"
+            v-model:value="filter.apply_no"
             class="page-card__input page-card__input--s"
             clearable
             placeholder="请输入"

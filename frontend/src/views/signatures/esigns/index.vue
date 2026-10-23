@@ -89,6 +89,7 @@ function handleReset() {
   filters.esign_id = ''
   filters.task_no = ''
   filters.vin = ''
+  filters.order_no = ''
   filters.apply_no = ''
   filters.sign_status = null
   page.value = 1
@@ -159,6 +160,14 @@ const columns = computed<DataTableColumns<EsignRow>>(() => [
     resizable: true,
     ellipsis: { tooltip: true },
     render: (row) => row.task_no || '-',
+  },
+  {
+    title: '订单号',
+    key: 'order_no',
+    width: 145,
+    resizable: true,
+    ellipsis: { tooltip: true },
+    render: (row) => row.order_no || '-',
   },
   {
     title: '发运申请号',
@@ -292,6 +301,16 @@ onActivated(loadPage)
           />
         </div>
         <div class="esign-filter__field">
+          <span class="esign-filter__label">订单号</span>
+          <n-input
+            v-model:value="filters.order_no"
+            size="small"
+            clearable
+            placeholder="请输入订单号"
+            @keyup.enter="handleSearch"
+          />
+        </div>
+        <div class="esign-filter__field">
           <span class="esign-filter__label">发运申请号</span>
           <n-input
             v-model:value="filters.apply_no"
@@ -338,7 +357,7 @@ onActivated(loadPage)
         :loading="loading"
         :pagination="pagination"
         :row-key="rowKey"
-        :scroll-x="1750"
+        :scroll-x="1900"
         :bordered="false"
       >
         <template #empty>
@@ -370,6 +389,7 @@ onActivated(loadPage)
 
           <DetailSection title="关联任务" :column="2">
             <n-descriptions-item label="任务单号">{{ selectedRow.task_no || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="订单号">{{ selectedRow.order_no || '-' }}</n-descriptions-item>
             <n-descriptions-item label="发运申请号">{{ selectedRow.apply_no || '-' }}</n-descriptions-item>
             <n-descriptions-item label="客户名称">{{ selectedRow.customer_name || '-' }}</n-descriptions-item>
             <n-descriptions-item label="任务状态">

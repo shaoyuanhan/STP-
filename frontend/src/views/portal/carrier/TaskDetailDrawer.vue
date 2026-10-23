@@ -115,6 +115,7 @@ function money(value: string | number | null | undefined, fallback: string) {
             <n-descriptions-item label="任务状态">
               <StatusBadge :status="detail.task.status" />
             </n-descriptions-item>
+            <n-descriptions-item label="订单号">{{ detail.task.order_no || '-' }}</n-descriptions-item>
             <n-descriptions-item label="发运申请单号">{{ detail.task.apply_no || '-' }}</n-descriptions-item>
             <n-descriptions-item label="客户名称">{{ detail.task.customer_name || '-' }}</n-descriptions-item>
             <n-descriptions-item label="承运商">{{ detail.task.carrier_name || '-' }}</n-descriptions-item>

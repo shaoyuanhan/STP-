@@ -35,7 +35,7 @@ const LATEST_TRACK_JOIN = `LEFT JOIN (
      LEFT JOIN transport_track tr ON tr.id = lm.max_id`;
 
 /** 列表公共 SELECT 片段（VIN/车型取车辆明细聚合） */
-const LIST_FIELDS = `t.id, t.task_no, t.apply_no, t.customer_name, t.status,
+const LIST_FIELDS = `t.id, t.task_no, t.order_no, t.apply_no, t.customer_name, t.status,
             t.ship_location, t.delivery_address, t.plan_freight, t.mileage,
             t.plan_pickup_date, t.ship_time,
             t.outbound_date, t.arrive_time, t.finish_time, t.create_time, t.version,

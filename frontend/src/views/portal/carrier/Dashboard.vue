@@ -103,6 +103,9 @@ function openDetail(task: PortalTask) {
                   @click="openDetail(task)"
                 >
                   <td><a class="link">{{ task.task_no }}</a></td>
+                  <td>
+                    <span class="ellipsis" :title="task.order_no || ''">{{ task.order_no || '-' }}</span>
+                  </td>
                   <td v-if="showCarrier">
                     <span class="ellipsis" :title="task.carrier_name || ''">{{ task.carrier_name || '-' }}</span>
                   </td>

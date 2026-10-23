@@ -136,6 +136,7 @@ function handleSearch() {
 function handleReset() {
   filters.freight_no = ''
   filters.task_no = ''
+  filters.order_no = ''
   filters.carrier_id = null
   filters.reconcile_status = null
   page.value = 1
@@ -226,6 +227,14 @@ const columns = computed<DataTableColumns<FreightBillRow>>(() => [
     ellipsis: { tooltip: true },
   },
   { title: '任务单号', key: 'task_no', width: 150, resizable: true, ellipsis: { tooltip: true } },
+  {
+    title: '订单号',
+    key: 'order_no',
+    width: 150,
+    resizable: true,
+    ellipsis: { tooltip: true },
+    render: (row) => row.order_no || '-',
+  },
   {
     title: '客户',
     key: 'customer_name',
@@ -551,6 +560,16 @@ onActivated(() => {
           />
         </div>
         <div class="freight-filter__field">
+          <span class="freight-filter__label">订单号</span>
+          <n-input
+            v-model:value="filters.order_no"
+            size="small"
+            clearable
+            placeholder="请输入订单号"
+            @keyup.enter="handleSearch"
+          />
+        </div>
+        <div class="freight-filter__field">
           <span class="freight-filter__label">承运商</span>
           <n-select
             v-model:value="filters.carrier_id"
@@ -624,6 +643,7 @@ onActivated(() => {
             <DetailSection title="基本信息" :column="2">
               <n-descriptions-item label="运费单号">{{ drawerBill.freight_no }}</n-descriptions-item>
               <n-descriptions-item label="任务单号">{{ drawerBill.task_no }}</n-descriptions-item>
+              <n-descriptions-item label="订单号">{{ drawerBill.order_no || '-' }}</n-descriptions-item>
               <n-descriptions-item label="发运申请号">{{ drawerBill.apply_no || '-' }}</n-descriptions-item>
               <n-descriptions-item label="客户名称">{{ drawerBill.customer_name || '-' }}</n-descriptions-item>
               <n-descriptions-item label="承运商">

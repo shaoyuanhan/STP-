@@ -199,6 +199,10 @@ onMounted(load)
               <span class="ddetail__no-label">任务单号</span>
               <span class="ddetail__no">{{ task.task_no }}</span>
             </div>
+            <div v-if="task.order_no" class="ddetail__no-wrap">
+              <span class="ddetail__no-label">订单号</span>
+              <span class="ddetail__no">{{ task.order_no }}</span>
+            </div>
             <StatusBadge :status="task.status" size="small" />
           </div>
           <div class="ddetail__route">

@@ -23,6 +23,7 @@ import type {
  */
 export interface FreightBillRow extends FreightBill {
   customer_name?: string | null
+  order_no?: string | null
   apply_no?: string | null
   carrier_code?: string | null
   task_status?: TaskStatus | null

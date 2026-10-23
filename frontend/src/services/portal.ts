@@ -29,7 +29,8 @@ export interface PortalProfile {
 export interface PortalTask {
   id: number
   task_no: string
-  apply_no?: string
+  order_no?: string | null
+  apply_no?: string | null
   customer_name: string
   status: string
   ship_location?: string | null

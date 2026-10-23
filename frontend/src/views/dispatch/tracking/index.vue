@@ -985,8 +985,12 @@ function onMapHover(id: number | null) {
                 </div>
                 <div class="ov-fields">
                   <div class="wide">
+                    <label>任务单号</label><span>{{ focusTask.task_no || '-' }}</span>
+                  </div>
+                  <div class="wide">
                     <label>运输单号</label><span>{{ focusTracks[0]?.transport_no || '-' }}</span>
                   </div>
+                  <div><label>订单号</label><span>{{ focusTask.order_no || '-' }}</span></div>
                   <div><label>客户</label><span>{{ focusTask.customer_name || '-' }}</span></div>
                   <div><label>计划运费</label><span>¥{{ money(focusTask.plan_freight) }}</span></div>
                   <div><label>里程</label><span>{{ mileageLabel(focusTask.mileage) }}</span></div>

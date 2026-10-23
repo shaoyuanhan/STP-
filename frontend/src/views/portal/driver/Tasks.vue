@@ -97,6 +97,7 @@ onMounted(() => load(true))
           <span class="tcard__point tcard__point--to">送</span>
           <span class="tcard__text">{{ task.delivery_address || task.delivery_area || '-' }}</span>
         </div>
+        <div v-if="task.order_no" class="tcard__vin">订单号：{{ task.order_no }}</div>
         <div v-if="task.vins" class="tcard__vin">VIN：{{ task.vins }}</div>
         <div class="tcard__foot">
           <span class="tcard__customer">{{ task.customer_name }}</span>

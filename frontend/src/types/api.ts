@@ -439,6 +439,7 @@ export interface LatestTrack {
 export interface TrackingTask {
   id: number
   task_no: string
+  order_no?: string | null
   apply_no?: string
   customer_name?: string
   vins?: string
@@ -525,6 +526,7 @@ export interface FreightAdjustLog {
 export interface FreightBillQuery extends PageQuery {
   freight_no?: string
   task_no?: string
+  order_no?: string
   carrier_id?: number | '' | null
   reconcile_status?: ReconcileStatus | '' | null
 }
@@ -571,6 +573,7 @@ export interface EsignQuery extends PageQuery {
   esign_id?: string
   task_no?: string
   vin?: string
+  order_no?: string
   apply_no?: string
   sign_status?: EsignStatus | '' | null
 }
