@@ -12,7 +12,7 @@
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getTrackingOverview, getTrackingTask } from '@/services/tracking'
-import type { TrackingOverviewTask, TrackingTaskDetail, TransportTrack } from '@/types/api'
+import type { TrackingOverviewTask, TrackingTask, TrackingTaskDetail, TransportTrack } from '@/types/api'
 import { matchCityGeo, matchProvince } from '@/lib/china-map'
 import { dateOnly, dateShort, datetime, datetimeFull, formatPhone, money } from '@/utils/format'
 import ChinaMap from '@/components/ChinaMap.vue'
@@ -52,11 +52,16 @@ function reportAgeMs(raw?: string | null): number | null {
   return Date.now() - time
 }
 
+/** 超时起算点：有回传按最近回传时间；无回传按进入在途时间，避免刚进入在途就被判超时 */
+function reportBaseline(task?: Partial<TrackingTask> | null): string | null {
+  if (!task) return null
+  return task.latest_track?.report_time ?? task.outbound_date ?? task.ship_time ?? task.create_time ?? null
+}
+
 function isOverdue(status?: string | null, raw?: string | null): boolean {
   if (status !== 'IN_TRANSIT') return false
   const age = reportAgeMs(raw)
-  if (age === null) return true
-  return age > REPORT_TIMEOUT_MS
+  return age !== null && age > REPORT_TIMEOUT_MS
 }
 
 function durationText(ms: number): string {
@@ -69,14 +74,14 @@ function durationText(ms: number): string {
 }
 
 function reportHint(task: TrackingOverviewTask): string {
-  const age = reportAgeMs(task.latest_track?.report_time)
+  const age = reportAgeMs(reportBaseline(task))
   if (age === null) return '暂无上报'
-  if (isOverdue(task.status, task.latest_track?.report_time)) return `超时 ${durationText(age)}`
-  return `${durationText(age)}前上报`
+  if (isOverdue(task.status, reportBaseline(task))) return `超时 ${durationText(age)}`
+  return task.latest_track ? `${durationText(age)}前上报` : `在途 ${durationText(age)}，待首次回传`
 }
 
 function isReportOverdue(task: TrackingOverviewTask): boolean {
-  return isOverdue(task.status, task.latest_track?.report_time)
+  return isOverdue(task.status, reportBaseline(task))
 }
 
 // ---- 数据加载 ----
@@ -437,7 +442,7 @@ const selectedAbnormal = computed(() => {
   if (selectedId.value === null || isHistory.value) return false
   if (focusTask.value && Number(focusTask.value.id) === selectedId.value) {
     const last = focusTracks.value[focusTracks.value.length - 1]
-    return isOverdue(focusTask.value.status, last?.report_time)
+    return isOverdue(focusTask.value.status, last?.report_time ?? reportBaseline(focusTask.value))
   }
   return metaList.value.find((meta) => meta.task.id === selectedId.value)?.abnormal ?? false
 })
@@ -479,9 +484,10 @@ const anomalyRecords = computed<AnomalyRecord[]>(() => {
       ongoing: false,
     })
   }
-  const last = toMs(tracks[tracks.length - 1]?.report_time)
-  if (isOverdue(focusTask.value?.status, tracks[tracks.length - 1]?.report_time)) {
-    const start = last === null ? null : last + REPORT_TIMEOUT_MS
+  const baseRaw = reportBaseline(focusTask.value)
+  if (isOverdue(focusTask.value?.status, baseRaw)) {
+    const base = toMs(baseRaw)
+    const start = base === null ? null : base + REPORT_TIMEOUT_MS
     records.push({
       key: 'ongoing',
       start,
