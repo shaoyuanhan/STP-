@@ -87,8 +87,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | 表 | 关键字段（业务） | 说明 |
 | --- | --- | --- |
 | carrier | carrier_code(uk), **external_carrier_id(uk 第三方承运商ID)**, carrier_name(uk), contact_person, contact_phone, cooperation_routes, remark, status **tinyint 1 合作中/0 已停用** | 第三方ID选填；派单/回传可用其定位 |
-| driver | driver_name, **external_driver_id(uk 第三方司机ID)**, phone, id_card(uk), license_no, license_type, license_valid_from, license_valid_to, source **tinyint 1 自建/2 狮桥同步**, status tinyint 1/0 | 姓名身份证不可改；第三方ID选填 |
-| carrier_driver | carrier_id, driver_id (uk 两列) | **司机-承运商多对多**，司机无 carrier_id 字段 |
+| driver | driver_name, **carrier_id(必填)**, **external_driver_id**, phone, id_card, license_no, license_type, license_valid_from, license_valid_to, source **tinyint 1 自建/2 狮桥同步**, status tinyint 1/0 | **司机档案按承运商隔离**：一家承运商一份档案，同身份证可在不同承运商各自建档；唯一键为 (carrier_id, external_driver_id) 与 (carrier_id, id_card)；姓名身份证不可改；第三方ID选填 |
 | shipping_task | task_no(uk), apply_no(uk), customer_name, region, sales_person, sales_phone, delivery_area, **delivery_address**(PRD 要求补), receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date, outbound_date, ship_time, arrive_time, finish_time, carrier_id, driver_id, plan_freight, **mileage(CRM 下发里程)**, actual_freight, status, cancel_reason, cancel_time, remark, **version** | head 表，VIN 明细下沉；**一车一单** |
 | shipping_task_vehicle | task_id, task_no(冗余), vin, order_no, report_no, plan_freight(单台), actual_freight, ship_location, vehicle_model, engine_config, cabin_type | **一车一单：每个任务仅 1 台车**；head.plan_freight=该车计划运费 |
 | dispatch_record | task_id, task_no, action(DISPATCH/REASSIGN/CANCEL_DISPATCH), carrier_id, driver_id, batch_no, dispatch_person, dispatch_time, cancel_reason, remark | 派单备注存此表 remark |
@@ -112,11 +111,11 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 - `PUT /api/carriers/:id/status` `{status: 1|0}` 停用后不可被派单、在途不受影响
 
 ### 5.3 司机
-- `GET /api/drivers?driver_name=&phone=&id_card=&license_no=&external_driver_id=&carrier_id=&status=&page=&size=` → 按字段分项模糊筛选；list 含 carriers（所属承运商名，逗号连接字符串或数组）
-- `POST /api/drivers` `{name*, external_driver_id, phone*, id_card*, license_no, license_type, license_valid_from*, license_valid_to*, carrier_ids:[], remark}` source=1
-- `PUT /api/drivers/:id` 姓名/身份证不可改（A0002），carrier_ids 全量替换 carrier_driver
+- `GET /api/drivers?driver_name=&phone=&id_card=&license_no=&external_driver_id=&carrier_id=&status=&page=&size=` → 按字段分项模糊筛选；list 含 carrier_name（所属承运商名称）
+- `POST /api/drivers` `{name*, external_driver_id, phone*, id_card*, license_no, license_type, license_valid_from*, license_valid_to*, carrier_id*, remark}` source=1；身份证/第三方ID 在该承运商内查重（A0002）
+- `PUT /api/drivers/:id` 姓名/身份证不可改（A0002），carrier_id 可改归属（改后仍在该承运商内查重）
 - `PUT /api/drivers/:id/status` `{status:1|0}` 停用后不可分派、不影响在途
-- `GET /api/drivers/options?carrier_id=` → 该承运商关联且启用的司机 `[{id,name,phone,license_type}]`（狮桥接单模拟用）
+- `GET /api/drivers/options?carrier_id=` → 该承运商名下启用的司机 `[{id,name,phone,license_type}]`（狮桥接单模拟用）
 
 ### 5.4 发运任务
 - `GET /api/shipping-tasks?task_no=&order_no=&apply_no=&vin=&customer_name=&status=&carrier_id=&start_date=&end_date=&page=&size=`
@@ -157,7 +156,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | 4 | POST /esign/receipt-sync | 狮桥 | esignId* | `{esignId, signStatus}`（回执确认，幂等） |
 | 5 | POST /shipping-tasks/cancel | CRM | orderNo*（推荐）/ applyNo / taskNo, cancelReason*, operator?（CRM 操作人账号，写状态日志展示） | 按取消规则校验；关联待签署电子签置 CANCELLED |
 | 6 | POST /wms/outbound-status | WMS | orderNo/taskNo（兼容 applyNo）, outboundTime? | PICKED→OUTBOUND→IN_TRANSIT（司机提车在前、仓库出库在后，出库完成即进在途），回填 outbound_date（不得早于发运时间）；未提车返回 D0001；重复回传仅补记日志（幂等） |
-| 7 | POST /drivers/sync | 狮桥 | 单条：司机对象；批量：司机对象数组或 `{drivers:[...]}`（≤200 条）。字段 `externalDriverId?`（第三方司机ID，推荐；传入时优先按其 UPSERT）, driverName*, phone*, idCard*, licenseNo, licenseType, licenseValidFrom, licenseValidTo, carrierIds? / carrierId? / externalCarrierId?；**兼容 snake_case 写法**（`name`/`driver_name`、`id_card`、`external_driver_id`、`carrier_ids` 等，camelCase 优先） | 第三方司机ID或身份证号 UPSERT（source=2）+carrier_driver 维护 + 自动补建司机登录账号（sys_account，默认密码 `DEFAULT_DRIVER_PASSWORD`，缺省 123456）；批量逐条独立事务，返回 `{total,success,created,updated,failed,results[]}` |
+| 7 | POST /drivers/sync | 狮桥 | 单条：司机对象；批量：司机对象数组或 `{drivers:[...]}`（≤200 条）。字段 `externalDriverId?`（第三方司机ID，推荐；传入时优先按其 UPSERT）, driverName*, phone*, idCard*, licenseNo, licenseType, licenseValidFrom, licenseValidTo, carrierId? / carrierIds? / externalCarrierId?；**兼容 snake_case 写法**（`name`/`driver_name`、`id_card`、`external_driver_id`、`carrier_id`、`carrier_ids` 等，camelCase 优先） | **按承运商逐份建档**：carrierIds 有 N 家就维护 N 份独立档案（匹配顺序 external_driver_id → 承运商内 external_driver_id → 承运商内 id_card）；未传承运商时沿用已有档案归属，仍无法确定则报错；source=2；自动补建司机登录账号（sys_account，按承运商隔离，默认密码 `DEFAULT_DRIVER_PASSWORD`，缺省 123456）；批量逐条独立事务，返回 `{total,success,created,updated,failed,results[]}` |
 | 8 | POST /tracking/report（**已停用，兼容保留**） | 狮桥 | orderNo/taskNo（兼容 applyNo）, longitude*（-180~180）, latitude*（-90~90）, locationDesc?, speed?, reportTime?（缺省当前时间，不得晚于当前时间、不得早于上次上报） | 原推送模式：写 transport_track（transport_no=`SQ+yyyyMMdd+任务id补零4位`），**不改任务状态**；点位取数已改为 STP 定时拉取，本接口后续停用 |
 | 9 | POST /shipping-tasks/accept | 承运商通用（狮桥/任意三方物流） | orderNo/taskNo（兼容 applyNo）, carrierId / externalCarrierId（回传承运商ID，须与任务承运商一致；carrierName 旧字段仅兼容）, driverId / externalDriverId*（STP 内部ID 或第三方司机ID） | DISPATCHED→CARRIER_ACCEPTED，回填 driver_id；司机须启用且属于任务承运商；计划提车日期由 ① receive 下发，本接口不接收 |
 | 10 | POST /shipping-tasks/pickup | 承运商通用 | orderNo/taskNo（兼容 applyNo）, carrierName?, actualPickupDate?（实际提车时间=发运时间，YYYY-MM-DD HH:mm:ss，兼容仅日期；允许早于计划提车日期，不得晚于当前时间）, photos?:[](提车照片) | 仅 CARRIER_ACCEPTED→PICKED，回填 ship_time，待仓库出库；重复回传仅补记日志 |

@@ -112,6 +112,20 @@ router.post('/login', wrap(async (req, res) => {
   await issueLogin(res, account);
 }));
 
+/**
+ * 司机档案按承运商隔离后，同一手机号可能在多家承运商各有账号。
+ * 指定 carrier_id 时按承运商定位；未指定时取最近登录的账号，其次最早创建。
+ */
+function pickDriverAccount(accounts, carrierId) {
+  if (carrierId) return accounts.find((a) => Number(a.carrier_id) === Number(carrierId)) || null;
+  return [...accounts].sort((a, b) => {
+    const at = a.last_login_time ? new Date(a.last_login_time).getTime() : 0;
+    const bt = b.last_login_time ? new Date(b.last_login_time).getTime() : 0;
+    if (at !== bt) return bt - at;
+    return a.id - b.id;
+  })[0];
+}
+
 /** 小程序登录：仅司机，账号 + 密码 */
 router.post('/driver-login', wrap(async (req, res) => {
   const password = String(req.body.password ?? '');
@@ -122,7 +136,8 @@ router.post('/driver-login', wrap(async (req, res) => {
     if (rows.length) throw errBiz('该账号不是司机，请使用后台登录');
     throw errAuth('账号不存在或密码错误');
   }
-  const account = drivers[0];
+  const account = pickDriverAccount(drivers, req.body.carrier_id);
+  if (!account) throw errAuth('该承运商下没有此司机账号');
   if (!verifyPassword(password, account.password_hash)) throw errAuth('账号不存在或密码错误');
   await issueLogin(res, account);
 }));
@@ -187,9 +202,13 @@ router.post('/sms-login', wrap(async (req, res) => {
   if (codes[0].code !== code) throw errAuth('验证码不正确');
   await query('UPDATE sms_code SET used = 1 WHERE id = ?', [codes[0].id]);
 
-  const drivers = await query('SELECT * FROM driver WHERE phone = ? AND deleted = 0', [phone]);
+  const drivers = await query('SELECT * FROM driver WHERE phone = ? AND deleted = 0 ORDER BY id', [phone]);
   if (!drivers.length) throw errNotFound('司机不存在');
-  const driver = drivers[0];
+  const carrierId = req.body.carrier_id ? Number(req.body.carrier_id) : null;
+  const driver = carrierId
+    ? drivers.find((d) => Number(d.carrier_id) === carrierId)
+    : drivers[0];
+  if (!driver) throw errAuth('该承运商下没有此司机档案');
   if (Number(driver.status) !== 1) throw errBiz('该司机已停用，请联系承运商');
 
   let accounts = await query(
@@ -198,9 +217,9 @@ router.post('/sms-login', wrap(async (req, res) => {
   );
   if (!accounts.length) {
     const ins = await query(
-      `INSERT INTO sys_account (account_type, phone, password_hash, display_name, driver_id, role, status, create_name, update_name)
-       VALUES ('DRIVER', ?, NULL, ?, ?, 'DRIVER', 1, '司机自助开通', '司机自助开通')`,
-      [phone, driver.driver_name, driver.id]
+      `INSERT INTO sys_account (account_type, phone, password_hash, display_name, carrier_id, driver_id, role, status, create_name, update_name)
+       VALUES ('DRIVER', ?, NULL, ?, ?, ?, 'DRIVER', 1, '司机自助开通', '司机自助开通')`,
+      [phone, driver.driver_name, driver.carrier_id, driver.id]
     );
     accounts = await query('SELECT * FROM sys_account WHERE id = ?', [ins.insertId]);
   }

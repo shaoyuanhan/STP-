@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS `sys_account` (
   `password_hash` VARCHAR(255) DEFAULT NULL COMMENT '密码哈希,scrypt;司机短信登录可为空',
   `display_name` VARCHAR(64) NOT NULL COMMENT '显示名称',
   `carrier_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '承运商账号所属承运商',
+  `carrier_scope` BIGINT UNSIGNED AS (IFNULL(`carrier_id`, 0)) STORED COMMENT '承运商维度，用于并存账号的唯一约束',
   `driver_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '司机账号对应司机',
   `role` VARCHAR(32) NOT NULL DEFAULT 'CARRIER_ADMIN' COMMENT '角色标识',
   `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态:1-启用,0-停用',
@@ -25,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `sys_account` (
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted` TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_type_phone` (`account_type`,`phone`),
+  UNIQUE KEY `uk_type_phone_carrier` (`account_type`,`phone`,`carrier_scope`),
   UNIQUE KEY `uk_username` (`username`),
   KEY `idx_carrier_id` (`carrier_id`),
   KEY `idx_driver_id` (`driver_id`)

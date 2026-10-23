@@ -626,7 +626,7 @@
         ],
         "responses": {
           "200": {
-            "description": "列表含 carriers（所属承运商名，逗号连接）与 carrier_ids 数组",
+            "description": "列表含 carrier_name（司机所属承运商名称，一家承运商一份档案）",
             "content": {
               "application/json": {
                 "example": {
@@ -642,11 +642,9 @@
                         "license_type": "A2",
                         "source": 1,
                         "status": 1,
-                        "carriers": "狮桥物流股份有限公司,安捷整车运输有限公司",
-                        "carrier_ids": [
-                          1,
-                          2
-                        ]
+                        "carriers": "狮桥物流股份有限公司",
+                        "carrier_id": 1,
+                        "carrier_name": "狮桥物流股份有限公司"
                       }
                     ],
                     "total": 6,
@@ -664,7 +662,7 @@
           "03 基础数据·司机"
         ],
         "summary": "新增司机（自建 source=1）",
-        "description": "身份证号唯一（重复 A0002）；carrier_ids 建立司机-承运商多对多关联",
+        "description": "一名司机一份档案，归属唯一承运商（carrier_id 必填）；身份证号/第三方司机ID 在该承运商内唯一（重复 A0002）",
         "requestBody": {
           "required": true,
           "content": {
@@ -706,12 +704,9 @@
                     "type": "string",
                     "description": "驾驶证有效期止（YYYY-MM-DD）"
                   },
-                  "carrier_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    },
-                    "description": "关联承运商 ID 列表（多对多）"
+                  "carrier_id": {
+                    "type": "integer",
+                    "description": "所属承运商 ID（必填，司机档案唯一归属）"
                   },
                   "remark": {
                     "type": "string",
@@ -721,7 +716,8 @@
                 "required": [
                   "name",
                   "phone",
-                  "id_card"
+                  "id_card",
+                  "carrier_id"
                 ]
               },
               "example": {
@@ -732,9 +728,7 @@
                 "license_type": "A2",
                 "license_valid_from": "2023-01-01",
                 "license_valid_to": "2029-01-01",
-                "carrier_ids": [
-                  1
-                ],
+                "carrier_id": 1,
                 "remark": "自建司机",
                 "external_driver_id": "SQD-000123"
               }
@@ -743,7 +737,7 @@
         },
         "responses": {
           "200": {
-            "description": "创建成功，返回含 carriers/carrier_ids",
+            "description": "创建成功，返回含 carrier_id/carrier_name",
             "content": {
               "application/json": {
                 "example": {
@@ -769,7 +763,7 @@
           "03 基础数据·司机"
         ],
         "summary": "编辑司机",
-        "description": "姓名与身份证号不可修改（A0002）；carrier_ids 全量替换 carrier_driver 关联",
+        "description": "姓名与身份证号不可修改（A0002）；carrier_id 可调整归属，改后仍在该承运商内查重",
         "parameters": [
           {
             "name": "id",
@@ -821,12 +815,9 @@
                     "type": "string",
                     "description": "驾驶证有效期止（YYYY-MM-DD）"
                   },
-                  "carrier_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    },
-                    "description": "关联承运商 ID 列表"
+                  "carrier_id": {
+                    "type": "integer",
+                    "description": "所属承运商 ID（调整司机档案归属）"
                   },
                   "remark": {
                     "type": "string",
@@ -839,10 +830,7 @@
                 "license_type": "A2",
                 "license_valid_from": "2021-03-10",
                 "license_valid_to": "2027-03-10",
-                "carrier_ids": [
-                  1,
-                  2
-                ],
+                "carrier_id": 1,
                 "external_driver_id": "SQD-000123"
               }
             }
@@ -2615,7 +2603,7 @@
           "10 外部接口·狮桥物流"
         ],
         "summary": "⑩ 司机信息同步（支持单条 / 批量）",
-        "description": "按第三方司机ID（externalDriverId，推荐）优先 UPSERT，未传时退回身份证号（source=2 狮桥同步，更新时姓名以狮桥为准、未传字段保留原值）；carrier_ids / carrierId / externalCarrierId 存在时维护 carrier_driver 多对多关联；重复推送同一第三方ID或身份证号为更新不新增。同步时自动保证司机登录账号存在（sys_account，account_type=DRIVER，无账号按默认密码补建，默认密码取环境变量 DEFAULT_DRIVER_PASSWORD，缺省 123456；已有账号同步姓名/手机号）。\n\n**字段命名**：camelCase（driverName/idCard/...）与 snake_case（name 或 driver_name/id_card/...）两种写法均接受，同义字段 camelCase 优先。\n\n**支持批量**：请求体可直接传司机对象数组，或 {\"drivers\":[...]}，单次最多 200 条；每条独立事务，单条失败不影响其余，data 返回 { total, success, created, updated, failed, results[] }，results 按入参顺序给出每条的成功/失败与原因。",
+        "description": "司机档案按承运商隔离，一家承运商一份：carrierIds 有 N 家就维护 N 份独立档案（匹配顺序 externalDriverId → 承运商内 externalDriverId → 承运商内 idCard）；未传承运商时沿用该司机已有档案的归属，仍无法确定则报错。重复推送同一第三方ID/身份证号在该承运商内为更新不新增，name 以狮桥为准、未传字段保留原值。同步时自动保证司机登录账号存在（sys_account，account_type=DRIVER，按承运商隔离，无账号按默认密码补建，默认密码取环境变量 DEFAULT_DRIVER_PASSWORD，缺省 123456；已有账号同步姓名/手机号）。\n\n**字段命名**：camelCase（driverName/idCard/...）与 snake_case（name 或 driver_name/id_card/...）两种写法均接受，同义字段 camelCase 优先。\n\n**支持批量**：请求体可直接传司机对象数组，或 {\"drivers\":[...]}，单次最多 200 条；每条独立事务，单条失败不影响其余，data 返回 { total, success, created, updated, failed, results[] }，results 按入参顺序给出每条的成功/失败与原因。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2702,7 +2690,8 @@
                     "license_valid_from": "2023-01-01",
                     "license_valid_to": "2029-01-01",
                     "carrier_ids": [
-                      1
+                      1,
+                      2
                     ]
                   }
                 }
@@ -3473,13 +3462,13 @@
           },
           "carrierId": {
             "type": "integer",
-            "description": "关联承运商 ID（不传则不维护 carrier_driver）",
+            "description": "所属承运商 ID（单家建档；不传时沿用该司机已有档案归属）",
             "title": "承运商ID"
           },
           "carrierIds": {
             "type": "array",
             "maxItems": 20,
-            "description": "关联承运商 ID 数组（多对多，优先于 carrierId；snake_case 写 carrier_ids）",
+            "description": "所属承运商 ID 数组：有几家就为每家维护一份独立档案（优先于 carrierId；snake_case 写 carrier_ids）",
             "items": {
               "type": "integer"
             },

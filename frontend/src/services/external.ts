@@ -66,7 +66,7 @@ export function syncWmsOutboundStatus(
   return post<Record<string, unknown>>('/external/wms/outbound-status', payload)
 }
 
-/** #10 狮桥司机同步（身份证号 UPSERT，source=2 + 维护 carrier_driver） */
+/** #10 狮桥司机同步（按承运商逐份建档：承运商内身份证/第三方ID UPSERT，source=2） */
 export function syncExternalDriver(
   payload: ExternalDriverSyncPayload,
 ): Promise<Record<string, unknown>> {

@@ -206,8 +206,8 @@ router.get('/drivers', wrap(async (req, res) => {
     throw errBiz('该任务不属于当前承运商');
   }
   const filter = carrierIdParam
-    ? { sql: 'cd.carrier_id = ?', params: [carrierIdParam] }
-    : carrierFilter(scope, 'cd.carrier_id');
+    ? { sql: 'd.carrier_id = ?', params: [carrierIdParam] }
+    : carrierFilter(scope, 'd.carrier_id');
   const params = [...filter.params];
   const conditions = [];
   const like = (col, value) => {
@@ -239,7 +239,6 @@ router.get('/drivers', wrap(async (req, res) => {
             (SELECT a.status FROM sys_account a
               WHERE a.driver_id = d.id AND a.account_type = 'DRIVER' AND a.deleted = 0 LIMIT 1) AS account_status
      FROM driver d
-     JOIN carrier_driver cd ON cd.driver_id = d.id AND cd.deleted = 0
      WHERE d.deleted = 0 AND ${filter.sql} ${kwSql}
      ORDER BY d.status DESC, d.id`,
     params
@@ -253,7 +252,7 @@ function assertLicenseRange(from, to) {
   if (String(from) > String(to)) throw errParam('驾驶证有效期起不能晚于有效期止');
 }
 
-/** 新增司机：身份证已存在则只建立承运商关联，不重复建司机 */
+/** 新增司机：档案仅归属当前承运商；同身份证在其他承运商的档案互不影响 */
 router.post('/drivers', wrap(async (req, res) => {
   const name = String(req.body.name ?? '').trim();
   if (!name) throw errParam('司机姓名必填');
@@ -272,33 +271,31 @@ router.post('/drivers', wrap(async (req, res) => {
   const operator = req.auth.name;
 
   const result = await withTransaction(async (conn) => {
-    const [existing] = await conn.query('SELECT * FROM driver WHERE id_card = ? AND deleted = 0', [idCard]);
+    const [existing] = await conn.query(
+      'SELECT * FROM driver WHERE carrier_id = ? AND id_card = ? AND deleted = 0',
+      [carrierId, idCard]
+    );
     let driverId;
     let reused = false;
     if (existing.length) {
+      // 本承运商下已建档：沿用档案并更新联系方式，不重复创建
       driverId = existing[0].id;
       reused = true;
       if (existing[0].driver_name !== name) {
-        throw errBiz(`身份证号已存在，姓名为「${existing[0].driver_name}」，请核对后再添加`);
+        throw errBiz(`本承运商已存在该身份证号的司机「${existing[0].driver_name}」，请核对后再添加`);
       }
       await conn.query('UPDATE driver SET phone = ?, remark = COALESCE(?, remark), update_name = ? WHERE id = ?',
         [phone, remark, operator, driverId]);
     } else {
       const [ins] = await conn.query(
         `INSERT INTO driver
-          (driver_name, phone, id_card, license_no, license_type, license_valid_from, license_valid_to,
+          (driver_name, phone, id_card, carrier_id, license_no, license_type, license_valid_from, license_valid_to,
            source, status, remark, create_name, update_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)`,
-        [name, phone, idCard, licenseNo, licenseType, licenseFrom, licenseTo, remark, operator, operator]
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)`,
+        [name, phone, idCard, carrierId, licenseNo, licenseType, licenseFrom, licenseTo, remark, operator, operator]
       );
       driverId = ins.insertId;
     }
-    await conn.query(
-      `INSERT INTO carrier_driver (carrier_id, driver_id, create_name, update_name)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE deleted = 0, update_name = VALUES(update_name)`,
-      [carrierId, driverId, operator, operator]
-    );
 
     const [accounts] = await conn.query(
       `SELECT * FROM sys_account WHERE account_type = 'DRIVER' AND driver_id = ? AND deleted = 0`,
@@ -306,34 +303,29 @@ router.post('/drivers', wrap(async (req, res) => {
     );
     if (!accounts.length) {
       await conn.query(
-        `INSERT INTO sys_account (account_type, phone, password_hash, display_name, driver_id, role, status, create_name, update_name)
-         VALUES ('DRIVER', ?, NULL, ?, ?, 'DRIVER', 1, ?, ?)`,
-        [phone, name, driverId, operator, operator]
+        `INSERT INTO sys_account (account_type, phone, password_hash, display_name, carrier_id, driver_id, role, status, create_name, update_name)
+         VALUES ('DRIVER', ?, NULL, ?, ?, ?, 'DRIVER', 1, ?, ?)`,
+        [phone, name, carrierId, driverId, operator, operator]
       );
     } else {
-      await conn.query('UPDATE sys_account SET phone = ?, display_name = ?, update_name = ? WHERE id = ?',
-        [phone, name, operator, accounts[0].id]);
+      await conn.query('UPDATE sys_account SET phone = ?, display_name = ?, carrier_id = ?, update_name = ? WHERE id = ?',
+        [phone, name, carrierId, operator, accounts[0].id]);
     }
     return { driverId, reused };
   });
 
   const [driver] = await query('SELECT * FROM driver WHERE id = ?', [result.driverId]);
   ok(res, { driver, reused: result.reused },
-    result.reused ? '该司机已存在，已加入本承运商' : '司机新增成功，可使用手机号验证码登录司机端');
+    result.reused ? '该司机已在当前承运商建档，信息已更新' : '司机新增成功，可使用手机号验证码登录司机端');
 }));
 
-/** 编辑司机（姓名、身份证不可改） */
+/** 编辑司机（姓名、身份证不可改；只能编辑本承运商档案） */
 router.put('/drivers/:id', wrap(async (req, res) => {
   const id = Number(req.params.id);
   const scope = await carrierScope(req);
-  const filter = carrierFilter(scope, 'carrier_id');
-  const links = await query(
-    `SELECT id FROM carrier_driver WHERE driver_id = ? AND deleted = 0 AND ${filter.sql}`,
-    [id, ...filter.params]
-  );
-  if (!links.length) throw errNotFound('该司机不属于当前承运商');
   const [driver] = await query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [id]);
   if (!driver) throw errNotFound('司机不存在');
+  if (!inScope(scope, driver.carrier_id)) throw errNotFound('该司机不属于当前承运商');
   if (req.body.name !== undefined && String(req.body.name).trim() !== driver.driver_name) {
     throw errBiz('司机姓名不可修改');
   }
@@ -373,12 +365,8 @@ router.put('/drivers/:id/status', wrap(async (req, res) => {
   const status = Number(req.body.status);
   if (![0, 1].includes(status)) throw errParam('状态值仅支持 1（启用）或 0（停用）');
   const scope = await carrierScope(req);
-  const filter = carrierFilter(scope, 'carrier_id');
-  const links = await query(
-    `SELECT id FROM carrier_driver WHERE driver_id = ? AND deleted = 0 AND ${filter.sql}`,
-    [id, ...filter.params]
-  );
-  if (!links.length) throw errNotFound('该司机不属于当前承运商');
+  const [driver] = await query('SELECT id, carrier_id FROM driver WHERE id = ? AND deleted = 0', [id]);
+  if (!driver || !inScope(scope, driver.carrier_id)) throw errNotFound('该司机不属于当前承运商');
   await withTransaction(async (conn) => {
     await conn.query('UPDATE driver SET status = ?, update_name = ? WHERE id = ?', [status, req.auth.name, id]);
     await conn.query(

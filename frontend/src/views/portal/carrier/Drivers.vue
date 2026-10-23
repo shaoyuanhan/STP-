@@ -124,7 +124,7 @@ async function submit() {
     }
     if (modal.mode === 'create') {
       const res = await createCarrierDriver(payload)
-      message.success(res.reused ? '该司机已存在，已加入本承运商' : '司机新增成功，可使用手机号验证码登录司机端')
+      message.success(res.reused ? '该司机已在当前承运商建档，信息已更新' : '司机新增成功，可使用手机号验证码登录司机端')
     } else if (modal.driver) {
       await updateCarrierDriver(modal.driver.id, { ...payload, name: undefined, id_card: undefined })
       message.success('司机信息已更新')

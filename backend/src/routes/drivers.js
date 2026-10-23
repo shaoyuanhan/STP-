@@ -1,10 +1,11 @@
 /**
  * 基础数据 - 司机管理（契约 5.3）
- * 规则：姓名/身份证不可改(A0002)；司机-承运商多对多经 carrier_driver 维护；
+ * 规则：姓名/身份证不可改(A0002)；司机档案归属于唯一承运商（driver.carrier_id），
+ *       同一司机在多家承运商下是各自独立的档案；
  *       停用后不可分派任务、不影响在途运单；外部狮桥同步 source=2，自建 source=1
  */
 const { Router } = require('express');
-const { query, withTransaction } = require('../db');
+const { query } = require('../db');
 const {
   wrap, ok, errParam, errBiz, errNotFound, pageOf, pageData,
   assertPhone, assertIdCard,
@@ -24,26 +25,23 @@ async function accessOf(req) {
   return loadAccess(payload.sub);
 }
 
-/** 角色的承运商范围：司机须至少挂靠一个在范围内的承运商 */
+/** 角色的承运商范围：司机档案归属的承运商须在范围内 */
 function applyCarrierScope(where, params, access) {
   if (!access || access.carriers === 'ALL') return;
   if (!access.carriers.length) {
     where.push('1 = 0');
     return;
   }
-  where.push(
-    `EXISTS (SELECT 1 FROM carrier_driver cds WHERE cds.driver_id = d.id AND cds.deleted = 0 AND cds.carrier_id IN (${access.carriers.map(() => '?').join(',')}))`
-  );
+  where.push(`d.carrier_id IN (${access.carriers.map(() => '?').join(',')})`);
   params.push(...access.carriers);
 }
 
-/** 行后处理：carriers 逗号连接字符串 + carrier_ids 数组 */
+/** 行后处理：carrier_id 统一成数字，carrier_name 为空时给空串便于前端直接展示 */
 function decorateDriver(row) {
-  const carriers = row.carriers ? String(row.carriers).split(',').filter(Boolean) : [];
   return {
     ...row,
-    carriers: carriers.join(','),
-    carrier_ids: row.carrier_id_list ? String(row.carrier_id_list).split(',').filter(Boolean).map(Number) : [],
+    carrier_id: row.carrier_id === null || row.carrier_id === undefined ? null : Number(row.carrier_id),
+    carrier_name: row.carrier_name || '',
   };
 }
 
@@ -63,7 +61,7 @@ function driverWhere(q, access) {
   if (license_no) where.push('d.license_no LIKE ?'), params.push(kw(license_no));
   if (external_driver_id) where.push('d.external_driver_id LIKE ?'), params.push(kw(external_driver_id));
   if (carrier_id) {
-    where.push('EXISTS (SELECT 1 FROM carrier_driver cd WHERE cd.driver_id = d.id AND cd.carrier_id = ? AND cd.deleted = 0)');
+    where.push('d.carrier_id = ?');
     params.push(Number(carrier_id));
   }
   if (status !== '' && status !== undefined && status !== null) {
@@ -85,7 +83,7 @@ const DRIVER_EXPORT_COLUMNS = [
   { header: '有效期至', value: (r) => dateOnly(r.license_valid_to), width: 12 },
   {
     header: '所属承运商',
-    value: (r) => (r.carriers ? String(r.carriers).split(',').filter(Boolean).join('、') : '散单'),
+    value: (r) => text(r.carrier_name) || '散单',
     width: 28,
   },
   { header: '来源', value: (r) => ({ 1: '系统录入', 2: '狮桥同步' }[Number(r.source)] || '-'), width: 12 },
@@ -93,21 +91,21 @@ const DRIVER_EXPORT_COLUMNS = [
   { header: '创建时间', value: (r) => dateTime(r.create_time), width: 20 },
 ];
 
-/** 列表：按字段分项筛选，含所属承运商（逗号连接） */
+/** 列表/导出/详情共用的查询主体：司机 + 所属承运商名 */
+const DRIVER_SELECT = `
+  SELECT d.*, c.carrier_name AS carrier_name
+  FROM driver d
+  LEFT JOIN carrier c ON c.id = d.carrier_id AND c.deleted = 0`;
+
+/** 列表：按字段分项筛选，含所属承运商 */
 router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
   const { whereSql, params } = driverWhere(req.query, await accessOf(req));
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM driver d ${whereSql}`, params);
   const rows = await query(
-    `SELECT d.*,
-            GROUP_CONCAT(c.carrier_name ORDER BY c.id SEPARATOR ',') AS carriers,
-            GROUP_CONCAT(c.id ORDER BY c.id SEPARATOR ',') AS carrier_id_list
-     FROM driver d
-     LEFT JOIN carrier_driver cd ON cd.driver_id = d.id AND cd.deleted = 0
-     LEFT JOIN carrier c ON c.id = cd.carrier_id AND c.deleted = 0
+    `${DRIVER_SELECT}
      ${whereSql}
-     GROUP BY d.id
      ORDER BY d.create_time DESC, d.id DESC
      LIMIT ? OFFSET ?`,
     [...params, size, offset]
@@ -119,14 +117,8 @@ router.get('/', wrap(async (req, res) => {
 router.get('/export', wrap(async (req, res) => {
   const { whereSql, params } = driverWhere(req.query, await accessOf(req));
   const rows = await query(
-    `SELECT d.*,
-            GROUP_CONCAT(c.carrier_name ORDER BY c.id SEPARATOR ',') AS carriers,
-            GROUP_CONCAT(c.id ORDER BY c.id SEPARATOR ',') AS carrier_id_list
-     FROM driver d
-     LEFT JOIN carrier_driver cd ON cd.driver_id = d.id AND cd.deleted = 0
-     LEFT JOIN carrier c ON c.id = cd.carrier_id AND c.deleted = 0
+    `${DRIVER_SELECT}
      ${whereSql}
-     GROUP BY d.id
      ORDER BY d.create_time DESC, d.id DESC
      LIMIT 50000`,
     params
@@ -139,7 +131,7 @@ router.get('/export', wrap(async (req, res) => {
   });
 }));
 
-/** 可选司机下拉（狮桥接单模拟用）：该承运商关联且启用的司机 */
+/** 可选司机下拉（狮桥接单模拟用）：该承运商下启用的司机 */
 router.get('/options', wrap(async (req, res) => {
   const { carrier_id = '' } = req.query;
   let list;
@@ -147,8 +139,7 @@ router.get('/options', wrap(async (req, res) => {
     list = await query(
       `SELECT d.id, d.driver_name AS name, d.phone, d.license_type, d.external_driver_id
        FROM driver d
-       JOIN carrier_driver cd ON cd.driver_id = d.id AND cd.deleted = 0
-       WHERE cd.carrier_id = ? AND d.deleted = 0 AND d.status = 1
+       WHERE d.carrier_id = ? AND d.deleted = 0 AND d.status = 1
        ORDER BY d.id`,
       [Number(carrier_id)]
     );
@@ -178,74 +169,57 @@ function normalizeDriverBody(body) {
   const license_no = body.license_no?.toString().trim() || null;
   const license_type = body.license_type?.toString().trim() || null;
   const remark = body.remark?.toString().trim() || null;
-  // 第三方司机ID：外部系统主键，选填，全局唯一（接单/回传可用其定位）
+  // 第三方司机ID：外部系统主键，承运商内唯一（接单/回传可用其定位）
   const external_driver_id = body.external_driver_id?.toString().trim() || null;
   if (external_driver_id && external_driver_id.length > 64) throw errParam('第三方司机ID不能超过 64 字');
-  const carrier_ids = Array.isArray(body.carrier_ids)
-    ? [...new Set(body.carrier_ids.map(Number).filter(Number.isInteger))]
-    : undefined; // undefined=不维护关联；[]=清空
-  return { phone, id_card, license_no, license_type, license_valid_from: body.license_valid_from, license_valid_to: body.license_valid_to, remark, carrier_ids, external_driver_id };
+  const carrier_id = Number(body.carrier_id);
+  if (!Number.isInteger(carrier_id) || carrier_id <= 0) throw errParam('所属承运商必填');
+  return { phone, id_card, license_no, license_type, license_valid_from: body.license_valid_from, license_valid_to: body.license_valid_to, remark, carrier_id, external_driver_id };
 }
 
-/** 第三方司机ID去重（A0002） */
-async function assertExternalDriverIdUnique(externalDriverId, excludeId) {
+/** 所属承运商必须存在 */
+async function assertCarrierExists(carrierId) {
+  const rows = await query('SELECT id, carrier_name FROM carrier WHERE id = ? AND deleted = 0', [carrierId]);
+  if (!rows.length) throw errNotFound(`承运商不存在（ID: ${carrierId}）`);
+  return rows[0];
+}
+
+/** 第三方司机ID去重（A0002）：承运商内唯一 */
+async function assertExternalDriverIdUnique(externalDriverId, carrierId, excludeId) {
   if (!externalDriverId) return;
   const dup = await query(
-    `SELECT id FROM driver WHERE external_driver_id = ? AND deleted = 0${excludeId ? ' AND id != ?' : ''}`,
-    excludeId ? [externalDriverId, excludeId] : [externalDriverId]
+    `SELECT id FROM driver WHERE carrier_id = ? AND external_driver_id = ? AND deleted = 0${excludeId ? ' AND id != ?' : ''}`,
+    excludeId ? [carrierId, externalDriverId, excludeId] : [carrierId, externalDriverId]
   );
-  if (dup.length) throw errBiz(`第三方司机ID ${externalDriverId} 已被其他司机使用`);
+  if (dup.length) throw errBiz(`第三方司机ID ${externalDriverId} 已被本承运商其他司机使用`);
 }
 
-/** 维护司机-承运商关联：全量替换 carrier_driver（软删 + 复活） */
-async function replaceCarrierDrivers(conn, driverId, carrierIds, operator) {
-  await conn.query('UPDATE carrier_driver SET deleted = 1, update_name = ? WHERE driver_id = ? AND deleted = 0', [operator, driverId]);
-  for (const cid of carrierIds) {
-    const [[c]] = await conn.query('SELECT id, carrier_name FROM carrier WHERE id = ? AND deleted = 0', [cid]);
-    if (!c) throw errNotFound(`承运商不存在（ID: ${cid}）`);
-    await conn.query(
-      `INSERT INTO carrier_driver (carrier_id, driver_id, create_name, update_name)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE deleted = 0, update_name = VALUES(update_name)`,
-      [cid, driverId, operator, operator]
-    );
-  }
-}
-
-/** 新增司机：source=1 自建；身份证去重(A0002)；carrier_ids 建立多对多关联 */
+/** 新增司机：source=1 自建；同一承运商内身份证唯一(A0002) */
 router.post('/', wrap(async (req, res) => {
   const name = String(req.body.name ?? '').trim();
   if (!name) throw errParam('司机姓名必填');
   if (name.length > 64) throw errParam('司机姓名不能超过 64 字');
   const v = normalizeDriverBody(req.body);
+  await assertCarrierExists(v.carrier_id);
 
-  const dup = await query('SELECT id FROM driver WHERE id_card = ? AND deleted = 0', [v.id_card]);
-  if (dup.length) throw errBiz('该身份证号已存在，请勿重复添加');
-  await assertExternalDriverIdUnique(v.external_driver_id);
-
-  const driverId = await withTransaction(async (conn) => {
-    const [r] = await conn.query(
-      `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, license_no, license_type, license_valid_from, license_valid_to, source, status, remark, create_name, update_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, '系统管理员', '系统管理员')`,
-      [name, v.external_driver_id, v.phone, v.id_card, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark]
-    );
-    if (v.carrier_ids) await replaceCarrierDrivers(conn, r.insertId, v.carrier_ids, '系统管理员');
-    return r.insertId;
-  });
-
-  const [created] = await query(
-    `SELECT d.*, GROUP_CONCAT(c.carrier_name ORDER BY c.id SEPARATOR ',') AS carriers,
-            GROUP_CONCAT(c.id ORDER BY c.id SEPARATOR ',') AS carrier_id_list
-     FROM driver d
-     LEFT JOIN carrier_driver cd ON cd.driver_id = d.id AND cd.deleted = 0
-     LEFT JOIN carrier c ON c.id = cd.carrier_id AND c.deleted = 0
-     WHERE d.id = ? GROUP BY d.id`,
-    [driverId]
+  const dup = await query(
+    'SELECT id FROM driver WHERE carrier_id = ? AND id_card = ? AND deleted = 0',
+    [v.carrier_id, v.id_card]
   );
+  if (dup.length) throw errBiz('该承运商下已存在相同身份证号的司机，请勿重复添加');
+  await assertExternalDriverIdUnique(v.external_driver_id, v.carrier_id);
+
+  const r = await query(
+    `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, carrier_id, license_no, license_type, license_valid_from, license_valid_to, source, status, remark, create_name, update_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, '系统管理员', '系统管理员')`,
+    [name, v.external_driver_id, v.phone, v.id_card, v.carrier_id, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark]
+  );
+
+  const [created] = await query(`${DRIVER_SELECT} WHERE d.id = ?`, [r.insertId]);
   ok(res, created ? decorateDriver(created) : null);
 }));
 
-/** 编辑：姓名与身份证号不可修改(A0002)；carrier_ids 全量替换关联 */
+/** 编辑：姓名与身份证号不可修改(A0002)；可调整所属承运商（有在途任务时禁止） */
 router.put('/:id', wrap(async (req, res) => {
   const id = Number(req.params.id);
   const [exist] = await query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [id]);
@@ -260,24 +234,31 @@ router.put('/:id', wrap(async (req, res) => {
   }
 
   const v = normalizeDriverBody({ ...req.body, id_card: exist.id_card });
-  await assertExternalDriverIdUnique(v.external_driver_id, id);
-  await withTransaction(async (conn) => {
-    await conn.query(
-      `UPDATE driver SET external_driver_id = ?, phone = ?, license_no = ?, license_type = ?, license_valid_from = ?, license_valid_to = ?, remark = ?, update_name = '系统管理员' WHERE id = ?`,
-      [v.external_driver_id, v.phone, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark, id]
+  const carrierChanged = Number(exist.carrier_id) !== v.carrier_id;
+  if (carrierChanged) {
+    await assertCarrierExists(v.carrier_id);
+    const active = await query(
+      `SELECT id FROM shipping_task
+       WHERE driver_id = ? AND deleted = 0
+         AND status IN ('CARRIER_ACCEPTED','PICKED','OUTBOUND','IN_TRANSIT','ARRIVED')
+       LIMIT 1`,
+      [id]
     );
-    if (v.carrier_ids) await replaceCarrierDrivers(conn, id, v.carrier_ids, '系统管理员');
-  });
+    if (active.length) throw errBiz('该司机存在在途任务，暂不能更换所属承运商');
+    const dup = await query(
+      'SELECT id FROM driver WHERE carrier_id = ? AND id_card = ? AND deleted = 0 AND id != ?',
+      [v.carrier_id, v.id_card, id]
+    );
+    if (dup.length) throw errBiz('目标承运商下已存在相同身份证号的司机档案');
+  }
+  await assertExternalDriverIdUnique(v.external_driver_id, v.carrier_id, id);
 
-  const [updated] = await query(
-    `SELECT d.*, GROUP_CONCAT(c.carrier_name ORDER BY c.id SEPARATOR ',') AS carriers,
-            GROUP_CONCAT(c.id ORDER BY c.id SEPARATOR ',') AS carrier_id_list
-     FROM driver d
-     LEFT JOIN carrier_driver cd ON cd.driver_id = d.id AND cd.deleted = 0
-     LEFT JOIN carrier c ON c.id = cd.carrier_id AND c.deleted = 0
-     WHERE d.id = ? GROUP BY d.id`,
-    [id]
+  await query(
+    `UPDATE driver SET carrier_id = ?, external_driver_id = ?, phone = ?, license_no = ?, license_type = ?, license_valid_from = ?, license_valid_to = ?, remark = ?, update_name = '系统管理员' WHERE id = ?`,
+    [v.carrier_id, v.external_driver_id, v.phone, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark, id]
   );
+
+  const [updated] = await query(`${DRIVER_SELECT} WHERE d.id = ?`, [id]);
   ok(res, updated ? decorateDriver(updated) : null);
 }));
 

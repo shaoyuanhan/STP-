@@ -8,7 +8,7 @@
  *   狮桥 ④ POST /esign/receipt-sync             物流电子签签收回执确认（幂等）
  *   CRM  ⑥ POST /shipping-tasks/cancel          送车发运申请取消（按取消规则，关联待签署电子签置 CANCELLED）
  *   WMS  ⑧ POST /wms/outbound-status            WMS 出库状态同步（PICKED→OUTBOUND→IN_TRANSIT，司机提车在前、仓库出库在后）
- *   狮桥 ⑩ POST /drivers/sync                   司机信息同步（支持单条/批量，身份证号 UPSERT，source=2，维护 carrier_driver）
+ *   狮桥 ⑩ POST /drivers/sync                   司机信息同步（支持单条/批量，承运商内按身份证号/第三方ID UPSERT，source=2）
  *   狮桥 ⑪ POST /tracking/report                在途点位上报（写 transport_track，仅记录轨迹不改状态）
  *   狮桥 ⑫ POST /shipping-tasks/accept          承运商接单（DISPATCHED→CARRIER_ACCEPTED，分配司机）
  *   狮桥 ⑫ POST /shipping-tasks/pickup          司机提车（CARRIER_ACCEPTED→PICKED，含提车照片）
@@ -446,7 +446,7 @@ function normalizeDriverInput(raw) {
  * 司机登录账号：狮桥同步的司机需能登录小程序，无账号时按默认密码补建；
  * 已存在则同步姓名/手机号（手机号被其他司机账号占用时不动，避免唯一索引冲突）
  */
-async function ensureDriverAccount(conn, { driverId, driverName, phone }) {
+async function ensureDriverAccount(conn, { driverId, driverName, phone, carrierId }) {
   const name = cutStr(driverName, 64);
   const [byDriver] = await conn.query(
     "SELECT id FROM sys_account WHERE driver_id = ? AND account_type = 'DRIVER' AND deleted = 0",
@@ -454,27 +454,28 @@ async function ensureDriverAccount(conn, { driverId, driverName, phone }) {
   );
   if (byDriver.length) {
     const accountId = byDriver[0].id;
+    // 同承运商内手机号被其他司机账号占用时不动手机号，避免唯一索引冲突
     const [conflict] = await conn.query(
-      "SELECT id FROM sys_account WHERE phone = ? AND account_type = 'DRIVER' AND deleted = 0 AND id <> ?",
-      [phone, accountId]
+      "SELECT id FROM sys_account WHERE phone = ? AND account_type = 'DRIVER' AND carrier_scope = ? AND deleted = 0 AND id <> ?",
+      [phone, carrierId, accountId]
     );
     if (conflict.length) {
       await conn.query(
-        'UPDATE sys_account SET display_name = ?, update_name = ? WHERE id = ?',
-        [name, '狮桥物流', accountId]
+        'UPDATE sys_account SET display_name = ?, carrier_id = ?, update_name = ? WHERE id = ?',
+        [name, carrierId, '狮桥物流', accountId]
       );
     } else {
       await conn.query(
-        'UPDATE sys_account SET display_name = ?, phone = ?, update_name = ? WHERE id = ?',
-        [name, phone, '狮桥物流', accountId]
+        'UPDATE sys_account SET display_name = ?, phone = ?, carrier_id = ?, update_name = ? WHERE id = ?',
+        [name, phone, carrierId, '狮桥物流', accountId]
       );
     }
     return accountId;
   }
-  // 手机号已有司机账号（如司机档案重建）：直接关联到当前司机
+  // 同承运商内手机号已有司机账号（如司机档案重建）：直接关联到当前司机
   const [byPhone] = await conn.query(
-    "SELECT id FROM sys_account WHERE phone = ? AND account_type = 'DRIVER' AND deleted = 0",
-    [phone]
+    "SELECT id FROM sys_account WHERE phone = ? AND account_type = 'DRIVER' AND carrier_scope = ? AND deleted = 0",
+    [phone, carrierId]
   );
   if (byPhone.length) {
     const accountId = byPhone[0].id;
@@ -486,16 +487,17 @@ async function ensureDriverAccount(conn, { driverId, driverName, phone }) {
   }
   const [r] = await conn.query(
     `INSERT INTO sys_account
-      (account_type, phone, password_hash, display_name, driver_id, role, status, create_name, update_name)
-     VALUES ('DRIVER', ?, ?, ?, ?, 'DRIVER001', 1, '狮桥物流', '狮桥物流')`,
-    [phone, hashPassword(process.env.DEFAULT_DRIVER_PASSWORD || '123456'), name, driverId]
+      (account_type, phone, password_hash, display_name, carrier_id, driver_id, role, status, create_name, update_name)
+     VALUES ('DRIVER', ?, ?, ?, ?, ?, 'DRIVER001', 1, '狮桥物流', '狮桥物流')`,
+    [phone, hashPassword(process.env.DEFAULT_DRIVER_PASSWORD || '123456'), name, carrierId, driverId]
   );
   return r.insertId;
 }
 
 /**
- * 单条司机同步：校验 + UPSERT + 承运商关联，调用方需提供事务连接
- * 匹配优先级：externalDriverId（第三方ID）→ idCard（身份证号）
+ * 单条司机同步：校验 + 按承运商 UPSERT，调用方需提供事务连接
+ * 司机档案按承运商隔离：carrierIds 有几家就维护几份档案
+ * 匹配优先级：承运商内 externalDriverId（第三方ID）→ 承运商内 idCard（身份证号）
  */
 async function syncOneDriver(conn, raw) {
   const b = normalizeDriverInput(raw);
@@ -507,49 +509,10 @@ async function syncOneDriver(conn, raw) {
   const licenseType = b.licenseType ? cutStr(String(b.licenseType).trim(), 8) : null;
   const validFrom = b.licenseValidFrom ? String(b.licenseValidFrom).trim() : null;
   const validTo = b.licenseValidTo ? String(b.licenseValidTo).trim() : null;
-  // 第三方司机ID（外部系统主键）：UPSERT 优先按它匹配，未传时退回身份证号（兼容既有对接）
+  // 第三方司机ID（外部系统主键）：用工方视角下唯一，按承运商各自维护
   const externalDriverId = b.externalDriverId ? cutStr(String(b.externalDriverId).trim(), 64) : null;
 
-  // 优先按第三方司机ID匹配，其次按身份证号（新增时驾驶证有效期必填）
-  let rows = [];
-  if (externalDriverId) {
-    [rows] = await conn.query('SELECT * FROM driver WHERE external_driver_id = ? AND deleted = 0 FOR UPDATE', [externalDriverId]);
-  }
-  if (!rows.length) {
-    [rows] = await conn.query('SELECT * FROM driver WHERE id_card = ? AND deleted = 0 FOR UPDATE', [idCard]);
-  }
-  let driverId;
-  let created;
-  if (rows.length) {
-    // 更新：姓名以狮桥为准，身份证号不变；未传的驾驶证有效期保留原值
-    driverId = rows[0].id;
-    created = false;
-    // 第三方ID与其他司机冲突时拦截（唯一索引兜底）
-    if (externalDriverId && rows[0].external_driver_id && rows[0].external_driver_id !== externalDriverId) {
-      throw errBiz(`第三方司机ID ${externalDriverId} 已被其他司机占用`);
-    }
-    await conn.query(
-      `UPDATE driver SET driver_name = ?, phone = ?, license_no = COALESCE(?, license_no), license_type = COALESCE(?, license_type),
-              license_valid_from = COALESCE(?, license_valid_from), license_valid_to = COALESCE(?, license_valid_to),
-              external_driver_id = COALESCE(?, external_driver_id), source = 2, update_name = '狮桥物流'
-        WHERE id = ?`,
-      [cutStr(driverName, 64), phone, licenseNo, licenseType, validFrom, validTo, externalDriverId, driverId]
-    );
-  } else {
-    if (!validFrom) throw errParam('新增司机时驾驶证有效期自 licenseValidFrom 必填');
-    if (!validTo) throw errParam('新增司机时驾驶证有效期至 licenseValidTo 必填');
-    if (validFrom > validTo) throw errParam('驾驶证有效期起不能晚于有效期至');
-    const [r] = await conn.query(
-      `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, license_no, license_type, license_valid_from, license_valid_to, source, status, create_name, update_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2, 1, '狮桥物流', '狮桥物流')`,
-      [cutStr(driverName, 64), externalDriverId, phone, idCard, licenseNo, licenseType, validFrom, validTo]
-    );
-    driverId = r.insertId;
-    created = true;
-  }
-
-  // 维护司机-承运商关联（多对多：carrier_ids 数组 > carrierId > externalCarrierId）
-  let carrierBound = null;
+  // 承运商：carrierIds 数组 > carrierId > externalCarrierId；都未传时沿用已有档案的归属
   let carrierIds = Array.isArray(b.carrierIds)
     ? b.carrierIds.map(Number).filter((n) => Number.isInteger(n) && n > 0)
     : [];
@@ -563,23 +526,76 @@ async function syncOneDriver(conn, raw) {
     }
     if (carrierId !== null) carrierIds = [carrierId];
   }
-  if (carrierIds.length) {
-    const boundNames = [];
-    for (const id of [...new Set(carrierIds)]) {
-      const [crows] = await conn.query('SELECT id, carrier_name FROM carrier WHERE id = ? AND deleted = 0', [id]);
-      if (!crows.length) throw errNotFound(`承运商不存在（ID: ${id}）`);
-      await conn.query(
-        `INSERT INTO carrier_driver (carrier_id, driver_id, create_name, update_name)
-         VALUES (?, ?, '狮桥物流', '狮桥物流')
-         ON DUPLICATE KEY UPDATE deleted = 0, update_name = VALUES(update_name)`,
-        [id, driverId]
-      );
-      boundNames.push(crows[0].carrier_name);
-    }
-    carrierBound = boundNames.join('、');
+  if (!carrierIds.length) {
+    const [known] = await conn.query(
+      `SELECT carrier_id FROM driver
+        WHERE deleted = 0 AND (id_card = ?${externalDriverId ? ' OR external_driver_id = ?' : ''})
+        LIMIT 1`,
+      externalDriverId ? [idCard, externalDriverId] : [idCard]
+    );
+    if (known.length) carrierIds = [known[0].carrier_id];
   }
-  await ensureDriverAccount(conn, { driverId, driverName, phone });
-  return { driverId, idCard, externalDriverId, created, carrierBound };
+  if (!carrierIds.length) {
+    throw errParam('司机同步必须指定所属承运商（carrierId / carrierIds / externalCarrierId）');
+  }
+
+  const boundNames = [];
+  const driverIds = [];
+  let created = false;
+  for (const carrierId of [...new Set(carrierIds)]) {
+    const [crows] = await conn.query('SELECT id, carrier_name FROM carrier WHERE id = ? AND deleted = 0', [carrierId]);
+    if (!crows.length) throw errNotFound(`承运商不存在（ID: ${carrierId}）`);
+    boundNames.push(crows[0].carrier_name);
+
+    let rows = [];
+    if (externalDriverId) {
+      [rows] = await conn.query(
+        'SELECT * FROM driver WHERE carrier_id = ? AND external_driver_id = ? AND deleted = 0 FOR UPDATE',
+        [carrierId, externalDriverId]
+      );
+    }
+    if (!rows.length) {
+      [rows] = await conn.query(
+        'SELECT * FROM driver WHERE carrier_id = ? AND id_card = ? AND deleted = 0 FOR UPDATE',
+        [carrierId, idCard]
+      );
+    }
+
+    let driverId;
+    if (rows.length) {
+      // 更新：姓名以狮桥为准，身份证号不变；未传的驾驶证有效期保留原值
+      driverId = rows[0].id;
+      await conn.query(
+        `UPDATE driver SET driver_name = ?, phone = ?, license_no = COALESCE(?, license_no), license_type = COALESCE(?, license_type),
+                license_valid_from = COALESCE(?, license_valid_from), license_valid_to = COALESCE(?, license_valid_to),
+                external_driver_id = COALESCE(?, external_driver_id), source = 2, update_name = '狮桥物流'
+          WHERE id = ?`,
+        [cutStr(driverName, 64), phone, licenseNo, licenseType, validFrom, validTo, externalDriverId, driverId]
+      );
+    } else {
+      if (!validFrom) throw errParam('新增司机时驾驶证有效期自 licenseValidFrom 必填');
+      if (!validTo) throw errParam('新增司机时驾驶证有效期至 licenseValidTo 必填');
+      if (validFrom > validTo) throw errParam('驾驶证有效期起不能晚于有效期至');
+      const [r] = await conn.query(
+        `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, carrier_id, license_no, license_type, license_valid_from, license_valid_to, source, status, create_name, update_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 2, 1, '狮桥物流', '狮桥物流')`,
+        [cutStr(driverName, 64), externalDriverId, phone, idCard, carrierId, licenseNo, licenseType, validFrom, validTo]
+      );
+      driverId = r.insertId;
+      created = true;
+    }
+    driverIds.push(driverId);
+    await ensureDriverAccount(conn, { driverId, driverName, phone, carrierId });
+  }
+
+  return {
+    driverId: driverIds[0],
+    driverIds,
+    idCard,
+    externalDriverId,
+    created,
+    carrierBound: boundNames.join('、'),
+  };
 }
 
 const DRIVER_SYNC_BATCH_MAX = 200;
@@ -770,22 +786,21 @@ async function runStatusAction(req, action) {
       const externalDriverIdParam = b.externalDriverId ? String(b.externalDriverId).trim() : null;
       if (!driverIdParam && !externalDriverIdParam) throw errParam('接单必须分配司机 driverId 或 externalDriverId');
       // 计划提车日期由 CRM 在发运申请（#1 receive）下发，接单接口不接收、不修改
-      // 司机校验：存在、启用（停用拦截新分派，既有需求 10）、属于任务承运商（carrier_driver 多对多）
+      // 司机校验：存在、启用（停用拦截新分派，既有需求 10）、档案归属任务承运商
       const [drows] = driverIdParam
         ? await conn.query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [driverIdParam])
-        : await conn.query('SELECT * FROM driver WHERE external_driver_id = ? AND deleted = 0', [externalDriverIdParam]);
+        : await conn.query(
+          'SELECT * FROM driver WHERE external_driver_id = ? AND carrier_id = ? AND deleted = 0',
+          [externalDriverIdParam, task.carrier_id]
+        );
       if (!drows.length) {
-        throw errNotFound(driverIdParam ? `司机不存在（ID: ${driverIdParam}）` : `第三方司机ID ${externalDriverIdParam} 对应的司机不存在`);
+        throw errNotFound(driverIdParam ? `司机不存在（ID: ${driverIdParam}）` : `第三方司机ID ${externalDriverIdParam} 在该承运商下不存在`);
       }
       const driver = drows[0];
       const driverId = Number(driver.id);
       if (Number(driver.status) !== 1) throw errBiz('该司机已停用，不可分派任务');
-      if (task.carrier_id) {
-        const [cdrows] = await conn.query(
-          'SELECT id FROM carrier_driver WHERE driver_id = ? AND carrier_id = ? AND deleted = 0',
-          [driverId, task.carrier_id]
-        );
-        if (!cdrows.length) throw errBiz('该司机不属于任务当前承运商，不可接单');
+      if (task.carrier_id && Number(driver.carrier_id) !== Number(task.carrier_id)) {
+        throw errBiz('该司机不属于任务当前承运商，不可接单');
       }
 
       if (task.status === 'DISPATCHED') {

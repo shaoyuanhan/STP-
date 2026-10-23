@@ -81,11 +81,9 @@ async function assignDriver({ taskId, carrierId, carrierName, driverId, version,
     if (driver.license_valid_to && String(driver.license_valid_to) < localDateStr()) {
       throw errBiz(`司机「${driver.driver_name}」驾驶证已过期，不可分派`);
     }
-    const [links] = await conn.query(
-      'SELECT id FROM carrier_driver WHERE driver_id = ? AND carrier_id = ? AND deleted = 0',
-      [driver.id, carrierId]
-    );
-    if (!links.length) throw errBiz('该司机未关联当前承运商，请先在司机管理中新增');
+    if (Number(driver.carrier_id) !== Number(carrierId)) {
+      throw errBiz('该司机不属于当前承运商，请先在司机管理中新增');
+    }
 
     await conn.query(
       `UPDATE shipping_task
