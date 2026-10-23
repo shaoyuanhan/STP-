@@ -29,6 +29,9 @@ const filters = reactive({
   sign_status: null as EsignStatus | null,
 })
 
+// 筛选区收起/展开：收起时仅显示首行高频字段，已填值不丢失
+const filterExpanded = ref(false)
+
 const signStatusOptions = computed<SelectOption[]>(() => [
   { label: '待签署', value: 'WAIT_SIGN' },
   { label: '已签署', value: 'SIGNED' },
@@ -312,7 +315,7 @@ onActivated(loadPage)
             @keyup.enter="handleSearch"
           />
         </div>
-        <div class="esign-filter__field">
+        <div v-show="filterExpanded" class="esign-filter__field">
           <span class="esign-filter__label">发运申请号</span>
           <n-input
             v-model:value="filters.apply_no"
@@ -322,7 +325,7 @@ onActivated(loadPage)
             @keyup.enter="handleSearch"
           />
         </div>
-        <div class="esign-filter__field">
+        <div v-show="filterExpanded" class="esign-filter__field">
           <span class="esign-filter__label">签署状态</span>
           <n-select
             v-model:value="filters.sign_status"
@@ -336,6 +339,15 @@ onActivated(loadPage)
           <n-button size="small" :loading="exporting" @click="handleExport">导出</n-button>
           <n-button size="small" @click="handleReset">重置</n-button>
           <n-button size="small" type="primary" :loading="loading" @click="handleSearch">查询</n-button>
+          <n-button
+            size="small"
+            quaternary
+            class="esign-filter__toggle"
+            @click="filterExpanded = !filterExpanded"
+          >
+            {{ filterExpanded ? '收起' : '展开' }}
+            <span class="esign-filter__caret" :class="{ 'is-open': filterExpanded }">▾</span>
+          </n-button>
         </div>
       </div>
     </n-card>
@@ -454,6 +466,17 @@ onActivated(loadPage)
   display: flex;
   gap: 8px;
   margin-left: auto;
+}
+
+.esign-filter__caret {
+  display: inline-block;
+  margin-left: 2px;
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.esign-filter__caret.is-open {
+  transform: rotate(180deg);
 }
 
 .esign-summary {

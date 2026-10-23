@@ -69,6 +69,9 @@ const filter = reactive({
   range: null as [string, string] | null, // 创建日期区间
 })
 
+// 筛选区收起/展开：收起时仅显示首行高频字段，已填值不丢失
+const filterExpanded = ref(false)
+
 const statusOptions = computed<SelectOption[]>(() =>
   dictStore.taskStatusOptions.map((o) => ({ label: o.label, value: o.value })),
 )
@@ -466,7 +469,7 @@ function refreshList() {
             @keydown.enter="handleSearch"
           />
         </div>
-        <div class="page-card__field">
+        <div v-show="filterExpanded" class="page-card__field">
           <span class="page-card__label">状态</span>
           <n-select
             v-model:value="filter.status"
@@ -476,7 +479,7 @@ function refreshList() {
             placeholder="全部状态"
           />
         </div>
-        <div class="page-card__field">
+        <div v-show="filterExpanded" class="page-card__field">
           <span class="page-card__label">承运商</span>
           <n-select
             v-model:value="filter.carrier_id"
@@ -487,7 +490,7 @@ function refreshList() {
             placeholder="全部承运商"
           />
         </div>
-        <div class="page-card__field">
+        <div v-show="filterExpanded" class="page-card__field">
           <span class="page-card__label">创建日期</span>
           <n-date-picker
             v-model:formatted-value="filter.range"
@@ -501,6 +504,10 @@ function refreshList() {
           <n-button v-if="can('tasks:export')" :loading="exporting" @click="handleExport">导出</n-button>
           <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
+          <n-button quaternary class="page-card__toggle" @click="filterExpanded = !filterExpanded">
+            {{ filterExpanded ? '收起' : '展开' }}
+            <span class="page-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
+          </n-button>
         </div>
       </div>
     </n-card>
@@ -601,6 +608,17 @@ function refreshList() {
   margin-left: auto;
   display: flex;
   gap: 8px;
+}
+
+.page-card__caret {
+  display: inline-block;
+  margin-left: 2px;
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.page-card__caret.is-open {
+  transform: rotate(180deg);
 }
 
 .page-toolbar {

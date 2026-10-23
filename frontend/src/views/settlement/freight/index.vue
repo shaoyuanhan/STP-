@@ -47,6 +47,9 @@ const filters = reactive({
   reconcile_status: null as ReconcileStatus | null,
 })
 
+// 筛选区收起/展开：收起时仅显示首行高频字段，已填值不丢失
+const filterExpanded = ref(false)
+
 const carrierOptions = ref<SelectOption[]>([])
 const reconcileOptions = computed<SelectOption[]>(() => [
   { label: '待对账', value: 0 },
@@ -582,7 +585,7 @@ onActivated(() => {
             :options="carrierOptions"
           />
         </div>
-        <div class="freight-filter__field">
+        <div v-show="filterExpanded" class="freight-filter__field">
           <span class="freight-filter__label">对账状态</span>
           <n-select
             v-model:value="filters.reconcile_status"
@@ -596,6 +599,15 @@ onActivated(() => {
           <n-button size="small" :loading="exporting" @click="handleExport">导出</n-button>
           <n-button size="small" @click="handleReset">重置</n-button>
           <n-button size="small" type="primary" :loading="loading" @click="handleSearch">查询</n-button>
+          <n-button
+            size="small"
+            quaternary
+            class="freight-filter__toggle"
+            @click="filterExpanded = !filterExpanded"
+          >
+            {{ filterExpanded ? '收起' : '展开' }}
+            <span class="freight-filter__caret" :class="{ 'is-open': filterExpanded }">▾</span>
+          </n-button>
         </div>
       </div>
     </n-card>
@@ -807,6 +819,17 @@ onActivated(() => {
   display: flex;
   gap: 8px;
   margin-left: auto;
+}
+
+.freight-filter__caret {
+  display: inline-block;
+  margin-left: 2px;
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.freight-filter__caret.is-open {
+  transform: rotate(180deg);
 }
 
 .freight-summary {
