@@ -3,7 +3,7 @@
  * 角色管理。功能权限按模块和按钮勾选，数据权限按承运商运单和物料类型（成品/散件）。
  */
 import { computed, h, reactive, ref } from 'vue'
-import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, TreeOption } from 'naive-ui'
 import { NButton, useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
 import {
@@ -63,38 +63,60 @@ const carrierIds = ref<number[]>([])
 const materials = ref<string[]>(['FINISHED', 'LOOSE'])
 const permSaving = ref(false)
 
-const kindOrder = ['PLATFORM', 'CARRIER', 'DRIVER'] as const
-const groupedModules = computed(() => kindOrder
-  .map((kind) => ({
-    kind,
-    label: kindText[kind],
-    modules: modules.value.filter((item) => item.kind === kind),
+/** 资源树分组（对齐侧栏菜单结构），承运商端 / 司机端单独成组 */
+const MENU_GROUPS = [
+  { key: 'g-dash', label: '工作台', mods: ['dashboard'] },
+  { key: 'g-dispatch', label: '运输调度', mods: ['tasks', 'tracking'] },
+  { key: 'g-freight', label: '应付运费', mods: ['freight'] },
+  { key: 'g-esign', label: '电子签章', mods: ['esigns'] },
+  { key: 'g-base', label: '基础数据', mods: ['carriers', 'drivers'] },
+  { key: 'g-system', label: '系统管理', mods: ['accounts', 'roles'] },
+  { key: 'g-carrier', label: '承运商后台', mods: ['portal-dashboard', 'portal-tasks', 'portal-drivers', 'portal-messages'] },
+  { key: 'g-driver', label: '司机小程序', mods: ['mini-tasks', 'mini-messages'] },
+] as const
+
+/** 树数据：分组 → 模块 → 按钮（key 用模块 code / 按钮权限码） */
+const treeData = computed<TreeOption[]>(() => MENU_GROUPS
+  .map((group) => ({
+    key: group.key,
+    label: group.label,
+    children: group.mods
+      .map((code) => modules.value.find((mod) => mod.code === code))
+      .filter((mod): mod is PermModule => Boolean(mod))
+      .map((mod) => ({
+        key: mod.code,
+        label: mod.name,
+        children: mod.actions.map((action) => ({ key: action.code, label: action.name })),
+      })),
   }))
-  .filter((group) => group.modules.length))
+  .filter((group) => group.children.length))
 
-/** 当前端页签，默认定位到角色自身所属端 */
-const activeKind = ref<(typeof kindOrder)[number]>('PLATFORM')
-const activeGroup = computed(
-  () => groupedModules.value.find((group) => group.kind === activeKind.value) ?? groupedModules.value[0] ?? null,
-)
+const expandedKeys = ref<string[]>([])
+const totalActions = computed(() => modules.value.reduce((sum, mod) => sum + mod.actions.length, 0))
 
-function moduleHit(mod: PermModule) {
-  return mod.actions.filter((action) => checked.value.includes(action.code)).length
+/** 受控勾选集：叶子为按钮权限码，父级按「子级全选」推导补齐 */
+const treeCheckedKeys = computed<string[]>(() => {
+  const picked = new Set(checked.value)
+  const keys = [...checked.value]
+  for (const group of treeData.value) {
+    const mods = group.children ?? []
+    const full = mods.filter((mod) => (mod.children ?? []).every((leaf) => picked.has(String(leaf.key))))
+    keys.push(...full.map((mod) => String(mod.key)))
+    if (mods.length && full.length === mods.length) keys.push(String(group.key))
+  }
+  return keys
+})
+
+function onTreeChecked(keys: Array<string | number>) {
+  const modCodes = new Set(modules.value.map((mod) => mod.code))
+  const groupKeys = new Set<string>(MENU_GROUPS.map((group) => group.key))
+  checked.value = keys
+    .map(String)
+    .filter((key) => !modCodes.has(key) && !groupKeys.has(key))
 }
 
-function kindStats(group: { kind: string; modules: PermModule[] } | null) {
-  const total = group?.modules.reduce((sum, mod) => sum + mod.actions.length, 0) ?? 0
-  const hit = group?.modules.reduce((sum, mod) => sum + moduleHit(mod), 0) ?? 0
-  return { hit, total }
-}
-
-function toggleKind(kind: string, on: boolean) {
-  const codes = modules.value
-    .filter((mod) => mod.kind === kind)
-    .flatMap((mod) => mod.actions.map((action) => action.code))
-  checked.value = on
-    ? [...new Set([...checked.value, ...codes])]
-    : checked.value.filter((code) => !codes.includes(code))
+function checkAll(on: boolean) {
+  checked.value = on ? modules.value.flatMap((mod) => mod.actions.map((action) => action.code)) : []
 }
 
 function search() {
@@ -149,7 +171,6 @@ async function save() {
 
 async function openPerm(row: RoleRow) {
   permRole.value = row
-  activeKind.value = row.role_kind === 'CARRIER' || row.role_kind === 'DRIVER' ? row.role_kind : 'PLATFORM'
   permOpen.value = true
   try {
     const [catalog, detail] = await Promise.all([roleCatalog(), getRole(row.id)])
@@ -160,25 +181,13 @@ async function openPerm(row: RoleRow) {
     carrierAll.value = Boolean(detail.carrier_all)
     carrierIds.value = detail.carrier_ids || []
     materials.value = detail.materials?.length ? detail.materials : ['FINISHED', 'LOOSE']
+    expandedKeys.value = treeData.value.flatMap((group) => [
+      String(group.key),
+      ...(group.children ?? []).map((mod) => String(mod.key)),
+    ])
   } catch (e) {
     message.error(e instanceof Error ? e.message : '权限加载失败')
   }
-}
-
-function toggleModule(mod: PermModule, on: boolean) {
-  const codes = mod.actions.map((action) => action.code)
-  checked.value = on
-    ? [...new Set([...checked.value, ...codes])]
-    : checked.value.filter((code) => !codes.includes(code))
-}
-
-function moduleOn(mod: PermModule) {
-  return mod.actions.every((action) => checked.value.includes(action.code))
-}
-
-function moduleHalf(mod: PermModule) {
-  const hit = mod.actions.filter((action) => checked.value.includes(action.code)).length
-  return hit > 0 && hit < mod.actions.length
 }
 
 async function savePerm() {
@@ -301,7 +310,7 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
       </template>
     </n-modal>
 
-    <n-drawer v-model:show="permOpen" :width="800" placement="right">
+    <n-drawer v-model:show="permOpen" :width="640" placement="right">
       <n-drawer-content closable>
         <template #header>
           <div class="perm-head">
@@ -314,58 +323,30 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
           </div>
         </template>
 
-        <div class="perm-tabs">
-          <n-tabs v-model:value="activeKind" type="line" animated>
-            <n-tab-pane
-              v-for="group in groupedModules"
-              :key="group.kind"
-              :name="group.kind"
-              :tab="`${group.label} ${kindStats(group).hit}/${kindStats(group).total}`"
-            />
-          </n-tabs>
-        </div>
-
         <div class="perm-panel">
           <div class="perm-panel__bar">
             <span class="perm-panel__summary">
-              {{ activeGroup?.label }}功能权限 · 已选
-              <b>{{ kindStats(activeGroup).hit }}</b> / {{ kindStats(activeGroup).total }} 项
+              已选 <b>{{ checked.length }}</b> / {{ totalActions }} 项
             </span>
             <n-space :size="2" align="center">
-              <n-button text type="primary" size="small" @click="toggleKind(activeKind, true)">全选</n-button>
+              <n-button text type="primary" size="small" @click="checkAll(true)">全选</n-button>
               <n-divider vertical />
-              <n-button text size="small" @click="toggleKind(activeKind, false)">清空</n-button>
+              <n-button text size="small" @click="checkAll(false)">清空</n-button>
             </n-space>
           </div>
-
-          <div class="perm-list">
-            <div
-              v-for="mod in activeGroup?.modules ?? []"
-              :key="mod.code"
-              class="perm-mod"
-              :class="{ 'is-on': moduleOn(mod) }"
-            >
-              <div class="perm-mod__head">
-                <div class="perm-mod__name">
-                  <n-checkbox
-                    :checked="moduleOn(mod)"
-                    :indeterminate="moduleHalf(mod)"
-                    @update:checked="(on: boolean) => toggleModule(mod, on)"
-                  />
-                  <span class="perm-mod__title">{{ mod.name }}</span>
-                </div>
-                <span class="perm-mod__count">{{ moduleHit(mod) }}/{{ mod.actions.length }}</span>
-              </div>
-              <div class="perm-mod__actions">
-                <n-checkbox-group v-model:value="checked">
-                  <n-checkbox v-for="action in mod.actions" :key="action.code" :value="action.code">
-                    {{ action.name }}
-                  </n-checkbox>
-                </n-checkbox-group>
-              </div>
-            </div>
-            <n-empty v-if="!activeGroup" description="该端暂无可配置模块" size="small" />
-          </div>
+          <n-tree
+            v-model:expanded-keys="expandedKeys"
+            :checked-keys="treeCheckedKeys"
+            :data="treeData"
+            checkable
+            cascade
+            :selectable="false"
+            block-line
+            expand-on-click
+            :indent="20"
+            class="perm-panel__tree"
+            @update:checked-keys="onTreeChecked"
+          />
         </div>
 
         <div class="perm-section">
@@ -467,6 +448,7 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
 :deep(.roles-status--off) {
   color: #8c8c8c;
 }
+/* ---- 配置权限抽屉 ---- */
 .perm-head {
   display: flex;
   align-items: center;
@@ -480,10 +462,6 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
 .perm-head__role {
   color: #595959;
   font-size: 13px;
-}
-.perm-tabs {
-  margin: -4px 0 12px;
-  border-bottom: 1px solid #f0f0f0;
 }
 .perm-panel {
   border: 1px solid #f0f0f0;
@@ -507,44 +485,11 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
   color: #1677ff;
   font-weight: 600;
 }
-.perm-list {
-  max-height: 46vh;
-  overflow-y: auto;
-}
-.perm-mod {
-  padding: 12px 14px;
-  border-bottom: 1px solid #f5f5f5;
-}
-.perm-mod:last-child {
-  border-bottom: 0;
-}
-.perm-mod.is-on {
-  background: #fafdff;
-}
-.perm-mod__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.perm-mod__name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.perm-mod__title {
-  color: #262626;
-  font-size: 13px;
-  font-weight: 600;
-}
-.perm-mod__count {
-  color: #bfbfbf;
-  font-size: 12px;
-}
-.perm-mod__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-  padding: 8px 0 0 24px;
+.perm-panel__tree {
+  height: 52vh;
+  padding: 6px 2px;
+  overflow: auto;
+  box-sizing: border-box;
 }
 .perm-section {
   margin-top: 16px;
