@@ -359,6 +359,11 @@ export function fetchDriverTasks(params: {
   page?: number
   size?: number
   tab?: string
+  task_no?: string
+  order_no?: string
+  apply_no?: string
+  vin?: string
+  customer_name?: string
   keyword?: string
 }): Promise<PageData<PortalTask>> {
   return get('/portal/driver/tasks', params)

@@ -3,7 +3,7 @@
  * 司机端 - 我的任务（H5）
  * 按待提车 / 运输中 / 待结单 / 已完成分组
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import StatusBadge from '@/components/portal/StatusBadge.vue'
 import { fetchDriverTasks } from '@/services/portal'
@@ -25,6 +25,33 @@ const page = ref(1)
 const loading = ref(false)
 const finished = computed(() => list.value.length >= total.value)
 
+const filterExpanded = ref(false)
+const filters = reactive({
+  task_no: '',
+  order_no: '',
+  vin: '',
+  customer_name: '',
+})
+const applied = ref({ task_no: '', order_no: '', vin: '', customer_name: '' })
+
+function search() {
+  applied.value = {
+    task_no: filters.task_no.trim(),
+    order_no: filters.order_no.trim(),
+    vin: filters.vin.trim(),
+    customer_name: filters.customer_name.trim(),
+  }
+  load(true)
+}
+
+function resetFilters() {
+  filters.task_no = ''
+  filters.order_no = ''
+  filters.vin = ''
+  filters.customer_name = ''
+  search()
+}
+
 async function load(reset = false) {
   if (loading.value) return
   if (reset) {
@@ -34,7 +61,15 @@ async function load(reset = false) {
   }
   loading.value = true
   try {
-    const res = await fetchDriverTasks({ page: page.value, size: 10, tab: tab.value })
+    const res = await fetchDriverTasks({
+      page: page.value,
+      size: 10,
+      tab: tab.value,
+      task_no: applied.value.task_no || undefined,
+      order_no: applied.value.order_no || undefined,
+      vin: applied.value.vin || undefined,
+      customer_name: applied.value.customer_name || undefined,
+    })
     list.value = reset ? res.list : [...list.value, ...res.list]
     total.value = res.total
   } catch (e) {
@@ -72,6 +107,50 @@ onMounted(() => load(true))
       >
         {{ item.label }}
       </button>
+    </div>
+
+    <div class="dtasks__filter">
+      <n-input
+        v-model:value="filters.task_no"
+        size="small"
+        placeholder="任务号"
+        clearable
+        @keydown.enter="search"
+        @clear="search"
+      />
+      <n-input
+        v-model:value="filters.order_no"
+        size="small"
+        placeholder="订单号"
+        clearable
+        @keydown.enter="search"
+        @clear="search"
+      />
+      <template v-if="filterExpanded">
+        <n-input
+          v-model:value="filters.vin"
+          size="small"
+          placeholder="车架号 VIN"
+          clearable
+          @keydown.enter="search"
+          @clear="search"
+        />
+        <n-input
+          v-model:value="filters.customer_name"
+          size="small"
+          placeholder="客户名称"
+          clearable
+          @keydown.enter="search"
+          @clear="search"
+        />
+      </template>
+      <div class="dtasks__filter-actions">
+        <n-button size="tiny" type="primary" @click="search">查询</n-button>
+        <n-button size="tiny" quaternary @click="resetFilters">重置</n-button>
+        <n-button size="tiny" quaternary @click="filterExpanded = !filterExpanded">
+          {{ filterExpanded ? '收起' : '更多筛选' }}
+        </n-button>
+      </div>
     </div>
 
     <n-spin :show="loading && !list.length">
@@ -145,6 +224,21 @@ onMounted(() => load(true))
   background: #1a1a1a;
   color: #fff;
   font-weight: 600;
+}
+.dtasks__filter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(31, 45, 61, 0.04);
+}
+.dtasks__filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 .dtasks__empty {
   padding: 70px 0;

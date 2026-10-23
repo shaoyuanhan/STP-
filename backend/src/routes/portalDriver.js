@@ -53,6 +53,23 @@ router.get('/tasks', wrap(async (req, res) => {
   } else {
     where.push("t.status IN ('CARRIER_ACCEPTED','PICKED','OUTBOUND','IN_TRANSIT','ARRIVED','FINISHED')");
   }
+  const like = (col, value) => {
+    const v = String(value ?? '').trim();
+    if (!v) return;
+    where.push(`${col} LIKE ?`);
+    params.push(`%${v}%`);
+  };
+  like('t.task_no', req.query.task_no);
+  like('t.order_no', req.query.order_no);
+  like('t.apply_no', req.query.apply_no);
+  like('t.customer_name', req.query.customer_name);
+  const vin = String(req.query.vin ?? '').trim();
+  if (vin) {
+    where.push(`EXISTS (
+      SELECT 1 FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0 AND v.vin LIKE ?
+    )`);
+    params.push(`%${vin}%`);
+  }
   if (keyword) {
     const kw = `%${keyword}%`;
     where.push(`(t.task_no LIKE ? OR t.customer_name LIKE ? OR EXISTS (
