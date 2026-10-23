@@ -15,6 +15,9 @@ import { useSessionStore } from '@/stores/session'
 
 interface PageTableHandle {
   refresh: () => Promise<void>
+  total: number
+  page: number
+  pageSize: number
 }
 
 const message = useMessage()
@@ -203,11 +206,27 @@ async function savePerm() {
 }
 
 const columns: DataTableColumns<RoleRow> = [
-  { title: '角色名称', key: 'role_name', width: 160 },
-  { title: '编码', key: 'role_code', width: 180 },
+  { title: '角色名称', key: 'role_name', width: 160, ellipsis: { tooltip: true } },
+  {
+    title: '编码',
+    key: 'role_code',
+    width: 180,
+    ellipsis: { tooltip: true },
+    render: (row) => h('span', { class: 'roles-code' }, row.role_code),
+  },
   { title: '类型', key: 'role_kind', width: 120, render: (row) => kindText[row.role_kind] || row.role_kind },
   { title: '说明', key: 'remark', minWidth: 220, ellipsis: { tooltip: true }, render: (row) => row.remark || '-' },
-  { title: '状态', key: 'status', width: 80, render: (row) => (Number(row.status) === 1 ? '启用' : '停用') },
+  {
+    title: '状态',
+    key: 'status',
+    width: 80,
+    render: (row) =>
+      h(
+        'span',
+        { class: Number(row.status) === 1 ? 'roles-status roles-status--on' : 'roles-status roles-status--off' },
+        Number(row.status) === 1 ? '启用' : '停用',
+      ),
+  },
   { title: '更新时间', key: 'update_time', width: 170, render: (row) => (row.update_time ? datetimeFull(row.update_time) : '-') },
   {
     title: '操作',
@@ -219,6 +238,14 @@ const columns: DataTableColumns<RoleRow> = [
     ]),
   },
 ]
+
+/** 当前页实际展示条数（末页不足一页时按剩余条数） */
+const pageShown = computed(() => {
+  const table = tableRef.value
+  if (!table) return 0
+  const rest = table.total - (table.page - 1) * table.pageSize
+  return Math.max(0, Math.min(table.pageSize, rest))
+})
 
 function remote({ page, pageSize }: { page: number; pageSize: number }) {
   return listRoles({ page, size: pageSize, keyword: applied.value.keyword || undefined })
@@ -235,7 +262,10 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
       <n-input v-model:value="keyword" placeholder="角色名称 / 编码" clearable @keyup.enter="search" />
       <n-button @click="search">查询</n-button>
     </div>
-    <p class="roles__note">功能权限控制模块和按钮。数据权限控制能看到哪些承运商的运单，以及成品、散件。</p>
+    <div class="roles__bar">
+      <span>共 <b>{{ tableRef?.total ?? 0 }}</b> 条记录，当前页显示 <b>{{ pageShown }}</b> 条</span>
+      <span class="roles__bar-tip">功能权限控制模块和按钮 · 数据权限控制可见的承运商运单与物料类型（成品 / 散件）</span>
+    </div>
     <PageTable ref="tableRef" :columns="columns" :remote="remote" :query="applied" :scroll-x="1080" />
 
     <n-modal v-model:show="show" preset="card" :title="editingId ? '编辑角色' : '新增角色'" style="width: 520px">
@@ -403,10 +433,39 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
   margin-bottom: 8px;
 }
 .roles__filter .n-input { width: 260px; }
-.roles__note {
-  margin: 0 0 10px;
+.roles__bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 0 4px;
+  color: #595959;
+  font-size: 13px;
+}
+.roles__bar b {
+  color: #262626;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.roles__bar-tip {
+  margin-left: auto;
   color: #8c8c8c;
   font-size: 12px;
+}
+/* 表格 render 函数内的元素不带本组件 scoped 属性，用 :deep() 保证命中 */
+:deep(.roles-code) {
+  font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, 'Courier New', monospace;
+  font-variant-numeric: tabular-nums;
+}
+:deep(.roles-status) {
+  white-space: nowrap;
+}
+:deep(.roles-status--on) {
+  color: #389e0d;
+}
+:deep(.roles-status--off) {
+  color: #8c8c8c;
 }
 .perm-head {
   display: flex;
