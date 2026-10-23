@@ -190,15 +190,18 @@ export interface Driver extends AuditFields {
   /** 第三方司机ID（外部系统主键，接单/回传可用其定位） */
   external_driver_id?: string | null
   phone: string
-  /** 身份证号（唯一，姓名/身份证不可改） */
+  /** 身份证号（承运商内唯一，姓名/身份证不可改） */
   id_card: string
+  /** 所属承运商，一份档案只归属一家 */
+  carrier_id?: number | null
+  carrier_name?: string | null
   license_no?: string | null
   license_type?: string | null
   license_valid_from?: string | null
   license_valid_to?: string | null
   source: DriverSource
   status: DriverStatus
-  /** 所属承运商名（逗号连接字符串或数组，契约 5.3） */
+  /** 兼容旧列表字段；新接口以 carrier_name 为准 */
   carriers?: string | string[] | null
   remark?: string | null
 }
@@ -213,8 +216,8 @@ export interface DriverPayload {
   license_type?: string | null
   license_valid_from?: string | null
   license_valid_to?: string | null
-  /** 全量替换 carrier_driver */
-  carrier_ids?: number[]
+  /** 所属承运商，必填 */
+  carrier_id: number
   remark?: string | null
 }
 

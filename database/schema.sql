@@ -23,7 +23,6 @@ DROP TABLE IF EXISTS task_status_log;
 DROP TABLE IF EXISTS dispatch_record;
 DROP TABLE IF EXISTS shipping_task_vehicle;
 DROP TABLE IF EXISTS shipping_task;
-DROP TABLE IF EXISTS carrier_driver;
 DROP TABLE IF EXISTS driver;
 DROP TABLE IF EXISTS carrier;
 DROP TABLE IF EXISTS sys_sequences;
@@ -63,7 +62,8 @@ CREATE TABLE `driver` (
   `driver_name` VARCHAR(64) NOT NULL COMMENT '司机姓名,必填,不可修改',
   `external_driver_id` VARCHAR(64) DEFAULT NULL COMMENT '第三方司机ID,外部系统主键,接单/同步可用其定位',
   `phone` VARCHAR(20) NOT NULL COMMENT '手机号',
-  `id_card` VARCHAR(18) NOT NULL COMMENT '身份证号,必填,唯一,不可修改',
+  `id_card` VARCHAR(18) NOT NULL COMMENT '身份证号,必填,承运商内唯一,不可修改',
+  `carrier_id` BIGINT UNSIGNED NOT NULL COMMENT '所属承运商ID,司机档案按承运商隔离',
   `license_no` VARCHAR(32) DEFAULT NULL COMMENT '驾驶证号',
   `license_type` VARCHAR(8) DEFAULT NULL COMMENT '准驾车型',
   `license_valid_from` DATE NOT NULL COMMENT '驾驶证有效期自',
@@ -79,33 +79,15 @@ CREATE TABLE `driver` (
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除:0-未删除,1-已删除',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_id_card` (`id_card`),
-  UNIQUE KEY `uk_external_driver_id` (`external_driver_id`),
+  UNIQUE KEY `uk_carrier_id_card` (`carrier_id`, `id_card`),
+  UNIQUE KEY `uk_carrier_external` (`carrier_id`, `external_driver_id`),
+  KEY `idx_carrier_id` (`carrier_id`),
   KEY `idx_phone` (`phone`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='司机表';
 
 -- ---------------------------------------------------------------------
--- 3. carrier_driver 承运商-司机关联表（多对多，司机表不再冗余 carrier_id）
--- ---------------------------------------------------------------------
-CREATE TABLE `carrier_driver` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `carrier_id` BIGINT UNSIGNED NOT NULL COMMENT '承运商ID',
-  `driver_id` BIGINT UNSIGNED NOT NULL COMMENT '司机ID',
-  `create_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
-  `create_name` VARCHAR(64) DEFAULT NULL COMMENT '创建人姓名',
-  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '更新人ID',
-  `update_name` VARCHAR(64) DEFAULT NULL COMMENT '更新人姓名',
-  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除:0-未删除,1-已删除',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_carrier_driver` (`carrier_id`,`driver_id`),
-  KEY `idx_driver_id` (`driver_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='承运商-司机关联表';
-
--- ---------------------------------------------------------------------
--- 4. shipping_task 发运任务主表（head）
+-- 3. shipping_task 发运任务主表（head）
 --    契约增补: delivery_address 交付地址（PRD 要求）；version 乐观锁版本号
 -- ---------------------------------------------------------------------
 CREATE TABLE `shipping_task` (

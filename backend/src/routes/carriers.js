@@ -34,9 +34,8 @@ function carrierWhere(q) {
 const CARRIER_SELECT = `
   SELECT c.*,
          (SELECT COUNT(*)
-            FROM carrier_driver cd
-            JOIN driver d ON d.id = cd.driver_id AND d.deleted = 0
-           WHERE cd.carrier_id = c.id AND cd.deleted = 0 AND d.status = 1) AS driver_count
+            FROM driver d
+           WHERE d.carrier_id = c.id AND d.deleted = 0 AND d.status = 1) AS driver_count
   FROM carrier c`;
 
 /** 导出列（与列表展示一致） */

@@ -15,17 +15,17 @@ import type {
   PageResult,
 } from '@/types/api'
 
-/** 司机分页列表（list 含 carriers 所属承运商名，逗号连接字符串或数组） */
+/** 司机分页列表（每条档案含唯一所属承运商 carrier_name） */
 export function listDrivers(query: DriverQuery = {}): Promise<PageResult<Driver>> {
   return get<PageResult<Driver>>('/drivers', query as Record<string, unknown>)
 }
 
-/** 新增司机（source=1 自建；carrier_ids 建立司机-承运商多对多关系） */
+/** 新增司机（source=1 自建；carrier_id 指定唯一所属承运商） */
 export function createDriver(payload: DriverPayload): Promise<ApiEnvelope<Driver>> {
   return postEnvelope<Driver>('/drivers', payload)
 }
 
-/** 编辑司机（姓名/身份证不可改 A0002；carrier_ids 全量替换 carrier_driver） */
+/** 编辑司机（姓名/身份证不可改 A0002；可调整所属承运商） */
 export function updateDriver(id: number, payload: DriverPayload): Promise<ApiEnvelope<Driver>> {
   return request<ApiEnvelope<Driver>>({
     url: `/drivers/${id}`,

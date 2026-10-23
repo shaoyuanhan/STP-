@@ -2,14 +2,14 @@
 /**
  * 基础数据 - 司机管理（契约 5.3 / 既有需求 10）
  *
- * - 列表：姓名/手机号/身份证号/驾驶证号/准驾车型/有效期/所属承运商（多对多）/来源/状态
+ * - 列表：姓名/手机号/身份证号/驾驶证号/准驾车型/有效期/所属承运商（唯一归属）/来源/状态
  * - 新增/编辑：姓名、身份证号创建后不可修改（编辑时禁用输入框）；
- *   手机号 PhoneInput；准驾车型下拉；驾驶证有效期起止校验；所属承运商多选（carrier_ids 全量替换）
+ *   手机号 PhoneInput；准驾车型下拉；驾驶证有效期起止校验；所属承运商单选必填（carrier_id）
  * - 停用/启用：停用后不可再分派新任务，不影响在途运单
  */
 import { computed, h, onActivated, onMounted, reactive, ref } from 'vue'
 import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
-import { NButton, NTag } from 'naive-ui'
+import { NButton } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -28,11 +28,12 @@ interface PageTableHandle {
 
 /**
  * 列表行：后端返回数据库原生字段 driver_name（types/api.ts 的 Driver.name 未对齐实际响应），
- * 并附带 carrier_ids（司机-承运商多对多关联 ID 数组），本地扩展类型承接。
+ * 所属承运商为唯一的 carrier_id / carrier_name。
  */
 interface DriverRow extends Omit<Driver, 'name'> {
   driver_name: string
-  carrier_ids?: number[]
+  carrier_id?: number | null
+  carrier_name?: string | null
 }
 
 const message = useMessage()
@@ -150,16 +151,6 @@ async function fetchDrivers({ page, pageSize }: { page: number; pageSize: number
   return { list: driverRows.value, total: result.total ?? 0 }
 }
 
-/** 所属承运商名拆分（后端逗号连接字符串或数组） */
-function splitCarrierNames(carriers: string | string[] | null | undefined): string[] {
-  if (!carriers) return []
-  if (Array.isArray(carriers)) return carriers.map((s) => String(s).trim()).filter(Boolean)
-  return String(carriers)
-    .split(/[,，、]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
 const columns: DataTableColumns<DriverRow> = [
   { title: '姓名', key: 'driver_name', width: 100 },
   {
@@ -187,18 +178,10 @@ const columns: DataTableColumns<DriverRow> = [
   },
   {
     title: '所属承运商',
-    key: 'carriers',
+    key: 'carrier_name',
     width: 200,
     minWidth: 180,
-    render: (row) => {
-      const names = splitCarrierNames(row.carriers)
-      if (!names.length) return h('span', { class: 'muted' }, '散单')
-      return h(
-        'div',
-        { class: 'carrier-cell' },
-        names.map((name) => h(NTag, { size: 'small', bordered: false }, { default: () => name })),
-      )
-    },
+    render: (row) => row.carrier_name || '-',
   },
   {
     title: '来源',
@@ -253,7 +236,7 @@ const formModel = reactive({
   license_type: null as string | null,
   license_valid_from: null as string | null,
   license_valid_to: null as string | null,
-  carrier_ids: [] as Array<string | number>,
+  carrier_id: null as number | null,
   remark: '',
 })
 
@@ -289,6 +272,7 @@ const formRules: FormRules = {
         formModel.license_valid_to >= formModel.license_valid_from,
     },
   ],
+  carrier_id: [{ required: true, type: 'number', message: '请选择所属承运商', trigger: ['change', 'blur'] }],
 }
 
 function toDateStr(value: string | [string, string] | null | undefined): string {
@@ -305,7 +289,7 @@ function openForm(row: DriverRow | null) {
   formModel.license_type = row?.license_type ?? null
   formModel.license_valid_from = row?.license_valid_from ? String(row.license_valid_from).slice(0, 10) : null
   formModel.license_valid_to = row?.license_valid_to ? String(row.license_valid_to).slice(0, 10) : null
-  formModel.carrier_ids = (row?.carrier_ids ?? []).map((id) => Number(id))
+  formModel.carrier_id = row?.carrier_id ? Number(row.carrier_id) : null
   formModel.remark = row?.remark ?? ''
   showForm.value = true
 }
@@ -325,7 +309,7 @@ async function submitForm() {
     license_type: formModel.license_type || null,
     license_valid_from: toDateStr(formModel.license_valid_from),
     license_valid_to: toDateStr(formModel.license_valid_to),
-    carrier_ids: formModel.carrier_ids.map((id) => Number(id)),
+    carrier_id: Number(formModel.carrier_id),
     remark: formModel.remark.trim() || null,
   }
   submitting.value = true
@@ -600,15 +584,13 @@ onActivated(loadCarrierOptions)
             class="page-card__date"
           />
         </n-form-item>
-        <n-form-item label="所属承运商" path="carrier_ids">
+        <n-form-item label="所属承运商" path="carrier_id">
           <n-select
-            v-model:value="formModel.carrier_ids"
+            v-model:value="formModel.carrier_id"
             :options="carrierOptions"
-            multiple
-            clearable
             filterable
             :disabled="submitting"
-            placeholder="请选择所属承运商（散单司机可不选）"
+            placeholder="请选择所属承运商"
           />
         </n-form-item>
         <n-form-item label="备注" path="remark">
