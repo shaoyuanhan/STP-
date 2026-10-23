@@ -9,6 +9,8 @@ import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { NButton } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import StatusBadge from '@/components/portal/StatusBadge.vue'
+import QueryBar from '@/components/QueryBar.vue'
+import QueryField from '@/components/QueryField.vue'
 import AssignDriverModal from '@/components/portal/AssignDriverModal.vue'
 import TaskDetailDrawer from './TaskDetailDrawer.vue'
 import { fetchCarrierTasks } from '@/services/portal'
@@ -217,75 +219,63 @@ onMounted(load)
   <div class="stp-page">
     <!-- 筛选栏 -->
     <n-card class="page-card" :bordered="false">
-      <div class="page-card__filters">
-        <div class="page-card__field">
-          <span class="page-card__label">任务号</span>
+      <QueryBar>
+        <QueryField label="任务号">
           <n-input
             v-model:value="query.task_no"
-            class="page-card__input"
             placeholder="请输入"
             clearable
             @keydown.enter="search"
           />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">状态</span>
+        </QueryField>
+        <QueryField label="状态">
           <n-select
             v-model:value="query.status"
-            class="page-card__select"
             :options="statusOptions"
             placeholder="全部状态"
           />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">VIN</span>
+        </QueryField>
+        <QueryField label="VIN">
           <n-input
             v-model:value="query.vin"
-            class="page-card__input"
             placeholder="请输入车架号"
             clearable
             @keydown.enter="search"
           />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">客户名称</span>
+        </QueryField>
+        <QueryField label="客户名称">
           <n-input
             v-model:value="query.customer_name"
-            class="page-card__input"
             placeholder="请输入"
             clearable
             @keydown.enter="search"
           />
-        </div>
-        <div v-show="filterExpanded" class="page-card__field">
-          <span class="page-card__label">订单号</span>
+        </QueryField>
+        <QueryField v-show="filterExpanded" label="订单号">
           <n-input
             v-model:value="query.order_no"
-            class="page-card__input"
             placeholder="请输入"
             clearable
             @keydown.enter="search"
           />
-        </div>
-        <div v-show="filterExpanded" class="page-card__field">
-          <span class="page-card__label">发运申请号</span>
+        </QueryField>
+        <QueryField v-show="filterExpanded" label="发运申请号">
           <n-input
             v-model:value="query.apply_no"
-            class="page-card__input"
             placeholder="请输入"
             clearable
             @keydown.enter="search"
           />
-        </div>
-        <div class="page-card__actions">
+        </QueryField>
+        <template #actions>
           <n-button @click="reset">重置</n-button>
           <n-button type="primary" @click="search">查询</n-button>
           <n-button quaternary class="page-card__toggle" @click="filterExpanded = !filterExpanded">
             {{ filterExpanded ? '收起' : '展开' }}
             <span class="page-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
           </n-button>
-        </div>
-      </div>
+        </template>
+      </QueryBar>
     </n-card>
 
     <!-- 工具栏 -->
@@ -337,33 +327,6 @@ onMounted(load)
 <style scoped>
 .page-card {
   margin-bottom: 12px;
-}
-.page-card__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 18px;
-}
-.page-card__field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.page-card__label {
-  font-size: 13px;
-  color: #595959;
-  white-space: nowrap;
-}
-.page-card__input {
-  width: 220px;
-}
-.page-card__select {
-  width: 150px;
-}
-.page-card__actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
 }
 .page-card__caret {
   display: inline-block;

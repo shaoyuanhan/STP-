@@ -12,6 +12,8 @@ import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-
 import { NButton } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
+import QueryBar from '@/components/QueryBar.vue'
+import QueryField from '@/components/QueryField.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import ConfirmAction from '@/components/ConfirmAction.vue'
 import PhoneInput from '@/components/PhoneInput.vue'
@@ -331,67 +333,36 @@ async function confirmStatusChange() {
   <div class="stp-page">
     <!-- 筛选栏 -->
     <n-card class="page-card" :bordered="false">
-      <div class="page-card__filters">
-        <div class="page-card__field">
-          <span class="page-card__label">承运商名称</span>
-          <n-input
-            v-model:value="filter.carrier_name"
-            class="page-card__input"
-            clearable
-            placeholder="请输入承运商名称"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">承运商编码</span>
-          <n-input
-            v-model:value="filter.carrier_code"
-            class="page-card__input"
-            clearable
-            placeholder="如 CAR-001"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">第三方承运商ID</span>
+      <QueryBar>
+        <QueryField label="承运商名称">
+          <n-input v-model:value="filter.carrier_name" clearable placeholder="请输入承运商名称" @keydown.enter="handleSearch" />
+        </QueryField>
+        <QueryField label="承运商编码">
+          <n-input v-model:value="filter.carrier_code" clearable placeholder="如 CAR-001" @keydown.enter="handleSearch" />
+        </QueryField>
+        <QueryField label="第三方承运商ID">
           <n-input
             v-model:value="filter.external_carrier_id"
-            class="page-card__input"
             clearable
             placeholder="外部系统承运商ID"
             @keydown.enter="handleSearch"
           />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">联系人</span>
-          <n-input
-            v-model:value="filter.contact_person"
-            class="page-card__input"
-            clearable
-            placeholder="请输入联系人"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">联系电话</span>
-          <n-input
-            v-model:value="filter.contact_phone"
-            class="page-card__input"
-            clearable
-            placeholder="请输入联系电话"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">状态</span>
-          <n-select v-model:value="filter.status" class="page-card__select" :options="statusOptions" />
-        </div>
-        <div class="page-card__actions">
+        </QueryField>
+        <QueryField label="联系人">
+          <n-input v-model:value="filter.contact_person" clearable placeholder="请输入联系人" @keydown.enter="handleSearch" />
+        </QueryField>
+        <QueryField label="联系电话">
+          <n-input v-model:value="filter.contact_phone" clearable placeholder="请输入联系电话" @keydown.enter="handleSearch" />
+        </QueryField>
+        <QueryField label="状态">
+          <n-select v-model:value="filter.status" :options="statusOptions" />
+        </QueryField>
+        <template #actions>
           <n-button :loading="exporting" @click="handleExport">导出</n-button>
           <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
-        </div>
-      </div>
+        </template>
+      </QueryBar>
     </n-card>
 
     <!-- 工具栏 -->
@@ -527,39 +498,6 @@ async function confirmStatusChange() {
 <style scoped>
 .page-card {
   margin-bottom: 12px;
-}
-
-.page-card__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 18px;
-}
-
-.page-card__field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.page-card__label {
-  font-size: 13px;
-  color: #595959;
-  white-space: nowrap;
-}
-
-.page-card__input {
-  width: 190px;
-}
-
-.page-card__select {
-  width: 140px;
-}
-
-.page-card__actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
 }
 
 .page-toolbar {

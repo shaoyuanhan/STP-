@@ -12,6 +12,8 @@ import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { NButton, NCheckbox } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
+import QueryBar from '@/components/QueryBar.vue'
+import QueryField from '@/components/QueryField.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import TaskDispatchModal from './TaskDispatchModal.vue'
 import BatchDispatchModal from './BatchDispatchModal.vue'
@@ -418,89 +420,48 @@ function refreshList() {
   <div class="stp-page">
     <!-- 筛选栏 -->
     <n-card class="page-card" :bordered="false">
-      <div class="page-card__filters">
-        <div class="page-card__field">
-          <span class="page-card__label">任务单号</span>
-          <n-input
-            v-model:value="filter.task_no"
-            class="page-card__input page-card__input--s"
-            clearable
-            placeholder="请输入"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">订单号</span>
-          <n-input
-            v-model:value="filter.order_no"
-            class="page-card__input page-card__input--s"
-            clearable
-            placeholder="请输入"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">发运申请号</span>
-          <n-input
-            v-model:value="filter.apply_no"
-            class="page-card__input page-card__input--s"
-            clearable
-            placeholder="请输入"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">VIN</span>
-          <n-input
-            v-model:value="filter.vin"
-            class="page-card__input page-card__input--s"
-            clearable
-            placeholder="请输入"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">客户名称</span>
-          <n-input
-            v-model:value="filter.customer_name"
-            class="page-card__input page-card__input--s"
-            clearable
-            placeholder="请输入"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div v-show="filterExpanded" class="page-card__field">
-          <span class="page-card__label">状态</span>
+      <QueryBar>
+        <QueryField label="任务单号">
+          <n-input v-model:value="filter.task_no" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+        </QueryField>
+        <QueryField label="订单号">
+          <n-input v-model:value="filter.order_no" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+        </QueryField>
+        <QueryField label="发运申请号">
+          <n-input v-model:value="filter.apply_no" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+        </QueryField>
+        <QueryField label="VIN">
+          <n-input v-model:value="filter.vin" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+        </QueryField>
+        <QueryField label="客户名称">
+          <n-input v-model:value="filter.customer_name" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+        </QueryField>
+        <QueryField v-show="filterExpanded" label="状态">
           <n-select
             v-model:value="filter.status"
-            class="page-card__select"
             clearable
             :options="statusOptions"
             placeholder="全部状态"
           />
-        </div>
-        <div v-show="filterExpanded" class="page-card__field">
-          <span class="page-card__label">承运商</span>
+        </QueryField>
+        <QueryField v-show="filterExpanded" label="承运商">
           <n-select
             v-model:value="filter.carrier_id"
-            class="page-card__select"
             clearable
             filterable
             :options="carrierOptions"
             placeholder="全部承运商"
           />
-        </div>
-        <div v-show="filterExpanded" class="page-card__field">
-          <span class="page-card__label">创建日期</span>
+        </QueryField>
+        <QueryField v-show="filterExpanded" label="创建日期" wide>
           <n-date-picker
             v-model:formatted-value="filter.range"
             type="daterange"
             value-format="yyyy-MM-dd"
             clearable
-            class="page-card__range"
           />
-        </div>
-        <div class="page-card__actions">
+        </QueryField>
+        <template #actions>
           <n-button v-if="can('tasks:export')" :loading="exporting" @click="handleExport">导出</n-button>
           <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
@@ -508,8 +469,8 @@ function refreshList() {
             {{ filterExpanded ? '收起' : '展开' }}
             <span class="page-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
           </n-button>
-        </div>
-      </div>
+        </template>
+      </QueryBar>
     </n-card>
 
     <!-- 工具栏 -->
@@ -571,43 +532,6 @@ function refreshList() {
 <style scoped>
 .page-card {
   margin-bottom: 12px;
-}
-
-.page-card__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 18px;
-}
-
-.page-card__field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.page-card__label {
-  font-size: 13px;
-  color: #595959;
-  white-space: nowrap;
-}
-
-.page-card__input--s {
-  width: 140px;
-}
-
-.page-card__select {
-  width: 150px;
-}
-
-.page-card__range {
-  width: 240px;
-}
-
-.page-card__actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
 }
 
 .page-card__caret {

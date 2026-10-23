@@ -11,6 +11,8 @@ import {
   updateCarrierDriver, updateCarrierDriverStatus,
 } from '@/services/portal'
 import type { DriverPayload, PortalDriver } from '@/services/portal'
+import QueryBar from '@/components/QueryBar.vue'
+import QueryField from '@/components/QueryField.vue'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -227,57 +229,49 @@ onMounted(load)
   <div class="stp-page">
     <!-- 筛选栏 -->
     <n-card class="page-card" :bordered="false">
-      <div class="page-card__filters">
-        <div class="page-card__field">
-          <span class="page-card__label">司机姓名</span>
+      <QueryBar>
+        <QueryField label="司机姓名">
           <n-input
             v-model:value="filters.driver_name"
-            class="page-card__input"
             placeholder="请输入"
             clearable
             @keydown.enter="load"
             @clear="load"
           />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">手机号</span>
+        </QueryField>
+        <QueryField label="手机号">
           <n-input
             v-model:value="filters.phone"
-            class="page-card__input"
             placeholder="请输入"
             clearable
             @keydown.enter="load"
             @clear="load"
           />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">驾驶证号</span>
+        </QueryField>
+        <QueryField label="驾驶证号">
           <n-input
             v-model:value="filters.license_no"
-            class="page-card__input"
             placeholder="请输入"
             clearable
             @keydown.enter="load"
             @clear="load"
           />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">状态</span>
+        </QueryField>
+        <QueryField label="状态">
           <n-select
             v-model:value="filters.status"
-            class="page-card__input"
             placeholder="全部状态"
             clearable
             :options="[{ label: '启用', value: 1 }, { label: '停用', value: 0 }]"
             @update:value="load"
           />
-        </div>
-        <div class="page-card__actions">
+        </QueryField>
+        <template #actions>
           <n-button @click="load">查询</n-button>
           <n-button @click="resetFilters">重置</n-button>
           <n-button type="primary" @click="openCreate">+ 新增司机</n-button>
-        </div>
-      </div>
+        </template>
+      </QueryBar>
     </n-card>
 
     <!-- 工具栏 -->
@@ -360,30 +354,6 @@ onMounted(load)
 <style scoped>
 .page-card {
   margin-bottom: 12px;
-}
-.page-card__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 18px;
-}
-.page-card__field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.page-card__label {
-  font-size: 13px;
-  color: #595959;
-  white-space: nowrap;
-}
-.page-card__input {
-  width: 240px;
-}
-.page-card__actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
 }
 .page-toolbar {
   display: flex;
