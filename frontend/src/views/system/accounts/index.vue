@@ -7,6 +7,8 @@ import { computed, h, reactive, ref } from 'vue'
 import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { NButton, useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
+import QueryBar from '@/components/QueryBar.vue'
+import QueryField from '@/components/QueryField.vue'
 import { listCarriers } from '@/services/carriers'
 import { listDrivers } from '@/services/drivers'
 import {
@@ -59,10 +61,12 @@ const rules: FormRules = {
   role_id: { required: true, type: 'number', message: '请选择角色', trigger: 'change' },
 }
 
-const roleOptions = computed(() => roles.value.map((item) => ({
-  label: `${item.role_name}（${KIND_TEXT[item.role_kind || ''] || '平台后台'}）`,
-  value: item.id,
-})))
+const roleOptions = computed(() => roles.value
+  .filter((item) => item.role_kind !== 'DRIVER')
+  .map((item) => ({
+    label: `${item.role_name}（${KIND_TEXT[item.role_kind || ''] || '平台后台'}）`,
+    value: item.id,
+  })))
 const currentRole = computed(() => roles.value.find((item) => item.id === form.role_id) ?? null)
 
 function search() {
@@ -118,6 +122,10 @@ async function openCreate() {
 }
 
 async function openEdit(row: AccountRow) {
+  if (row.role_kind === 'DRIVER') {
+    message.info('司机账号由系统按司机档案自动生成，请在司机管理中启用/停用')
+    return
+  }
   editingId.value = row.id
   form.username = row.username || ''
   form.display_name = row.display_name
@@ -213,19 +221,37 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
 
 <template>
   <div class="stp-page">
-    <div class="stp-page__header">
-      <h1 class="stp-page__title">账号管理</h1>
+    <!-- 筛选栏 -->
+    <n-card class="page-card" :bordered="false">
+      <QueryBar>
+        <QueryField label="登录账号">
+          <n-input v-model:value="filters.username" clearable placeholder="请输入登录账号" @keydown.enter="search" />
+        </QueryField>
+        <QueryField label="姓名">
+          <n-input v-model:value="filters.display_name" clearable placeholder="请输入姓名" @keydown.enter="search" />
+        </QueryField>
+        <QueryField label="手机号">
+          <n-input v-model:value="filters.phone" clearable placeholder="请输入手机号" @keydown.enter="search" />
+        </QueryField>
+        <template #actions>
+          <n-button @click="reset">重置</n-button>
+          <n-button type="primary" @click="search">查询</n-button>
+        </template>
+      </QueryBar>
+    </n-card>
+
+    <!-- 工具栏 -->
+    <div class="page-toolbar">
+      <span class="page-toolbar__hint">
+        账号只绑定一个角色；可见模块、按钮与承运商运单范围在角色管理里配置
+      </span>
       <n-button type="primary" @click="openCreate">新增账号</n-button>
     </div>
-    <div class="accounts__filter">
-      <n-input v-model:value="filters.username" placeholder="登录账号" clearable @keyup.enter="search" />
-      <n-input v-model:value="filters.display_name" placeholder="姓名" clearable @keyup.enter="search" />
-      <n-input v-model:value="filters.phone" placeholder="手机号" clearable @keyup.enter="search" />
-      <n-button @click="search">查询</n-button>
-      <n-button @click="reset">重置</n-button>
-    </div>
-    <p class="accounts__note">账号只绑定一个角色。能看哪些模块、按钮，以及哪些承运商的运单、成品或散件，都在角色管理里配置。</p>
-    <PageTable ref="tableRef" :columns="columns" :remote="remote" :query="applied" :scroll-x="980" />
+
+    <!-- 列表 -->
+    <n-card class="page-card" :bordered="false">
+      <PageTable ref="tableRef" :columns="columns" :remote="remote" :query="applied" :scroll-x="980" />
+    </n-card>
 
     <n-modal v-model:show="show" preset="card" :title="editingId ? '编辑账号' : '新增账号'" style="width: 520px">
       <n-form ref="formRef" :model="form" :rules="rules" label-placement="left" label-width="88">
@@ -268,17 +294,17 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
 </template>
 
 <style scoped>
-.accounts__filter {
+.page-card {
+  margin-bottom: 12px;
+}
+.page-toolbar {
   display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
 }
-.accounts__filter .n-input {
-  width: 200px;
-}
-.accounts__note {
-  margin: 0 0 10px;
-  color: #8c8c8c;
+.page-toolbar__hint {
   font-size: 12px;
+  color: #8c8c8c;
 }
 </style>

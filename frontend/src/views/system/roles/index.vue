@@ -6,6 +6,8 @@ import { computed, h, reactive, ref } from 'vue'
 import type { DataTableColumns, FormInst, FormRules, TreeOption } from 'naive-ui'
 import { NButton, useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
+import QueryBar from '@/components/QueryBar.vue'
+import QueryField from '@/components/QueryField.vue'
 import {
   createRole, fetchMe, getProfile, getRole, listRoles, roleCatalog, saveRolePermissions, updateProfile, updateRole,
 } from '@/services/portal'
@@ -15,9 +17,6 @@ import { useSessionStore } from '@/stores/session'
 
 interface PageTableHandle {
   refresh: () => Promise<void>
-  total: number
-  page: number
-  pageSize: number
 }
 
 const message = useMessage()
@@ -273,14 +272,6 @@ const columns: DataTableColumns<RoleRow> = [
   },
 ]
 
-/** 当前页实际展示条数（末页不足一页时按剩余条数） */
-const pageShown = computed(() => {
-  const table = tableRef.value
-  if (!table) return 0
-  const rest = table.total - (table.page - 1) * table.pageSize
-  return Math.max(0, Math.min(table.pageSize, rest))
-})
-
 function remote({ page, pageSize }: { page: number; pageSize: number }) {
   return listRoles({
     page,
@@ -295,28 +286,45 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
 
 <template>
   <div class="stp-page">
-    <div class="stp-page__header">
-      <h1 class="stp-page__title">角色管理</h1>
+    <!-- 筛选栏 -->
+    <n-card class="page-card" :bordered="false">
+      <QueryBar>
+        <QueryField label="角色名称">
+          <n-input v-model:value="filters.role_name" clearable placeholder="请输入角色名称" @keydown.enter="search" />
+        </QueryField>
+        <QueryField label="角色编码">
+          <n-input v-model:value="filters.role_code" clearable placeholder="如 CARRIER003" @keydown.enter="search" />
+        </QueryField>
+        <QueryField label="类型">
+          <n-select v-model:value="filters.role_kind" placeholder="全部" clearable :options="kindOptions" />
+        </QueryField>
+        <QueryField label="状态">
+          <n-select
+            v-model:value="filters.status"
+            placeholder="全部"
+            clearable
+            :options="[{ label: '启用', value: 1 }, { label: '停用', value: 0 }]"
+          />
+        </QueryField>
+        <template #actions>
+          <n-button @click="reset">重置</n-button>
+          <n-button type="primary" @click="search">查询</n-button>
+        </template>
+      </QueryBar>
+    </n-card>
+
+    <!-- 工具栏 -->
+    <div class="page-toolbar">
+      <span class="page-toolbar__hint">
+        功能权限控制模块和按钮 · 数据权限控制可见的承运商运单与物料类型（成品 / 散件）
+      </span>
       <n-button type="primary" @click="openCreate">新增角色</n-button>
     </div>
-    <div class="roles__filter">
-      <n-input v-model:value="filters.role_name" placeholder="角色名称" clearable @keyup.enter="search" />
-      <n-input v-model:value="filters.role_code" placeholder="角色编码" clearable @keyup.enter="search" />
-      <n-select v-model:value="filters.role_kind" placeholder="全部类型" clearable :options="kindOptions" />
-      <n-select
-        v-model:value="filters.status"
-        placeholder="全部状态"
-        clearable
-        :options="[{ label: '启用', value: 1 }, { label: '停用', value: 0 }]"
-      />
-      <n-button @click="search">查询</n-button>
-      <n-button @click="reset">重置</n-button>
-    </div>
-    <div class="roles__bar">
-      <span>共 <b>{{ tableRef?.total ?? 0 }}</b> 条记录，当前页显示 <b>{{ pageShown }}</b> 条</span>
-      <span class="roles__bar-tip">功能权限控制模块和按钮 · 数据权限控制可见的承运商运单与物料类型（成品 / 散件）</span>
-    </div>
-    <PageTable ref="tableRef" :columns="columns" :remote="remote" :query="applied" :scroll-x="1080" />
+
+    <!-- 列表 -->
+    <n-card class="page-card" :bordered="false">
+      <PageTable ref="tableRef" :columns="columns" :remote="remote" :query="applied" :scroll-x="1080" />
+    </n-card>
 
     <n-modal v-model:show="show" preset="card" :title="editingId ? '编辑角色' : '新增角色'" style="width: 520px">
       <n-form ref="formRef" :model="form" :rules="rules" label-placement="left" label-width="88">
@@ -449,36 +457,18 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
 </template>
 
 <style scoped>
-.roles__filter {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
+.page-card {
+  margin-bottom: 12px;
 }
-.roles__filter .n-input {
-  width: 180px;
-}
-.roles__filter .n-select {
-  width: 150px;
-}
-.roles__bar {
+.page-toolbar {
   display: flex;
   align-items: center;
-  gap: 18px;
-  flex-wrap: wrap;
+  justify-content: space-between;
   margin-bottom: 12px;
-  padding: 0 4px;
-  color: #595959;
-  font-size: 13px;
 }
-.roles__bar b {
-  color: #262626;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.roles__bar-tip {
-  margin-left: auto;
-  color: #8c8c8c;
+.page-toolbar__hint {
   font-size: 12px;
+  color: #8c8c8c;
 }
 /* 表格 render 函数内的元素不带本组件 scoped 属性，用 :deep() 保证命中 */
 :deep(.roles-code) {

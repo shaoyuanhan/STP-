@@ -2603,7 +2603,7 @@
           "10 外部接口·狮桥物流"
         ],
         "summary": "⑩ 司机信息同步（支持单条 / 批量）",
-        "description": "司机档案按承运商隔离，一家承运商一份：carrierIds 有 N 家就维护 N 份独立档案（匹配顺序 externalDriverId → 承运商内 externalDriverId → 承运商内 idCard）；未传承运商时沿用该司机已有档案的归属，仍无法确定则报错。重复推送同一第三方ID/身份证号在该承运商内为更新不新增，name 以狮桥为准、未传字段保留原值。同步时自动保证司机登录账号存在（sys_account，account_type=DRIVER，按承运商隔离，无账号按默认密码补建，默认密码取环境变量 DEFAULT_DRIVER_PASSWORD，缺省 123456；已有账号同步姓名/手机号）。\n\n**字段命名**：camelCase（driverName/idCard/...）与 snake_case（name 或 driver_name/id_card/...）两种写法均接受，同义字段 camelCase 优先。\n\n**支持批量**：请求体可直接传司机对象数组，或 {\"drivers\":[...]}，单次最多 200 条；每条独立事务，单条失败不影响其余，data 返回 { total, success, created, updated, failed, results[] }，results 按入参顺序给出每条的成功/失败与原因。",
+        "description": "司机档案按承运商隔离，一家承运商一份：carrierIds 有 N 家就维护 N 份独立档案（匹配顺序 externalDriverId → 承运商内 externalDriverId → 承运商内 idCard）；未传承运商时沿用该司机已有档案的归属，仍无法确定则报错。重复推送同一第三方ID/身份证号在该承运商内为更新不新增，name 以狮桥为准、未传字段保留原值。同步时自动保证司机登录账号存在（sys_account，account_type=DRIVER，按承运商隔离，不设密码、仅支持手机号验证码登录；已有账号同步姓名/手机号）。\n\n**字段命名**：camelCase（driverName/idCard/...）与 snake_case（name 或 driver_name/id_card/...）两种写法均接受，同义字段 camelCase 优先。\n\n**支持批量**：请求体可直接传司机对象数组，或 {\"drivers\":[...]}，单次最多 200 条；每条独立事务，单条失败不影响其余，data 返回 { total, success, created, updated, failed, results[] }，results 按入参顺序给出每条的成功/失败与原因。",
         "requestBody": {
           "required": true,
           "content": {

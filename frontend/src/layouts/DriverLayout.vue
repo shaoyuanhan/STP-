@@ -2,14 +2,25 @@
 /**
  * 司机端布局（H5，移动优先）
  * 480px 居中；底部「任务 / 消息」两个 Tab
+ * 顶部显示当前承运商，多承运商司机可在此切换（换 token 后整页重载）
  */
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { clearSession, getProfile } from '@/services/portal'
+import { useMessage } from 'naive-ui'
+import CarrierSheet from '@/components/CarrierSheet.vue'
+import {
+  clearSession,
+  fetchMyCarriers,
+  getProfile,
+  setSession,
+  switchCarrier,
+  type DriverCarrierOption,
+} from '@/services/portal'
 
 const route = useRoute()
 const router = useRouter()
-const profile = getProfile()
+const message = useMessage()
+const profile = ref(getProfile())
 
 const tabs = [
   { path: '/m/tasks', label: '我的任务', icon: '▤' },
@@ -19,20 +30,59 @@ const tabs = [
 const activePath = computed(() => tabs.find((t) => route.path.startsWith(t.path))?.path ?? '')
 const hideTabbar = computed(() => /\/tasks\/\d+/.test(route.path))
 
+const carriers = ref<DriverCarrierOption[]>([])
+const showSheet = ref(false)
+const switching = ref(false)
+const canSwitch = computed(() => carriers.value.length > 1)
+
+onMounted(async () => {
+  if (profile.value?.type !== 'DRIVER') return
+  try {
+    carriers.value = await fetchMyCarriers()
+  } catch {
+    // 拉取失败不影响主流程，切换入口保持隐藏
+  }
+})
+
 function logout() {
   clearSession()
   router.replace('/m/login')
+}
+
+async function onPickCarrier(carrierId: number) {
+  if (carrierId === profile.value?.carrier_id) {
+    showSheet.value = false
+    return
+  }
+  switching.value = true
+  try {
+    const res = await switchCarrier(carrierId)
+    setSession(res.token, res.profile)
+    profile.value = res.profile
+    showSheet.value = false
+    message.success(`已切换到 ${res.profile.carrier_name || '目标承运商'}`)
+    // 任务/消息均按新的司机档案取数，整页重载最稳妥
+    window.location.href = '/m/tasks'
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '切换失败')
+  } finally {
+    switching.value = false
+  }
 }
 </script>
 
 <template>
   <div class="driver">
     <header class="driver__header">
-      <div>
+      <div class="driver__who">
         <div class="driver__brand">深向</div>
         <div class="driver__hello">{{ profile?.driver_name || profile?.name || '司机' }}，您好</div>
+        <div v-if="profile?.carrier_name" class="driver__carrier">{{ profile.carrier_name }}</div>
       </div>
-      <button type="button" class="driver__logout" @click="logout">退出</button>
+      <div class="driver__actions">
+        <button v-if="canSwitch" type="button" class="driver__logout" @click="showSheet = true">切换承运商</button>
+        <button type="button" class="driver__logout" @click="logout">退出</button>
+      </div>
     </header>
 
     <main class="driver__main">
@@ -51,6 +101,16 @@ function logout() {
         <span>{{ tab.label }}</span>
       </router-link>
     </nav>
+
+    <CarrierSheet
+      :show="showSheet"
+      :carriers="carriers"
+      :current="profile?.carrier_id ?? null"
+      :loading="switching"
+      title="切换承运商"
+      @select="onPickCarrier"
+      @close="showSheet = false"
+    />
   </div>
 </template>
 
@@ -84,6 +144,17 @@ function logout() {
   font-size: 16px;
   font-weight: 600;
   line-height: 1.4;
+}
+.driver__carrier {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.68);
+}
+.driver__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
 }
 .driver__logout {
   border: 1px solid rgba(255, 255, 255, 0.28);

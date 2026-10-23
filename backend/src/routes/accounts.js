@@ -90,6 +90,10 @@ router.get('/', wrap(async (req, res) => {
 router.post('/', wrap(async (req, res) => {
   await assertAccountPerm(req, 'accounts:create');
   const role = await loadRole(req.body.role_id);
+  // 司机账号由司机档案自动生成，避免与司机管理两条口径
+  if (role.role_kind === 'DRIVER') {
+    throw errBiz('司机账号由系统按司机档案自动生成，请在司机管理中启用/停用');
+  }
   const accountType = accountTypeOf(role);
   const displayName = String(req.body.display_name ?? '').trim();
   if (!displayName) throw errParam('请填写姓名');
@@ -136,6 +140,9 @@ router.put('/:id', wrap(async (req, res) => {
   if (!rows.length) throw errNotFound('账号不存在');
   const current = rows[0];
   const role = await loadRole(req.body.role_id ?? current.role_id);
+  if (role.role_kind === 'DRIVER') {
+    throw errBiz('司机账号由系统按司机档案自动生成，请在司机管理中启用/停用');
+  }
   const accountType = accountTypeOf(role);
   const displayName = String(req.body.display_name ?? current.display_name).trim();
   if (!displayName) throw errParam('请填写姓名');

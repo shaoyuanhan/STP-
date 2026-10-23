@@ -251,8 +251,37 @@ export function sendSmsCode(phone: string): Promise<{ dev_code?: string; mock: b
   return post('/portal/auth/sms-code', { phone })
 }
 
-export function smsLogin(phone: string, code: string): Promise<{ token: string; profile: PortalProfile }> {
+/** 司机可登录的承运商（同一手机号在多家承运商各有档案时用于选择/切换） */
+export interface DriverCarrierOption {
+  carrier_id: number
+  carrier_name: string
+  driver_id: number
+  driver_name: string
+  active_task_count: number
+  current?: boolean
+}
+
+export type SmsLoginResult =
+  | { need_choice: false; token: string; profile: PortalProfile; auto_selected?: boolean }
+  | { need_choice: true; ticket: string; expire_in: number; carriers: DriverCarrierOption[] }
+
+export function smsLogin(phone: string, code: string): Promise<SmsLoginResult> {
   return post('/portal/auth/sms-login', { phone, code })
+}
+
+export function confirmSmsLogin(
+  ticket: string,
+  carrierId: number
+): Promise<{ token: string; profile: PortalProfile }> {
+  return post('/portal/auth/sms-login/confirm', { ticket, carrier_id: carrierId })
+}
+
+export function fetchMyCarriers(): Promise<DriverCarrierOption[]> {
+  return get('/portal/auth/my-carriers')
+}
+
+export function switchCarrier(carrierId: number): Promise<{ token: string; profile: PortalProfile }> {
+  return post('/portal/auth/switch-carrier', { carrier_id: carrierId })
 }
 
 export function fetchMe(): Promise<PortalProfile> {

@@ -5,7 +5,7 @@
  *       停用后不可分派任务、不影响在途运单；外部狮桥同步 source=2，自建 source=1
  */
 const { Router } = require('express');
-const { query } = require('../db');
+const { query, withTransaction } = require('../db');
 const {
   wrap, ok, errParam, errBiz, errNotFound, pageOf, pageData,
   assertPhone, assertIdCard,
@@ -13,6 +13,7 @@ const {
 const { sendXlsx, text, dateOnly, dateTime, phoneText } = require('../exporter');
 const { verifyToken } = require('../services/security');
 const { loadAccess } = require('../services/access');
+const { ensureDriverAccount, syncDriverAccountStatus } = require('../services/driverAccount');
 
 const router = Router();
 
@@ -34,6 +35,12 @@ function applyCarrierScope(where, params, access) {
   }
   where.push(`d.carrier_id IN (${access.carriers.map(() => '?').join(',')})`);
   params.push(...access.carriers);
+}
+
+/** 建号结果校验：手机号在承运商内被其他司机占用时中止，避免账号手机号与档案不一致 */
+function assertNoPhoneConflict(result, phone) {
+  if (result?.blocked) throw errBiz(`手机号 ${phone} 已被本承运商其他司机占用，请先处理原司机账号`);
+  if (result?.phoneConflict) throw errBiz(`手机号 ${phone} 已被本承运商其他司机占用，请更换手机号`);
 }
 
 /** 行后处理：carrier_id 统一成数字，carrier_name 为空时给空串便于前端直接展示 */
@@ -83,7 +90,7 @@ const DRIVER_EXPORT_COLUMNS = [
   { header: '有效期至', value: (r) => dateOnly(r.license_valid_to), width: 12 },
   {
     header: '所属承运商',
-    value: (r) => text(r.carrier_name) || '散单',
+    value: (r) => text(r.carrier_name) || '-',
     width: 28,
   },
   { header: '来源', value: (r) => ({ 1: '系统录入', 2: '狮桥同步' }[Number(r.source)] || '-'), width: 12 },
@@ -209,13 +216,24 @@ router.post('/', wrap(async (req, res) => {
   if (dup.length) throw errBiz('该承运商下已存在相同身份证号的司机，请勿重复添加');
   await assertExternalDriverIdUnique(v.external_driver_id, v.carrier_id);
 
-  const r = await query(
-    `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, carrier_id, license_no, license_type, license_valid_from, license_valid_to, source, status, remark, create_name, update_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, '系统管理员', '系统管理员')`,
-    [name, v.external_driver_id, v.phone, v.id_card, v.carrier_id, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark]
-  );
+  const createdId = await withTransaction(async (conn) => {
+    const [r] = await conn.query(
+      `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, carrier_id, license_no, license_type, license_valid_from, license_valid_to, source, status, remark, create_name, update_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, '系统管理员', '系统管理员')`,
+      [name, v.external_driver_id, v.phone, v.id_card, v.carrier_id, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark]
+    );
+    const account = await ensureDriverAccount(conn, {
+      driverId: r.insertId,
+      driverName: name,
+      phone: v.phone,
+      carrierId: v.carrier_id,
+      operator: '系统管理员',
+    });
+    assertNoPhoneConflict(account, v.phone);
+    return r.insertId;
+  });
 
-  const [created] = await query(`${DRIVER_SELECT} WHERE d.id = ?`, [r.insertId]);
+  const [created] = await query(`${DRIVER_SELECT} WHERE d.id = ?`, [createdId]);
   ok(res, created ? decorateDriver(created) : null);
 }));
 
@@ -253,10 +271,20 @@ router.put('/:id', wrap(async (req, res) => {
   }
   await assertExternalDriverIdUnique(v.external_driver_id, v.carrier_id, id);
 
-  await query(
-    `UPDATE driver SET carrier_id = ?, external_driver_id = ?, phone = ?, license_no = ?, license_type = ?, license_valid_from = ?, license_valid_to = ?, remark = ?, update_name = '系统管理员' WHERE id = ?`,
-    [v.carrier_id, v.external_driver_id, v.phone, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark, id]
-  );
+  await withTransaction(async (conn) => {
+    await conn.query(
+      `UPDATE driver SET carrier_id = ?, external_driver_id = ?, phone = ?, license_no = ?, license_type = ?, license_valid_from = ?, license_valid_to = ?, remark = ?, update_name = '系统管理员' WHERE id = ?`,
+      [v.carrier_id, v.external_driver_id, v.phone, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark, id]
+    );
+    const account = await ensureDriverAccount(conn, {
+      driverId: id,
+      driverName: exist.driver_name,
+      phone: v.phone,
+      carrierId: v.carrier_id,
+      operator: '系统管理员',
+    });
+    assertNoPhoneConflict(account, v.phone);
+  });
 
   const [updated] = await query(`${DRIVER_SELECT} WHERE d.id = ?`, [id]);
   ok(res, updated ? decorateDriver(updated) : null);
@@ -272,7 +300,10 @@ router.put('/:id/status', wrap(async (req, res) => {
   const [exist] = await query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [id]);
   if (!exist) throw errNotFound('司机不存在');
 
-  await query('UPDATE driver SET status = ?, update_name = ? WHERE id = ?', [Number(status), '系统管理员', id]);
+  await withTransaction(async (conn) => {
+    await conn.query('UPDATE driver SET status = ?, update_name = ? WHERE id = ?', [Number(status), '系统管理员', id]);
+    await syncDriverAccountStatus(conn, id, Number(status), '系统管理员');
+  });
   const [updated] = await query('SELECT * FROM driver WHERE id = ?', [id]);
   ok(res, updated);
 }));

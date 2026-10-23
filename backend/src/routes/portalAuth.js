@@ -3,13 +3,19 @@
  * 前缀 /api/portal/auth
  */
 const { Router } = require('express');
-const { query } = require('../db');
+const crypto = require('node:crypto');
+const { query, withTransaction } = require('../db');
 const { wrap, ok, errParam, errBiz, errAuth, errNotFound, localDateStr } = require('../helpers');
 const { signToken, verifyPassword, normalizePhone, requireAuth } = require('../services/security');
 const { loadAccess } = require('../services/access');
 const { sendLoginCode } = require('../services/notify');
+const { ensureDriverAccount } = require('../services/driverAccount');
 
 const router = Router();
+
+/** 在途/进行中任务：已派单到已到达，排除待派单与终态 */
+const ACTIVE_TASK_STATUSES = ['DISPATCHED', 'CARRIER_ACCEPTED', 'PICKED', 'OUTBOUND', 'IN_TRANSIT', 'ARRIVED'];
+const TICKET_TTL_SECONDS = 300;
 
 function accountKind(accountType) {
   if (accountType === 'DRIVER') return 'DRIVER';
@@ -93,6 +99,91 @@ async function issueLogin(res, account) {
 }
 
 /**
+ * 按手机号取全部司机档案：一个手机号可能在多家承运商各有独立档案。
+ * active_task_count 为该档案名下进行中任务数，用于多档案时自动定位承运商。
+ */
+async function driverProfiles(phone) {
+  const rows = await query(
+    `SELECT d.id AS driver_id, d.driver_name, d.phone, d.status, d.carrier_id, c.carrier_name
+     FROM driver d
+     LEFT JOIN carrier c ON c.id = d.carrier_id
+     WHERE d.phone = ? AND d.deleted = 0
+     ORDER BY d.id`,
+    [phone]
+  );
+  if (!rows.length) return [];
+  const ids = rows.map((r) => Number(r.driver_id));
+  const counts = await query(
+    `SELECT driver_id, COUNT(*) AS n FROM shipping_task
+     WHERE deleted = 0
+       AND driver_id IN (${ids.map(() => '?').join(',')})
+       AND status IN (${ACTIVE_TASK_STATUSES.map(() => '?').join(',')})
+     GROUP BY driver_id`,
+    [...ids, ...ACTIVE_TASK_STATUSES]
+  );
+  const activeMap = new Map(counts.map((c) => [Number(c.driver_id), Number(c.n)]));
+  return rows.map((r) => ({
+    driver_id: Number(r.driver_id),
+    driver_name: r.driver_name,
+    phone: r.phone,
+    status: Number(r.status),
+    carrier_id: r.carrier_id === null ? null : Number(r.carrier_id),
+    carrier_name: r.carrier_name || '',
+    active_task_count: activeMap.get(Number(r.driver_id)) || 0,
+  }));
+}
+
+/** 多承运商时的一次性选择凭证：5 分钟有效、绑定手机号、用后作废 */
+async function createLoginTicket(phone) {
+  const ticket = crypto.randomBytes(24).toString('hex');
+  await query(
+    'INSERT INTO login_ticket (ticket, phone, expire_time) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND))',
+    [ticket, phone, TICKET_TTL_SECONDS]
+  );
+  return ticket;
+}
+
+async function consumeLoginTicket(ticket) {
+  const rows = await query(
+    'SELECT * FROM login_ticket WHERE ticket = ? AND used = 0 AND expire_time > NOW() LIMIT 1',
+    [ticket]
+  );
+  if (!rows.length) throw errAuth('选择已过期，请重新获取验证码');
+  await query('UPDATE login_ticket SET used = 1 WHERE id = ?', [rows[0].id]);
+  return rows[0];
+}
+
+/** 司机登录：确保账号存在、签发带承运商上下文的 token */
+async function loginDriver(res, driver, extra = {}) {
+  const { accountId } = await withTransaction(async (conn) => {
+    const result = await ensureDriverAccount(conn, {
+      driverId: driver.driver_id,
+      driverName: driver.driver_name,
+      phone: driver.phone,
+      carrierId: driver.carrier_id,
+      operator: '司机登录',
+    });
+    if (result.blocked) throw errBiz('该手机号在本承运商已被其他司机占用，请联系承运商处理');
+    return result;
+  });
+  const [account] = await query('SELECT * FROM sys_account WHERE id = ? AND deleted = 0', [accountId]);
+  if (!account) throw errAuth('账号不存在，请联系承运商');
+  if (Number(account.status) !== 1) throw errAuth('账号已停用，请联系承运商');
+
+  await query('UPDATE sys_account SET last_login_time = NOW() WHERE id = ?', [account.id]);
+  const profile = await loadProfile(account);
+  const token = signToken({
+    sub: account.id,
+    type: 'DRIVER',
+    carrierId: driver.carrier_id,
+    driverId: driver.driver_id,
+    name: driver.driver_name,
+    role: 'DRIVER',
+  });
+  ok(res, { need_choice: false, token, profile, ...extra }, '登录成功');
+}
+
+/**
  * 后台登录：平台管理员、承运商管理员、承运商调度。
  * 司机账号在此被拒绝，只能走小程序。
  */
@@ -170,9 +261,10 @@ router.post('/staff-login', wrap(async (req, res) => {
 /** 获取短信验证码（司机） */
 router.post('/sms-code', wrap(async (req, res) => {
   const phone = normalizePhone(req.body.phone);
-  const drivers = await query('SELECT * FROM driver WHERE phone = ? AND deleted = 0', [phone]);
+  const drivers = await query('SELECT status FROM driver WHERE phone = ? AND deleted = 0', [phone]);
   if (!drivers.length) throw errNotFound('该手机号未登记为司机，请联系承运商添加');
-  if (Number(drivers[0].status) !== 1) throw errBiz('该司机已停用，请联系承运商');
+  // 同手机号可能在多家承运商各有档案，只要有一份启用即可收码
+  if (!drivers.some((d) => Number(d.status) === 1)) throw errBiz('该司机已停用，请联系承运商');
 
   const code = String(Math.floor(100000 + Math.random() * 900000));
   await query(
@@ -186,7 +278,14 @@ router.post('/sms-code', wrap(async (req, res) => {
   ok(res, mock ? { dev_code: code, mock: true } : { mock: false }, '验证码已发送');
 }));
 
-/** 司机验证码登录，首次登录自动开通账号 */
+/**
+ * 司机验证码登录，首次登录自动开通账号。
+ *
+ * 承运商定位规则：
+ *   1. 只有一份启用档案 → 直接登录；
+ *   2. 多份档案且只有一份有进行中任务 → 自动登录该承运商；
+ *   3. 其余情况 → 返回承运商列表和一次性 ticket，由司机选择后再换 token。
+ */
 router.post('/sms-login', wrap(async (req, res) => {
   const phone = normalizePhone(req.body.phone);
   const code = String(req.body.code ?? '').trim();
@@ -202,38 +301,79 @@ router.post('/sms-login', wrap(async (req, res) => {
   if (codes[0].code !== code) throw errAuth('验证码不正确');
   await query('UPDATE sms_code SET used = 1 WHERE id = ?', [codes[0].id]);
 
-  const drivers = await query('SELECT * FROM driver WHERE phone = ? AND deleted = 0 ORDER BY id', [phone]);
-  if (!drivers.length) throw errNotFound('司机不存在');
+  const all = await driverProfiles(phone);
+  if (!all.length) throw errNotFound('该手机号未登记为司机，请联系承运商添加');
+  const enabled = all.filter((d) => d.status === 1);
+  if (!enabled.length) throw errBiz('该司机已停用，请联系承运商');
+
   const carrierId = req.body.carrier_id ? Number(req.body.carrier_id) : null;
-  const driver = carrierId
-    ? drivers.find((d) => Number(d.carrier_id) === carrierId)
-    : drivers[0];
-  if (!driver) throw errAuth('该承运商下没有此司机档案');
-  if (Number(driver.status) !== 1) throw errBiz('该司机已停用，请联系承运商');
-
-  let accounts = await query(
-    `SELECT * FROM sys_account WHERE account_type = 'DRIVER' AND driver_id = ? AND deleted = 0`,
-    [driver.id]
-  );
-  if (!accounts.length) {
-    const ins = await query(
-      `INSERT INTO sys_account (account_type, phone, password_hash, display_name, carrier_id, driver_id, role, status, create_name, update_name)
-       VALUES ('DRIVER', ?, NULL, ?, ?, ?, 'DRIVER', 1, '司机自助开通', '司机自助开通')`,
-      [phone, driver.driver_name, driver.carrier_id, driver.id]
-    );
-    accounts = await query('SELECT * FROM sys_account WHERE id = ?', [ins.insertId]);
+  if (carrierId) {
+    const target = enabled.find((d) => d.carrier_id === carrierId);
+    if (!target) throw errAuth('该承运商下没有可用的司机档案');
+    return loginDriver(res, target);
   }
-  const account = accounts[0];
-  if (Number(account.status) !== 1) throw errAuth('账号已停用，请联系承运商');
 
-  await query('UPDATE sys_account SET last_login_time = NOW(), phone = ?, display_name = ? WHERE id = ?',
-    [phone, driver.driver_name, account.id]);
-  const profile = await loadProfile({ ...account, phone, display_name: driver.driver_name });
-  const token = signToken({
-    sub: account.id, type: 'DRIVER', carrierId: null,
-    driverId: driver.id, name: driver.driver_name, role: 'DRIVER',
-  });
-  ok(res, { token, profile }, '登录成功');
+  if (enabled.length === 1) return loginDriver(res, enabled[0]);
+
+  const working = enabled.filter((d) => d.active_task_count > 0);
+  if (working.length === 1) return loginDriver(res, working[0], { auto_selected: true });
+
+  const ticket = await createLoginTicket(phone);
+  return ok(res, {
+    need_choice: true,
+    ticket,
+    expire_in: TICKET_TTL_SECONDS,
+    carriers: enabled.map((d) => ({
+      carrier_id: d.carrier_id,
+      carrier_name: d.carrier_name,
+      driver_id: d.driver_id,
+      driver_name: d.driver_name,
+      active_task_count: d.active_task_count,
+    })),
+  }, '该手机号属于多家承运商，请选择要登录的承运商');
+}));
+
+/** 多承运商登录：凭 ticket + 选择的承运商换 token */
+router.post('/sms-login/confirm', wrap(async (req, res) => {
+  const ticket = String(req.body.ticket ?? '').trim();
+  const carrierId = Number(req.body.carrier_id);
+  if (!ticket) throw errParam('缺少选择凭证');
+  if (!carrierId) throw errParam('请选择要登录的承运商');
+
+  const record = await consumeLoginTicket(ticket);
+  const enabled = (await driverProfiles(record.phone)).filter((d) => d.status === 1);
+  const target = enabled.find((d) => d.carrier_id === carrierId);
+  if (!target) throw errAuth('该承运商下没有可用的司机档案');
+  return loginDriver(res, target);
+}));
+
+/** 当前司机可登录的承运商列表（切换承运商用） */
+router.get('/my-carriers', requireAuth(), wrap(async (req, res) => {
+  if (req.auth.type !== 'DRIVER') throw errBiz('仅司机账号可查询');
+  const [account] = await query('SELECT * FROM sys_account WHERE id = ? AND deleted = 0', [req.auth.sub]);
+  if (!account) throw errAuth('账号不存在');
+  const list = (await driverProfiles(account.phone)).filter((d) => d.status === 1);
+  ok(res, list.map((d) => ({
+    carrier_id: d.carrier_id,
+    carrier_name: d.carrier_name,
+    driver_id: d.driver_id,
+    driver_name: d.driver_name,
+    active_task_count: d.active_task_count,
+    current: Number(d.driver_id) === Number(account.driver_id),
+  })));
+}));
+
+/** 司机切换承运商：校验目标档案归属后重签 token，无需重新收验证码 */
+router.post('/switch-carrier', requireAuth(), wrap(async (req, res) => {
+  if (req.auth.type !== 'DRIVER') throw errBiz('仅司机账号可切换承运商');
+  const carrierId = Number(req.body.carrier_id);
+  if (!carrierId) throw errParam('请选择承运商');
+  const [account] = await query('SELECT * FROM sys_account WHERE id = ? AND deleted = 0', [req.auth.sub]);
+  if (!account) throw errAuth('账号不存在');
+  const target = (await driverProfiles(account.phone))
+    .find((d) => d.carrier_id === carrierId && d.status === 1);
+  if (!target) throw errAuth('该承运商下没有可用的司机档案');
+  return loginDriver(res, target);
 }));
 
 /** 当前登录账号 */

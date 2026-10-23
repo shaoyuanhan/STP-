@@ -83,6 +83,19 @@ CREATE TABLE IF NOT EXISTS `sms_code` (
   KEY `idx_phone_scene` (`phone`,`scene`,`used`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='短信验证码表';
 
+-- 司机多承运商登录：验证码通过后的一次性选择凭证（5 分钟）
+CREATE TABLE IF NOT EXISTS `login_ticket` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `ticket` CHAR(48) NOT NULL COMMENT '一次性凭证',
+  `phone` VARCHAR(25) NOT NULL COMMENT '绑定手机号',
+  `expire_time` DATETIME NOT NULL COMMENT '过期时间',
+  `used` TINYINT NOT NULL DEFAULT 0 COMMENT '是否已使用',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ticket` (`ticket`),
+  KEY `idx_phone` (`phone`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='司机多承运商登录选择凭证';
+
 CREATE TABLE IF NOT EXISTS `driver_wx_binding` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `driver_id` BIGINT UNSIGNED NOT NULL,

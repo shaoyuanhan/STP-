@@ -11,6 +11,7 @@ const {
 const { requireAuth } = require('../services/security');
 const { loadAccess, applyTaskScope } = require('../services/access');
 const { assignDriver } = require('../services/taskFlow');
+const { ensureDriverAccount, assertAccountReady } = require('../services/driverAccount');
 
 const router = Router();
 router.use(requireAuth(['CARRIER', 'ADMIN']));
@@ -297,20 +298,14 @@ router.post('/drivers', wrap(async (req, res) => {
       driverId = ins.insertId;
     }
 
-    const [accounts] = await conn.query(
-      `SELECT * FROM sys_account WHERE account_type = 'DRIVER' AND driver_id = ? AND deleted = 0`,
-      [driverId]
-    );
-    if (!accounts.length) {
-      await conn.query(
-        `INSERT INTO sys_account (account_type, phone, password_hash, display_name, carrier_id, driver_id, role, status, create_name, update_name)
-         VALUES ('DRIVER', ?, NULL, ?, ?, ?, 'DRIVER', 1, ?, ?)`,
-        [phone, name, carrierId, driverId, operator, operator]
-      );
-    } else {
-      await conn.query('UPDATE sys_account SET phone = ?, display_name = ?, carrier_id = ?, update_name = ? WHERE id = ?',
-        [phone, name, carrierId, operator, accounts[0].id]);
-    }
+    const account = await ensureDriverAccount(conn, {
+      driverId,
+      driverName: name,
+      phone,
+      carrierId,
+      operator,
+    });
+    assertAccountReady(account, phone);
     return { driverId, reused };
   });
 
@@ -349,10 +344,14 @@ router.put('/drivers/:id', wrap(async (req, res) => {
               license_valid_to = ?, remark = ?, update_name = ? WHERE id = ?`,
       [phone, licenseNo, licenseType, from, to, remark, req.auth.name, id]
     );
-    await conn.query(
-      `UPDATE sys_account SET phone = ?, update_name = ? WHERE account_type = 'DRIVER' AND driver_id = ? AND deleted = 0`,
-      [phone, req.auth.name, id]
-    );
+    const account = await ensureDriverAccount(conn, {
+      driverId: id,
+      driverName: driver.driver_name,
+      phone,
+      carrierId: driver.carrier_id,
+      operator: req.auth.name,
+    });
+    assertAccountReady(account, phone);
   });
 
   const [updated] = await query('SELECT * FROM driver WHERE id = ?', [id]);

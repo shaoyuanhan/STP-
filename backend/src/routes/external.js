@@ -25,7 +25,7 @@ const {
   wrap, ok, errParam, errBiz, errDup, errState, errNotFound,
   localDateStr, assertPhone, assertIdCard, assertAmount, cutStr,
 } = require('../helpers');
-const { hashPassword } = require('../services/security');
+const { ensureDriverAccount } = require('../services/driverAccount');
 
 const router = Router();
 
@@ -443,58 +443,6 @@ function normalizeDriverInput(raw) {
 }
 
 /**
- * 司机登录账号：狮桥同步的司机需能登录小程序，无账号时按默认密码补建；
- * 已存在则同步姓名/手机号（手机号被其他司机账号占用时不动，避免唯一索引冲突）
- */
-async function ensureDriverAccount(conn, { driverId, driverName, phone, carrierId }) {
-  const name = cutStr(driverName, 64);
-  const [byDriver] = await conn.query(
-    "SELECT id FROM sys_account WHERE driver_id = ? AND account_type = 'DRIVER' AND deleted = 0",
-    [driverId]
-  );
-  if (byDriver.length) {
-    const accountId = byDriver[0].id;
-    // 同承运商内手机号被其他司机账号占用时不动手机号，避免唯一索引冲突
-    const [conflict] = await conn.query(
-      "SELECT id FROM sys_account WHERE phone = ? AND account_type = 'DRIVER' AND carrier_scope = ? AND deleted = 0 AND id <> ?",
-      [phone, carrierId, accountId]
-    );
-    if (conflict.length) {
-      await conn.query(
-        'UPDATE sys_account SET display_name = ?, carrier_id = ?, update_name = ? WHERE id = ?',
-        [name, carrierId, '狮桥物流', accountId]
-      );
-    } else {
-      await conn.query(
-        'UPDATE sys_account SET display_name = ?, phone = ?, carrier_id = ?, update_name = ? WHERE id = ?',
-        [name, phone, carrierId, '狮桥物流', accountId]
-      );
-    }
-    return accountId;
-  }
-  // 同承运商内手机号已有司机账号（如司机档案重建）：直接关联到当前司机
-  const [byPhone] = await conn.query(
-    "SELECT id FROM sys_account WHERE phone = ? AND account_type = 'DRIVER' AND carrier_scope = ? AND deleted = 0",
-    [phone, carrierId]
-  );
-  if (byPhone.length) {
-    const accountId = byPhone[0].id;
-    await conn.query(
-      'UPDATE sys_account SET driver_id = ?, display_name = ?, update_name = ? WHERE id = ?',
-      [driverId, name, '狮桥物流', accountId]
-    );
-    return accountId;
-  }
-  const [r] = await conn.query(
-    `INSERT INTO sys_account
-      (account_type, phone, password_hash, display_name, carrier_id, driver_id, role, status, create_name, update_name)
-     VALUES ('DRIVER', ?, ?, ?, ?, ?, 'DRIVER001', 1, '狮桥物流', '狮桥物流')`,
-    [phone, hashPassword(process.env.DEFAULT_DRIVER_PASSWORD || '123456'), name, carrierId, driverId]
-  );
-  return r.insertId;
-}
-
-/**
  * 单条司机同步：校验 + 按承运商 UPSERT，调用方需提供事务连接
  * 司机档案按承运商隔离：carrierIds 有几家就维护几份档案
  * 匹配优先级：承运商内 externalDriverId（第三方ID）→ 承运商内 idCard（身份证号）
@@ -585,7 +533,7 @@ async function syncOneDriver(conn, raw) {
       created = true;
     }
     driverIds.push(driverId);
-    await ensureDriverAccount(conn, { driverId, driverName, phone, carrierId });
+    await ensureDriverAccount(conn, { driverId, driverName, phone, carrierId, operator: '狮桥物流' });
   }
 
   return {

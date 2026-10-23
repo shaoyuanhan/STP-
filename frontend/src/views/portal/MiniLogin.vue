@@ -1,19 +1,54 @@
 <script setup lang="ts">
 /**
- * 司机小程序登录。只接受司机账号，风格与后台登录页一致：白底、深向标识、黑按钮。
+ * 司机小程序登录。默认手机号 + 短信验证码（司机日常只记手机号）。
+ * 同一手机号在多家承运商有档案时：
+ *   - 只有一家有在途任务 → 后端自动进入该家；
+ *   - 否则弹承运商选择面板，选完再换 token。
+ * 需要密码登录的司机可通过底部入口切换。
  */
-import { ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import { driverPasswordLogin, setSession } from '@/services/portal'
+import CarrierSheet from '@/components/CarrierSheet.vue'
+import {
+  confirmSmsLogin,
+  driverPasswordLogin,
+  sendSmsCode,
+  setSession,
+  smsLogin,
+  type DriverCarrierOption,
+  type PortalProfile,
+} from '@/services/portal'
 
 const router = useRouter()
 const message = useMessage()
+
+const mode = ref<'sms' | 'password'>('sms')
+const phone = ref('')
+const code = ref('')
 const account = ref('')
 const password = ref('')
+
 const loading = ref(false)
+const countdown = ref(0)
+const devCode = ref('')
+const lastCarrier = ref<number | null>(Number(localStorage.getItem('stp_last_carrier')) || null)
+
+const tickets = ref('')
+const carriers = ref<DriverCarrierOption[]>([])
+const showSheet = ref(false)
+
+let timer: number | undefined
+const codeButtonText = computed(() => (countdown.value > 0 ? `${countdown.value}s 后重发` : '获取验证码'))
 
 // 自动填充/输入法常带入空格或横线，统一过滤为连续字符，避免用户看到 "139 1111 0008" 这类分组
+function onPhoneInput(e: Event) {
+  const el = e.target as HTMLInputElement
+  const cleaned = el.value.replace(/[\s-]/g, '')
+  if (el.value !== cleaned) el.value = cleaned
+  phone.value = cleaned
+}
+
 function onAccountInput(e: Event) {
   const el = e.target as HTMLInputElement
   const cleaned = el.value.replace(/[\s-]/g, '')
@@ -21,7 +56,86 @@ function onAccountInput(e: Event) {
   account.value = cleaned
 }
 
-async function onSubmit() {
+function startCountdown() {
+  countdown.value = 60
+  window.clearInterval(timer)
+  timer = window.setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0) window.clearInterval(timer)
+  }, 1000)
+}
+
+onBeforeUnmount(() => window.clearInterval(timer))
+
+async function onSendCode() {
+  if (!/^1\d{10}$/.test(phone.value)) {
+    message.warning('请输入 11 位手机号')
+    return
+  }
+  loading.value = true
+  try {
+    const res = await sendSmsCode(phone.value)
+    devCode.value = res.dev_code || ''
+    startCountdown()
+    message.success(res.dev_code ? `验证码已发送（测试环境：${res.dev_code}）` : '验证码已发送')
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '发送失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function enter(token: string, profile: PortalProfile, auto: boolean) {
+  setSession(token, profile)
+  localStorage.setItem('stp_last_carrier', String(profile.carrier_id ?? ''))
+  message.success(
+    auto && profile.carrier_name
+      ? `已进入 ${profile.carrier_name}`
+      : `登录成功，${profile.driver_name || profile.name}`
+  )
+  router.replace('/m/tasks')
+}
+
+async function onSmsSubmit() {
+  if (!/^1\d{10}$/.test(phone.value)) {
+    message.warning('请输入 11 位手机号')
+    return
+  }
+  if (!/^\d{6}$/.test(code.value)) {
+    message.warning('请输入 6 位验证码')
+    return
+  }
+  loading.value = true
+  try {
+    const res = await smsLogin(phone.value, code.value)
+    if (res.need_choice) {
+      tickets.value = res.ticket
+      carriers.value = res.carriers
+      showSheet.value = true
+      return
+    }
+    enter(res.token, res.profile, Boolean(res.auto_selected))
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '登录失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function onPickCarrier(carrierId: number) {
+  loading.value = true
+  try {
+    const res = await confirmSmsLogin(tickets.value, carrierId)
+    showSheet.value = false
+    enter(res.token, res.profile, false)
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '登录失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function onPasswordSubmit() {
   if (!account.value.trim()) {
     message.warning('请输入账号')
     return
@@ -33,9 +147,7 @@ async function onSubmit() {
   loading.value = true
   try {
     const res = await driverPasswordLogin(account.value, password.value)
-    setSession(res.token, res.profile)
-    message.success(`登录成功，${res.profile.driver_name || res.profile.name}`)
-    router.replace('/m/tasks')
+    enter(res.token, res.profile, false)
   } catch (e) {
     message.error(e instanceof Error ? e.message : '登录失败')
   } finally {
@@ -57,23 +169,59 @@ async function onSubmit() {
           <span>深向</span>
         </div>
         <p class="mini__title">司机小程序</p>
-        <form @submit.prevent="onSubmit">
+
+        <form v-if="mode === 'sms'" @submit.prevent="onSmsSubmit">
           <label>
             <input
-              :value="account"
-              placeholder="请输入账号或手机号"
-              autocomplete="username"
-              @input="onAccountInput"
+              :value="phone"
+              inputmode="numeric"
+              placeholder="请输入手机号"
+              autocomplete="tel"
+              @input="onPhoneInput"
             />
+          </label>
+          <label class="mini__code">
+            <input
+              v-model="code"
+              inputmode="numeric"
+              maxlength="6"
+              placeholder="请输入验证码"
+              autocomplete="one-time-code"
+            />
+            <button type="button" class="mini__send" :disabled="loading || countdown > 0" @click="onSendCode">
+              {{ codeButtonText }}
+            </button>
+          </label>
+          <button type="submit" :disabled="loading">{{ loading ? '登录中…' : '登 录' }}</button>
+        </form>
+
+        <form v-else @submit.prevent="onPasswordSubmit">
+          <label>
+            <input :value="account" placeholder="请输入账号或手机号" autocomplete="username" @input="onAccountInput" />
           </label>
           <label>
             <input v-model="password" type="password" placeholder="请输入密码" autocomplete="current-password" />
           </label>
           <button type="submit" :disabled="loading">{{ loading ? '登录中…' : '登 录' }}</button>
         </form>
+
+        <p class="mini__switch">
+          <button type="button" @click="mode = mode === 'sms' ? 'password' : 'sms'">
+            {{ mode === 'sms' ? '使用密码登录' : '使用手机号验证码登录' }}
+          </button>
+        </p>
         <p class="mini__copy">©2024 安徽深向科技有限公司</p>
       </div>
     </div>
+
+    <CarrierSheet
+      :show="showSheet"
+      :carriers="carriers"
+      :current="lastCarrier"
+      :loading="loading"
+      @select="onPickCarrier"
+      @close="showSheet = false"
+    />
   </div>
 </template>
 
@@ -132,11 +280,36 @@ input {
   border-radius: 4px;
   font-size: 14px;
   outline: none;
+  box-sizing: border-box;
 }
 input:focus {
   border-color: #1a1a1a;
 }
-button {
+.mini__code {
+  position: relative;
+  display: block;
+}
+.mini__code input {
+  padding-right: 112px;
+}
+.mini__send {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  height: 30px;
+  min-width: 96px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: #fff;
+  color: #1a1a1a;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mini__send:disabled {
+  color: #bfbfbf;
+  cursor: default;
+}
+button[type='submit'] {
   height: 42px;
   margin-top: 6px;
   border: 0;
@@ -147,8 +320,19 @@ button {
   letter-spacing: 6px;
   cursor: pointer;
 }
-button:disabled {
+button[type='submit']:disabled {
   opacity: 0.7;
+}
+.mini__switch {
+  margin: 14px 0 0;
+  text-align: center;
+}
+.mini__switch button {
+  border: 0;
+  background: transparent;
+  color: #595959;
+  font-size: 12px;
+  cursor: pointer;
 }
 .mini__copy {
   margin: 28px 0 0;
