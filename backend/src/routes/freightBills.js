@@ -15,11 +15,12 @@ const router = Router();
 
 /** 列表与导出共用的筛选条件 */
 function freightWhere(q) {
-  const { freight_no = '', task_no = '', carrier_id = '', reconcile_status = '' } = q;
+  const { freight_no = '', task_no = '', order_no = '', carrier_id = '', reconcile_status = '' } = q;
   const where = ['f.deleted = 0'];
   const params = [];
   if (freight_no) where.push('f.freight_no LIKE ?'), params.push(`%${freight_no}%`);
   if (task_no) where.push('f.task_no LIKE ?'), params.push(`%${task_no}%`);
+  if (order_no) where.push('t.order_no LIKE ?'), params.push(`%${order_no}%`);
   if (carrier_id) where.push('f.carrier_id = ?'), params.push(Number(carrier_id));
   if (reconcile_status !== '' && reconcile_status !== undefined && reconcile_status !== null) {
     where.push('f.reconcile_status = ?');
@@ -32,6 +33,7 @@ function freightWhere(q) {
 const FREIGHT_EXPORT_COLUMNS = [
   { header: '运费单号', value: (r) => r.freight_no, width: 20 },
   { header: '任务单号', value: (r) => r.task_no, width: 20 },
+  { header: '订单号', value: (r) => text(r.order_no), width: 20 },
   { header: '客户', value: (r) => text(r.customer_name), width: 20 },
   { header: '承运商', value: (r) => text(r.carrier_name), width: 24 },
   { header: '起点', value: (r) => text(r.start_location), width: 20 },
@@ -50,7 +52,7 @@ const BILL_SELECT = `
   SELECT f.*,
          c.carrier_name, c.carrier_code,
          d.driver_name,
-         t.customer_name, t.apply_no, t.status AS task_status
+         t.customer_name, t.order_no, t.apply_no, t.status AS task_status
   FROM freight_bill f
   LEFT JOIN carrier c ON c.id = f.carrier_id
   LEFT JOIN driver d ON d.id = f.driver_id
@@ -61,10 +63,10 @@ router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
   const { whereSql, params } = freightWhere(req.query);
 
-  const totalRows = await query(`SELECT COUNT(*) AS n FROM freight_bill f ${whereSql}`, params);
+  const totalRows = await query(`SELECT COUNT(*) AS n FROM freight_bill f LEFT JOIN shipping_task t ON t.id = f.task_id ${whereSql}`, params);
   const sumRows = await query(
     `SELECT COALESCE(SUM(f.actual_freight), 0) AS amount, COALESCE(SUM(f.plan_freight), 0) AS plan_amount
-     FROM freight_bill f ${whereSql}`,
+     FROM freight_bill f LEFT JOIN shipping_task t ON t.id = f.task_id ${whereSql}`,
     params
   );
   const list = await query(`${BILL_SELECT} ${whereSql} ORDER BY f.create_time DESC, f.id DESC LIMIT ? OFFSET ?`, [...params, size, offset]);

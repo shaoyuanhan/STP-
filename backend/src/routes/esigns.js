@@ -27,21 +27,22 @@ const TASK_STATUS_LABELS = {
   CANCELLED: '已取消',
 };
 
-/** 列表与导出共用筛选：esign_id/task_no/vin/apply_no/sign_status */
+/** 列表与导出共用筛选：esign_id/task_no/vin/order_no/apply_no/sign_status */
 function esignWhere(q) {
-  const { esign_id = '', task_no = '', vin = '', apply_no = '', sign_status = '' } = q;
+  const { esign_id = '', task_no = '', vin = '', order_no = '', apply_no = '', sign_status = '' } = q;
   const where = ['e.deleted = 0'];
   const params = [];
   if (esign_id) where.push('e.esign_id LIKE ?'), params.push(`%${esign_id}%`);
   if (task_no) where.push('e.task_no LIKE ?'), params.push(`%${task_no}%`);
   if (vin) where.push('e.vin LIKE ?'), params.push(`%${vin}%`);
+  if (order_no) where.push('t.order_no LIKE ?'), params.push(`%${order_no}%`);
   if (apply_no) where.push('e.apply_no LIKE ?'), params.push(`%${apply_no}%`);
   if (sign_status) where.push('e.sign_status = ?'), params.push(sign_status);
   return { whereSql: `WHERE ${where.join(' AND ')}`, params };
 }
 
 const ESIGN_SELECT = `
-  SELECT e.*, t.status AS task_status, t.customer_name
+  SELECT e.*, t.status AS task_status, t.customer_name, t.order_no
   FROM esign_record e
   LEFT JOIN shipping_task t ON t.id = e.task_id`;
 
@@ -49,6 +50,7 @@ const ESIGN_SELECT = `
 const ESIGN_EXPORT_COLUMNS = [
   { header: '电子签 ID', value: (r) => r.esign_id, width: 32 },
   { header: '任务单号', value: (r) => text(r.task_no), width: 20 },
+  { header: '订单号', value: (r) => text(r.order_no), width: 20 },
   { header: '发运申请号', value: (r) => text(r.apply_no), width: 20 },
   { header: '客户', value: (r) => text(r.customer_name), width: 20 },
   { header: 'VIN', value: (r) => text(r.vin), width: 22 },
@@ -62,12 +64,15 @@ const ESIGN_EXPORT_COLUMNS = [
   { header: '创建时间', value: (r) => dateTime(r.create_time), width: 18 },
 ];
 
-/** 台账列表：esign_id/task_no/vin/apply_no/sign_status 筛选 */
+/** 台账列表：esign_id/task_no/vin/order_no/apply_no/sign_status 筛选 */
 router.get('/', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
   const { whereSql, params } = esignWhere(req.query);
 
-  const totalRows = await query(`SELECT COUNT(*) AS n FROM esign_record e ${whereSql}`, params);
+  const totalRows = await query(
+    `SELECT COUNT(*) AS n FROM esign_record e LEFT JOIN shipping_task t ON t.id = e.task_id ${whereSql}`,
+    params
+  );
   const list = await query(
     `${ESIGN_SELECT}
      ${whereSql}

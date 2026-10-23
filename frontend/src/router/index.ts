@@ -47,7 +47,7 @@ const routes: RouteRecordRaw[] = [
         path: 'tracking',
         name: 'tracking',
         component: () => import('@/views/dispatch/tracking/index.vue'),
-        meta: { title: '运输监控', group: '运输调度' },
+        meta: { title: '在途监控', group: '运输调度' },
       },
       {
         path: 'freight',

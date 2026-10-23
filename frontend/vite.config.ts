@@ -16,7 +16,7 @@ export default defineConfig({
     // 后端固定 3000，开发环境 /api 走代理（见 docs/api-contract.md 第 1 节）
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: process.env.API_PROXY_TARGET || 'http://localhost:3000',
         changeOrigin: true,
       },
     },

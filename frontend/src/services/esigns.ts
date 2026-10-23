@@ -11,6 +11,8 @@ export interface EsignRow extends EsignRecord {
   task_status?: TaskStatus | null
   /** 客户名称（联查 shipping_task.customer_name） */
   customer_name?: string | null
+  /** 订单号（联查 shipping_task.order_no） */
+  order_no?: string | null
 }
 
 /** 电子签台账分页列表（签 ID/任务号/VIN/申请号/签署状态筛选，行含任务状态/客户名称联查字段） */

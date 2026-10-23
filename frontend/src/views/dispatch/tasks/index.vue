@@ -59,6 +59,7 @@ async function loadCarrierOptions() {
 // ---------------- 筛选 ----------------
 const filter = reactive({
   task_no: '',
+  order_no: '',
   apply_no: '',
   vin: '',
   customer_name: '',
@@ -74,6 +75,7 @@ const statusOptions = computed<SelectOption[]>(() =>
 /** 已应用的查询（_t 变化强制 PageTable 重新请求） */
 type AppliedQuery = {
   task_no?: string
+  order_no?: string
   apply_no?: string
   vin?: string
   customer_name?: string
@@ -88,6 +90,7 @@ const applied = ref<AppliedQuery>({ _t: 0 })
 function buildAppliedQuery(): AppliedQuery {
   return {
     task_no: filter.task_no.trim() || undefined,
+    order_no: filter.order_no.trim() || undefined,
     apply_no: filter.apply_no.trim() || undefined,
     vin: filter.vin.trim() || undefined,
     customer_name: filter.customer_name.trim() || undefined,
@@ -105,6 +108,7 @@ function handleSearch() {
 
 function handleReset() {
   filter.task_no = ''
+  filter.order_no = ''
   filter.apply_no = ''
   filter.vin = ''
   filter.customer_name = ''
@@ -143,6 +147,7 @@ async function fetchTasks({ page, pageSize }: { page: number; pageSize: number }
     page,
     size: pageSize,
     task_no: q.task_no,
+    order_no: q.order_no,
     apply_no: q.apply_no,
     vin: q.vin,
     customer_name: q.customer_name,
@@ -262,6 +267,7 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
         { default: () => row.task_no },
       ),
   },
+  { title: '订单号', key: 'order_no', width: 150, render: (row) => row.order_no || '-' },
   { title: '发运申请号', key: 'apply_no', width: 150 },
   {
     title: '客户名称',
@@ -410,6 +416,16 @@ function refreshList() {
           <span class="page-card__label">任务单号</span>
           <n-input
             v-model:value="filter.task_no"
+            class="page-card__input page-card__input--s"
+            clearable
+            placeholder="请输入"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="page-card__field">
+          <span class="page-card__label">订单号</span>
+          <n-input
+            v-model:value="filter.order_no"
             class="page-card__input page-card__input--s"
             clearable
             placeholder="请输入"

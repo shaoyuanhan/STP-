@@ -249,6 +249,7 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
             <n-descriptions-item label="任务状态">
               <StatusTag type="task" :value="task.status" />
             </n-descriptions-item>
+            <n-descriptions-item label="订单号">{{ task.order_no || '-' }}</n-descriptions-item>
             <n-descriptions-item label="发运申请单号">{{ task.apply_no || '-' }}</n-descriptions-item>
             <n-descriptions-item label="客户名称（合同主体）">{{ task.customer_name || '-' }}</n-descriptions-item>
             <n-descriptions-item label="大区">{{ task.region || '-' }}</n-descriptions-item>

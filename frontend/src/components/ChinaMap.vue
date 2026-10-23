@@ -94,6 +94,8 @@ const props = withDefaults(
     routeAlert?: boolean
     /** 已到达或已完结：终点并入已行驶实线，不再画未行驶虚线 */
     arrived?: boolean
+    /** setFitView 避让 [上, 下, 左, 右]，给左侧列表和运单卡片让位 */
+    fitAvoid?: number[] | null
     height?: number | string
   }>(),
   {
@@ -116,6 +118,7 @@ const props = withDefaults(
     legend: null,
     routeAlert: false,
     arrived: false,
+    fitAvoid: null,
     height: 520,
   },
 )
@@ -581,8 +584,9 @@ function labeledDot(color: string, label: string, place: 'top' | 'bottom'): stri
 
 function syncView() {
   if (!map) return
+  const avoid = (props.fitAvoid ?? [36, 36, 36, 48]).join(',')
   const key = props.fit
-    ? `d:${props.routeAlert}:${props.stops?.length ?? 0}:${props.origin?.text ?? ''}:${props.dest?.text ?? ''}`
+    ? `d:${avoid}:${props.routeAlert}:${props.stops?.length ?? 0}:${props.origin?.text ?? ''}:${props.dest?.text ?? ''}`
     : `o:${props.links.map((link) => `${link.id}:${link.alert ? 1 : 0}`).join(',')}:${props.bubbles.map((item) => item.key).join(',')}`
   if (key === viewKey) return
   viewKey = key
@@ -590,7 +594,7 @@ function syncView() {
   map.setPitch?.(props.fit ? 0 : 42, true)
   map.setRotation?.(0, true)
   if (props.fit || props.links.length || props.bubbles.length) {
-    map.setFitView(null, false, [36, 36, 36, 48], props.fit ? 11 : 6.5)
+    map.setFitView(null, false, props.fitAvoid ?? [36, 36, 36, 48], props.fit ? 11 : 6.5)
   } else {
     map.setZoomAndCenter(4.4, [104.2, 36.2], true)
   }
@@ -719,6 +723,7 @@ watch(
     props.hubs,
     props.routeAlert,
     props.arrived,
+    props.fitAvoid,
   ],
   () => {
     if (ready.value) draw()

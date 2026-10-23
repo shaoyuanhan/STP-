@@ -245,6 +245,7 @@ export interface ShippingTaskListItem extends AuditFields {
   id: number
   task_no: string
   apply_no: string
+  order_no?: string | null
   customer_name: string
   /** GROUP_CONCAT 顿号连接 */
   vins?: string
@@ -361,6 +362,7 @@ export interface ShippingTaskDetail {
 
 export interface ShippingTaskQuery extends PageQuery {
   task_no?: string
+  order_no?: string
   apply_no?: string
   vin?: string
   customer_name?: string
@@ -435,6 +437,7 @@ export interface LatestTrack {
 export interface TrackingTask {
   id: number
   task_no: string
+  order_no?: string | null
   apply_no?: string
   customer_name?: string
   vins?: string
@@ -460,6 +463,7 @@ export interface TrackingQuery extends PageQuery {
   /** transit=在途监控（默认）；history=已完结历史轨迹 */
   scope?: 'transit' | 'history'
   task_no?: string
+  apply_no?: string
   transport_no?: string
 }
 
@@ -521,6 +525,7 @@ export interface FreightAdjustLog {
 export interface FreightBillQuery extends PageQuery {
   freight_no?: string
   task_no?: string
+  order_no?: string
   carrier_id?: number | '' | null
   reconcile_status?: ReconcileStatus | '' | null
 }
@@ -567,6 +572,7 @@ export interface EsignQuery extends PageQuery {
   esign_id?: string
   task_no?: string
   vin?: string
+  order_no?: string
   apply_no?: string
   sign_status?: EsignStatus | '' | null
 }

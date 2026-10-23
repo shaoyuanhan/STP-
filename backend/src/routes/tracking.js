@@ -35,7 +35,7 @@ const LATEST_TRACK_JOIN = `LEFT JOIN (
      LEFT JOIN transport_track tr ON tr.id = lm.max_id`;
 
 /** 列表公共 SELECT 片段（VIN/车型取车辆明细聚合） */
-const LIST_FIELDS = `t.id, t.task_no, t.apply_no, t.customer_name, t.status,
+const LIST_FIELDS = `t.id, t.task_no, t.order_no, t.apply_no, t.customer_name, t.status,
             t.ship_location, t.delivery_address, t.plan_freight, t.mileage,
             t.plan_pickup_date, t.ship_time,
             t.outbound_date, t.arrive_time, t.finish_time, t.create_time, t.version,
@@ -58,7 +58,7 @@ function withLatestTrack(row) {
 /** 在途 / 已完结任务列表（scope 区分） */
 router.get('/tasks', wrap(async (req, res) => {
   const { page, size, offset } = pageOf(req.query);
-  const { task_no = '', transport_no = '' } = req.query;
+  const { task_no = '', transport_no = '', apply_no = '' } = req.query;
   const scope = String(req.query.scope ?? 'transit').trim() || 'transit';
   const statuses = SCOPE_STATUSES[scope];
   if (!statuses) throw errParam('scope 仅支持 transit（在途）或 history（已完结）');
@@ -66,6 +66,7 @@ router.get('/tasks', wrap(async (req, res) => {
   const where = [`t.deleted = 0`, `t.status IN (${statuses.map(() => '?').join(',')})`];
   const params = [...statuses];
   if (task_no) where.push('t.task_no LIKE ?'), params.push(`%${task_no}%`);
+  if (apply_no) where.push('t.apply_no LIKE ?'), params.push(`%${apply_no}%`);
   if (transport_no) {
     where.push('EXISTS (SELECT 1 FROM transport_track tr WHERE tr.task_id = t.id AND tr.deleted = 0 AND tr.transport_no LIKE ?)');
     params.push(`%${transport_no}%`);
