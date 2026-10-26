@@ -17,8 +17,9 @@ import QueryField from '@/components/QueryField.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import ConfirmAction from '@/components/ConfirmAction.vue'
 import PhoneInput from '@/components/PhoneInput.vue'
+import DetailSection from '@/components/DetailSection.vue'
 import { createCarrier, exportCarriers, listCarriers, updateCarrier, updateCarrierStatus } from '@/services/carriers'
-import { dateOnly, formatPhone } from '@/utils/format'
+import { dateOnly, datetime, formatPhone } from '@/utils/format'
 import type { Carrier, CarrierPayload, CarrierQuery, CarrierStatus } from '@/types/api'
 
 /** PageTable 实例句柄（refresh=保持当前页刷新，reload=回第一页） */
@@ -184,6 +185,11 @@ const columns: DataTableColumns<Carrier> = [
       h('div', { class: 'row-actions' }, [
         h(
           NButton,
+          { text: true, type: 'primary', onClick: () => openDetail(row) },
+          { default: () => '详情' },
+        ),
+        h(
+          NButton,
           { text: true, type: 'primary', onClick: () => openForm(row) },
           { default: () => '编辑' },
         ),
@@ -199,6 +205,15 @@ const columns: DataTableColumns<Carrier> = [
       ]),
   },
 ]
+
+// ---------------- 详情抽屉 ----------------
+const showDetail = ref(false)
+const detailRow = ref<Carrier | null>(null)
+
+function openDetail(row: Carrier) {
+  detailRow.value = row
+  showDetail.value = true
+}
 
 // ---------------- 新增 / 编辑弹窗 ----------------
 const showForm = ref(false)
@@ -384,6 +399,40 @@ async function confirmStatusChange() {
       />
     </n-card>
 
+    <!-- 承运商详情 -->
+    <n-drawer
+      v-model:show="showDetail"
+      :width="'min(760px, 94vw)'"
+      placement="right"
+    >
+      <n-drawer-content title="承运商详情" closable :native-scrollbar="false">
+        <div v-if="detailRow" class="carrier-detail">
+          <DetailSection title="基本信息" :column="2">
+            <n-descriptions-item label="承运商编码">{{ detailRow.carrier_code }}</n-descriptions-item>
+            <n-descriptions-item label="第三方承运商ID">{{ detailRow.external_carrier_id || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="承运商名称">{{ detailRow.carrier_name }}</n-descriptions-item>
+            <n-descriptions-item label="联系人">{{ detailRow.contact_person }}</n-descriptions-item>
+            <n-descriptions-item label="联系电话">{{ formatPhone(detailRow.contact_phone) }}</n-descriptions-item>
+            <n-descriptions-item label="合作路线">{{ detailRow.cooperation_routes || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="在册司机">{{ detailRow.driver_count ?? 0 }}</n-descriptions-item>
+            <n-descriptions-item label="状态">
+              <StatusTag type="carrier" :value="detailRow.status" />
+            </n-descriptions-item>
+            <n-descriptions-item label="备注" :span="2">
+              <span class="carrier-detail__remark">{{ detailRow.remark || '-' }}</span>
+            </n-descriptions-item>
+          </DetailSection>
+
+          <DetailSection title="审计信息" :column="2">
+            <n-descriptions-item label="创建人">{{ detailRow.create_name || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="创建时间">{{ datetime(detailRow.create_time) }}</n-descriptions-item>
+            <n-descriptions-item label="更新人">{{ detailRow.update_name || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="更新时间">{{ datetime(detailRow.update_time) }}</n-descriptions-item>
+          </DetailSection>
+        </div>
+      </n-drawer-content>
+    </n-drawer>
+
     <!-- 新增 / 编辑弹窗 -->
     <n-modal
       v-model:show="showForm"
@@ -518,6 +567,15 @@ async function confirmStatusChange() {
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+}
+
+.carrier-detail > :last-child {
+  margin-bottom: 0;
+}
+
+.carrier-detail__remark {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* 表单只读字段与提示 */
