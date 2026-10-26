@@ -91,7 +91,7 @@ const legend = computed(() =>
       ],
 )
 const progress = computed(() => STAGE_PCT[selected.value?.status ?? ''] ?? 0)
-const latest = computed(() => detail.value?.tracks?.at(-1) ?? selected.value?.latest_track ?? null)
+const latest = computed(() => detail.value?.tracks?.slice(-1)[0] ?? selected.value?.latest_track ?? null)
 const latestText = computed(() => {
   const track = latest.value
   if (!track?.report_time) return '暂无上报'
