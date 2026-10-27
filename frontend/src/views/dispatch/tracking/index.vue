@@ -11,6 +11,7 @@ import { matchCityGeo } from '@/lib/china-map'
 import { datetime } from '@/utils/format'
 import { TASK_STATUS_LABELS } from '@/views/dispatch/tasks/shared'
 import ChinaMap from '@/components/ChinaMap.vue'
+import StatusTag from '@/components/StatusTag.vue'
 
 type Scope = 'transit' | 'history'
 
@@ -84,10 +85,10 @@ const hasRoute = computed(() => Boolean(origin.value || dest.value || stops.valu
 const fitAvoid = computed(() => (cardOpen.value && selected.value ? [72, 88, 620, 140] : [48, 72, 300, 80]))
 const legend = computed(() =>
   arrived.value
-    ? [{ color: '#1677ff', text: '已行驶轨迹', kind: 'line' as const }]
+    ? [{ color: '#1890ff', text: '已行驶轨迹', kind: 'line' as const }]
     : [
-        { color: '#1677ff', text: '已行驶轨迹', kind: 'line' as const },
-        { color: '#94a3b8', text: '待行驶路段', kind: 'line' as const, dashed: true },
+        { color: '#1890ff', text: '已行驶轨迹', kind: 'line' as const },
+        { color: '#999999', text: '待行驶路段', kind: 'line' as const, dashed: true },
       ],
 )
 const progress = computed(() => STAGE_PCT[selected.value?.status ?? ''] ?? 0)
@@ -202,31 +203,37 @@ onMounted(() => {
   <div class="stp-page track">
     <header class="stp-page__header">
       <h1 class="stp-page__title">在途监控</h1>
-      <button type="button" class="ghost" @click="loadList">刷新列表</button>
+      <n-button :loading="loading" @click="loadList">刷新列表</n-button>
     </header>
 
-    <section class="query">
-      <label class="query__field">
-        <span>任务单号</span>
-        <input
-          v-model="draft.task_no"
-          placeholder="请输入任务单号"
-          @keydown.enter="search"
-        />
-      </label>
-      <label class="query__field">
-        <span>发运申请单号</span>
-        <input
-          v-model="draft.apply_no"
-          placeholder="请输入发运申请单号"
-          @keydown.enter="search"
-        />
-      </label>
-      <div class="query__actions">
-        <button type="button" class="ghost" @click="reset">重置</button>
-        <button type="button" class="primary" @click="search">查询</button>
+    <n-card class="query-card" :bordered="false">
+      <div class="query-bar">
+        <div class="query-fields">
+          <div class="query-item">
+            <span>任务单号</span>
+            <n-input
+              v-model:value="draft.task_no"
+              clearable
+              placeholder="请输入任务单号"
+              @keydown.enter="search"
+            />
+          </div>
+          <div class="query-item">
+            <span>发运申请单号</span>
+            <n-input
+              v-model:value="draft.apply_no"
+              clearable
+              placeholder="请输入发运申请单号"
+              @keydown.enter="search"
+            />
+          </div>
+        </div>
+        <div class="query-buttons">
+          <n-button type="primary" quaternary @click="reset">重置</n-button>
+          <n-button type="primary" @click="search">查询</n-button>
+        </div>
       </div>
-    </section>
+    </n-card>
 
     <section class="stage">
       <ChinaMap
@@ -274,7 +281,7 @@ onMounted(() => {
           >
             <div class="row__top">
               <b>{{ row.task_no }}</b>
-              <span class="pill">{{ TASK_STATUS_LABELS[row.status] || row.status }}</span>
+              <StatusTag type="task" :value="row.status" />
             </div>
             <div class="row__route">
               <span>{{ shortPlace(row.ship_location) }}</span>
@@ -301,7 +308,7 @@ onMounted(() => {
       <section v-if="cardOpen && selected" class="info">
         <header class="info__head">
           <b>{{ selected.task_no }}</b>
-          <span class="pill">{{ TASK_STATUS_LABELS[selected.status] || selected.status }}</span>
+          <StatusTag type="task" :value="selected.status" />
           <span class="info__spacer"></span>
           <button type="button" class="info__x" @click="cardOpen = false">×</button>
         </header>
@@ -340,87 +347,27 @@ onMounted(() => {
 
 <style scoped>
 .track {
-  height: calc(100vh - 88px);
+  height: calc(100vh - 110px);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding-bottom: 12px;
+  padding-bottom: 20px;
   overflow: hidden;
 }
 
-.ghost,
-.primary {
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.ghost {
-  border: 1px solid #d9d9d9;
-  background: #fff;
-  color: #262626;
-}
-
-.primary {
-  border: none;
-  background: #1677ff;
-  color: #fff;
-}
-
-.query {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  margin-bottom: 12px;
-  padding: 14px 16px;
-  background: #fff;
-  border-radius: 8px;
-}
-
-.query__field {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  color: #595959;
-  font-size: 13px;
-}
-
-.query__field span {
+.track > .stp-page__header,
+.track > .query-card {
   flex: none;
-}
-
-.query__field input {
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
-  outline: none;
-  font-size: 13px;
-}
-
-.query__field input:focus {
-  border-color: #1677ff;
-}
-
-.query__actions {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
 }
 
 .stage {
   position: relative;
   flex: 1;
   min-height: 0;
-  border-radius: 8px;
+  border: 1px solid #eeeeee;
+  border-radius: 4px;
   overflow: hidden;
-  background: #eef2f6;
+  background: #f5f6fb;
 }
 
 .stage__map {
@@ -442,16 +389,18 @@ onMounted(() => {
   width: 268px;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #eeeeee;
+  border-radius: 4px;
   box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
 }
 
 .dock__tabs {
+  flex: none;
   display: flex;
   gap: 18px;
   padding: 12px 14px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
 }
 
 .dock__tabs button {
@@ -459,13 +408,13 @@ onMounted(() => {
   padding: 0 0 10px;
   border: none;
   background: none;
-  color: #8c8c8c;
-  font-size: 13px;
+  color: #666666;
+  font-size: 14px;
   cursor: pointer;
 }
 
 .dock__tabs button.is-on {
-  color: #1677ff;
+  color: #1890ff;
   font-weight: 600;
 }
 
@@ -476,7 +425,7 @@ onMounted(() => {
   right: 0;
   bottom: -1px;
   height: 2px;
-  background: #1677ff;
+  background: #1890ff;
 }
 
 .dock__tabs em {
@@ -485,8 +434,8 @@ onMounted(() => {
   margin-left: 4px;
   padding: 0 4px;
   border-radius: 8px;
-  background: #e6f4ff;
-  color: #1677ff;
+  background: #f5f6fb;
+  color: #1890ff;
   font-style: normal;
   font-size: 12px;
   line-height: 16px;
@@ -502,27 +451,28 @@ onMounted(() => {
 
 .dock__empty {
   margin: 24px 8px;
-  color: #8c8c8c;
-  font-size: 13px;
+  color: #999999;
+  font-size: 14px;
   text-align: center;
 }
 
 .row {
   display: block;
   width: 100%;
+  scroll-margin: 12px 0;
   margin-bottom: 8px;
   padding: 10px 12px;
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
-  background: #fff;
+  border: 1px solid #eeeeee;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #2d3033;
   text-align: left;
   cursor: pointer;
 }
 
 .row.is-on {
-  background: #f3fbf6;
-  border-color: #d9f2e3;
-  box-shadow: inset 3px 0 0 #22c55e;
+  border-color: #1890ff;
+  box-shadow: inset 3px 0 0 #1890ff;
 }
 
 .row__top {
@@ -533,18 +483,9 @@ onMounted(() => {
 }
 
 .row__top b {
-  color: #262626;
-  font-size: 13px;
-}
-
-.pill {
-  flex: none;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: #e9f9ef;
-  color: #16a34a;
-  font-size: 12px;
-  line-height: 20px;
+  color: #2d3033;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .row__route {
@@ -552,14 +493,14 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   margin-top: 8px;
-  color: #262626;
-  font-size: 13px;
+  color: #2d3033;
+  font-size: 14px;
 }
 
 .row__route i {
   width: 18px;
   height: 1px;
-  background: #bfbfbf;
+  background: #999999;
   position: relative;
 }
 
@@ -569,24 +510,25 @@ onMounted(() => {
   right: 0;
   top: -3px;
   border: 3px solid transparent;
-  border-left: 5px solid #bfbfbf;
+  border-left: 5px solid #999999;
 }
 
 .row p {
   margin: 4px 0 0;
-  color: #8c8c8c;
+  color: #666666;
   font-size: 12px;
   line-height: 1.4;
 }
 
 .dock__pager {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px 10px;
-  border-top: 1px solid #f5f5f5;
-  color: #8c8c8c;
+  border-top: 1px solid #eeeeee;
+  color: #666666;
   font-size: 12px;
 }
 
@@ -597,8 +539,9 @@ onMounted(() => {
   top: 12px;
   width: 360px;
   padding: 14px 16px 12px;
-  background: #fff;
-  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #eeeeee;
+  border-radius: 4px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
 }
 
@@ -609,8 +552,8 @@ onMounted(() => {
 }
 
 .info__head b {
-  font-size: 15px;
-  color: #262626;
+  font-size: 14px;
+  color: #2d3033;
 }
 
 .info__spacer {
@@ -620,11 +563,16 @@ onMounted(() => {
 .info__x {
   width: 22px;
   height: 22px;
+  padding: 0;
   border: none;
   background: none;
-  color: #8c8c8c;
+  color: #999999;
   font-size: 16px;
   cursor: pointer;
+}
+
+.info__x:hover {
+  color: #1890ff;
 }
 
 .info__grid {
@@ -639,14 +587,14 @@ onMounted(() => {
 }
 
 .info__grid dt {
-  color: #8c8c8c;
+  color: #666666;
   font-size: 12px;
 }
 
 .info__grid dd {
   margin: 2px 0 0;
-  color: #262626;
-  font-size: 13px;
+  color: #2d3033;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -655,8 +603,8 @@ onMounted(() => {
 .info__route {
   margin-top: 12px;
   padding: 8px 10px;
-  border-radius: 6px;
-  background: #f7f9fb;
+  border-radius: 4px;
+  background: #f5f6fb;
 }
 
 .info__route p {
@@ -664,8 +612,8 @@ onMounted(() => {
   align-items: flex-start;
   gap: 8px;
   margin: 0;
-  color: #262626;
-  font-size: 13px;
+  color: #2d3033;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -682,11 +630,11 @@ onMounted(() => {
 }
 
 .pin--start {
-  background: #22c55e;
+  background: #18a058;
 }
 
 .pin--end {
-  background: #1677ff;
+  background: #1890ff;
 }
 
 .info__progress {
@@ -694,7 +642,7 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-  color: #8c8c8c;
+  color: #666666;
   font-size: 12px;
 }
 
@@ -702,7 +650,7 @@ onMounted(() => {
   flex: 1;
   height: 6px;
   border-radius: 3px;
-  background: #eef2f6;
+  background: #eeeeee;
   overflow: hidden;
 }
 
@@ -710,12 +658,40 @@ onMounted(() => {
   display: block;
   height: 100%;
   border-radius: 3px;
-  background: #14b8a6;
+  background: #1890ff;
 }
 
 .info__latest {
   margin: 6px 0 0;
-  color: #8c8c8c;
+  color: #666666;
   font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .track {
+    height: auto;
+    min-height: calc(100vh - 110px);
+    overflow: visible;
+  }
+
+  .stage {
+    flex: none;
+    height: 560px;
+  }
+
+  .dock {
+    bottom: auto;
+    height: 250px;
+  }
+
+  .info {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100% - 286px);
+    overflow-y: auto;
+  }
 }
 </style>

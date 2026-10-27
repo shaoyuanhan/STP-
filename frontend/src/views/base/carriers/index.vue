@@ -125,7 +125,7 @@ async function fetchCarriers({ page, pageSize }: { page: number; pageSize: numbe
 }
 
 const columns: DataTableColumns<Carrier> = [
-  { title: '承运商编码', key: 'carrier_code', width: 108 },
+  { title: '承运商编码', key: 'carrier_code', width: 120 },
   {
     title: '第三方承运商ID',
     key: 'external_carrier_id',
@@ -157,7 +157,7 @@ const columns: DataTableColumns<Carrier> = [
   {
     title: '状态',
     key: 'status',
-    width: 92,
+    width: 100,
     render: (row) => h(StatusTag, { type: 'carrier', value: row.status }),
   },
   {
@@ -171,30 +171,32 @@ const columns: DataTableColumns<Carrier> = [
   {
     title: '创建日期',
     key: 'create_time',
-    width: 104,
+    width: 120,
     render: (row) => dateOnly(row.create_time),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 76,
+    width: 180,
+    align: 'center',
     fixed: 'right',
     render: (row) =>
-      h('div', { class: 'row-actions' }, [
+      h('div', { class: 'action-buttons' }, [
         h(
           NButton,
-          { text: true, type: 'primary', onClick: () => openDetail(row) },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '详情' },
         ),
         h(
           NButton,
-          { text: true, type: 'primary', onClick: () => openForm(row) },
-          { default: () => '编辑' },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openForm(row) },
+          { default: () => '修改' },
         ),
         h(
           NButton,
           {
-            text: true,
+            size: 'small',
+            quaternary: true,
             type: row.status === 1 ? 'error' : 'primary',
             onClick: () => openStatusConfirm(row),
           },
@@ -345,86 +347,83 @@ async function confirmStatusChange() {
 <template>
   <div class="stp-page">
     <!-- 筛选栏 -->
-    <n-card class="page-card" :bordered="false">
-      <div class="page-card__filters">
-        <div class="page-card__field">
-          <span class="page-card__label">承运商名称</span>
-          <n-input
-            v-model:value="filter.carrier_name"
-            class="page-card__input"
-            clearable
-            placeholder="请输入承运商名称"
-            @keydown.enter="handleSearch"
-          />
+    <n-card class="query-card" :bordered="false">
+      <div class="query-bar">
+        <div class="query-fields">
+          <div class="query-item">
+            <span>承运商名称</span>
+            <n-input
+              v-model:value="filter.carrier_name"
+              clearable
+              placeholder="请输入承运商名称"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>承运商编码</span>
+            <n-input
+              v-model:value="filter.carrier_code"
+              clearable
+              placeholder="请输入承运商编码"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>第三方承运商ID</span>
+            <n-input
+              v-model:value="filter.external_carrier_id"
+              clearable
+              placeholder="请输入第三方承运商ID"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>联系人</span>
+            <n-input
+              v-model:value="filter.contact_person"
+              clearable
+              placeholder="请输入联系人"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>联系电话</span>
+            <n-input
+              v-model:value="filter.contact_phone"
+              clearable
+              placeholder="请输入联系电话"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>状态</span>
+            <n-select v-model:value="filter.status" :options="statusOptions" />
+          </div>
         </div>
-        <div class="page-card__field">
-          <span class="page-card__label">承运商编码</span>
-          <n-input
-            v-model:value="filter.carrier_code"
-            class="page-card__input"
-            clearable
-            placeholder="如 CAR-001"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">第三方承运商ID</span>
-          <n-input
-            v-model:value="filter.external_carrier_id"
-            class="page-card__input"
-            clearable
-            placeholder="外部系统承运商ID"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">联系人</span>
-          <n-input
-            v-model:value="filter.contact_person"
-            class="page-card__input"
-            clearable
-            placeholder="请输入联系人"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">联系电话</span>
-          <n-input
-            v-model:value="filter.contact_phone"
-            class="page-card__input"
-            clearable
-            placeholder="请输入联系电话"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">状态</span>
-          <n-select v-model:value="filter.status" class="page-card__select" :options="statusOptions" />
-        </div>
-        <div class="page-card__actions">
-          <n-button :loading="exporting" @click="handleExport">导出</n-button>
-          <n-button @click="handleReset">重置</n-button>
+        <div class="query-buttons">
+          <n-button type="primary" quaternary @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
         </div>
       </div>
     </n-card>
 
-    <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <span class="page-toolbar__hint">
-        承运商编码由系统自动生成（CAR-XXX）；已停用的承运商不可被派单，在途运单不受影响
-      </span>
-      <n-button type="primary" @click="openForm(null)">新增承运商</n-button>
-    </div>
-
     <!-- 列表 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <span class="table-toolbar__hint">
+          承运商编码由系统自动生成（CAR-XXX）；已停用的承运商不可被派单，在途运单不受影响
+        </span>
+        <div class="table-toolbar__actions">
+          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+          <n-button type="primary" @click="openForm(null)">新增承运商</n-button>
+        </div>
+      </div>
       <PageTable
         ref="tableRef"
         :columns="columns"
         :remote="fetchCarriers"
         :query="applied"
-        :scroll-x="1342"
+        :scroll-x="1482"
       />
     </n-card>
 
@@ -466,9 +465,11 @@ async function confirmStatusChange() {
     <n-modal
       v-model:show="showForm"
       preset="card"
+      size="huge"
+      :bordered="false"
       :title="editing ? '编辑承运商' : '新增承运商'"
       class="form-modal"
-      :style="{ width: '560px' }"
+      :style="{ width: '600px', maxWidth: '94vw' }"
       :mask-closable="!submitting"
       :closable="!submitting"
     >
@@ -477,8 +478,8 @@ async function confirmStatusChange() {
         :model="formModel"
         :rules="formRules"
         label-placement="left"
-        label-width="96"
-        require-mark-placement="right-hanging"
+        label-width="100"
+        require-mark-placement="left"
       >
         <n-form-item label="承运商编码" path="carrier_code">
           <div class="readonly-field">
@@ -549,11 +550,11 @@ async function confirmStatusChange() {
         </n-form-item>
       </n-form>
       <template #footer>
-        <div class="form-modal__footer">
-          <n-button :disabled="submitting" @click="showForm = false">取 消</n-button>
+        <div class="modal-footer">
           <n-button type="primary" :loading="submitting" @click="submitForm">
-            {{ editing ? '保 存' : '新增承运商' }}
+            {{ editing ? '保存' : '新增承运商' }}
           </n-button>
+          <n-button :disabled="submitting" @click="showForm = false">取消</n-button>
         </div>
       </template>
     </n-modal>
@@ -565,7 +566,7 @@ async function confirmStatusChange() {
       :title="statusConfirmTitle"
       :content="statusConfirmContent"
       :confirm-text="statusTarget && statusTarget.status === 1 ? '确认停用' : '确认启用'"
-      cancel-text="取 消"
+      cancel-text="取消"
       :loading="statusSubmitting"
       :auto-close="false"
       @confirm="confirmStatusChange"
@@ -574,63 +575,6 @@ async function confirmStatusChange() {
 </template>
 
 <style scoped>
-.page-card {
-  margin-bottom: 12px;
-}
-
-.page-card__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 18px;
-}
-
-.page-card__field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.page-card__label {
-  font-size: 13px;
-  color: #595959;
-  white-space: nowrap;
-}
-
-.page-card__input {
-  width: 190px;
-}
-
-.page-card__select {
-  width: 140px;
-}
-
-.page-card__actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-}
-
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.page-toolbar__hint {
-  font-size: 12px;
-  color: #8c8c8c;
-}
-
-/* 列操作按钮竖排（render 函数内的元素无本组件 scopeId，需 :deep） */
-:deep(.row-actions) {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
 .carrier-detail > :last-child {
   margin-bottom: 0;
 }
@@ -640,7 +584,6 @@ async function confirmStatusChange() {
   overflow-wrap: anywhere;
 }
 
-/* 表单只读字段与提示 */
 .readonly-field {
   width: 100%;
   display: flex;
@@ -650,13 +593,7 @@ async function confirmStatusChange() {
 
 .field-tip {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
   line-height: 1.5;
-}
-
-.form-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 </style>

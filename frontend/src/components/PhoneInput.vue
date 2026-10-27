@@ -168,27 +168,27 @@ defineExpose({
   width: 100%;
   height: 34px;
   padding: 0 12px;
-  border: 1px solid #d9d9d9;
-  border-radius: 3px;
+  border: 1px solid #eeeeee;
+  border-radius: 4px;
   outline: none;
   font-size: 14px;
-  color: #333639;
+  color: #2d3033;
   background: #fff;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .phone-input__input::placeholder {
-  color: #b6bac0;
+  color: #999999;
 }
 
 .phone-input__input:focus {
-  border-color: #1677ff;
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgb(24 144 255 / 12%);
 }
 
 .phone-input__input:disabled {
   background: #f7f8fa;
   cursor: not-allowed;
-  color: #b6bac0;
+  color: #999999;
 }
 </style>

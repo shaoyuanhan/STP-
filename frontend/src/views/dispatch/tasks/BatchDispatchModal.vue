@@ -185,7 +185,7 @@ async function handleSubmit() {
     preset="card"
     :title="phase === 'form' ? `批量派单（${snapshot.length} 单）` : '批量派单结果'"
     class="batch-modal"
-    :style="{ width: '720px', maxWidth: '94vw' }"
+    :style="{ width: '800px', maxWidth: '94vw' }"
     :mask-closable="!submitting"
     @update:show="(value: boolean) => emit('update:show', value)"
   >
@@ -215,8 +215,8 @@ async function handleSubmit() {
           :model="form"
           :rules="rules"
           label-placement="left"
-          label-width="110px"
-          :show-require-mark="false"
+          label-width="100"
+          require-mark-placement="left"
         >
           <n-form-item label="承运商" path="carrier_id">
             <div class="batch-modal__field">
@@ -278,9 +278,8 @@ async function handleSubmit() {
     </div>
 
     <template #footer>
-      <div class="batch-modal__footer">
+      <div class="modal-footer">
         <template v-if="phase === 'form'">
-          <n-button :disabled="submitting" @click="close">取消</n-button>
           <n-button
             type="primary"
             :loading="submitting"
@@ -289,6 +288,7 @@ async function handleSubmit() {
           >
             确认派单
           </n-button>
+          <n-button :disabled="submitting" @click="close">取消</n-button>
         </template>
         <n-button v-else type="primary" @click="close">知道了</n-button>
       </div>
@@ -315,12 +315,12 @@ async function handleSubmit() {
   padding: 8px 12px;
   background: #f7f8fa;
   border-radius: 4px;
-  font-size: 13px;
-  color: #595959;
+  font-size: 14px;
+  color: #666666;
 }
 
 .batch-modal__total :deep(.money-text) {
-  color: #1677ff;
+  color: #1890ff;
 }
 
 .batch-modal__field {
@@ -332,7 +332,7 @@ async function handleSubmit() {
 
 .batch-modal__hint {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
   line-height: 1.5;
 }
 
@@ -350,24 +350,18 @@ async function handleSubmit() {
 }
 
 .batch-modal__result-label {
-  color: #8c8c8c;
-  font-size: 13px;
+  color: #666666;
+  font-size: 14px;
 }
 
 .batch-modal__result-value {
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
 }
 
 .batch-modal__skipped-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: #262626;
-}
-
-.batch-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  color: #2d3033;
 }
 </style>

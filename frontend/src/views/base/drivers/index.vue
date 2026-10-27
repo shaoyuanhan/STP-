@@ -168,13 +168,13 @@ const columns: DataTableColumns<DriverRow> = [
   {
     title: '有效期自',
     key: 'license_valid_from',
-    width: 104,
+    width: 120,
     render: (row) => dateOnly(row.license_valid_from),
   },
   {
     title: '有效期至',
     key: 'license_valid_to',
-    width: 104,
+    width: 120,
     render: (row) => dateOnly(row.license_valid_to),
   },
   {
@@ -193,30 +193,32 @@ const columns: DataTableColumns<DriverRow> = [
   {
     title: '状态',
     key: 'status',
-    width: 88,
+    width: 100,
     render: (row) => h(StatusTag, { type: 'driver', value: row.status }),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 76,
+    width: 180,
+    align: 'center',
     fixed: 'right',
     render: (row) =>
-      h('div', { class: 'row-actions' }, [
+      h('div', { class: 'action-buttons' }, [
         h(
           NButton,
-          { text: true, type: 'primary', onClick: () => openDetail(row) },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '详情' },
         ),
         h(
           NButton,
-          { text: true, type: 'primary', onClick: () => openForm(row) },
-          { default: () => '编辑' },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openForm(row) },
+          { default: () => '修改' },
         ),
         h(
           NButton,
           {
-            text: true,
+            size: 'small',
+            quaternary: true,
             type: row.status === 1 ? 'error' : 'primary',
             onClick: () => openStatusConfirm(row),
           },
@@ -410,94 +412,90 @@ onActivated(loadCarrierOptions)
 <template>
   <div class="stp-page">
     <!-- 筛选栏 -->
-    <n-card class="page-card" :bordered="false">
-      <div class="page-card__filters">
-        <div class="page-card__field">
-          <span class="page-card__label">司机姓名</span>
-          <n-input
-            v-model:value="filter.driver_name"
-            class="page-card__input"
-            clearable
-            placeholder="请输入姓名"
-            @keydown.enter="handleSearch"
-          />
+    <n-card class="query-card" :bordered="false">
+      <div class="query-bar">
+        <div class="query-fields">
+          <div class="query-item">
+            <span>司机姓名</span>
+            <n-input
+              v-model:value="filter.driver_name"
+              clearable
+              placeholder="请输入司机姓名"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>手机号</span>
+            <n-input
+              v-model:value="filter.phone"
+              clearable
+              placeholder="请输入手机号"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>身份证号</span>
+            <n-input
+              v-model:value="filter.id_card"
+              clearable
+              placeholder="请输入身份证号"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>驾驶证号</span>
+            <n-input
+              v-model:value="filter.license_no"
+              clearable
+              placeholder="请输入驾驶证号"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>第三方司机ID</span>
+            <n-input
+              v-model:value="filter.external_driver_id"
+              clearable
+              placeholder="请输入第三方司机ID"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>所属承运商</span>
+            <n-select
+              v-model:value="filter.carrier_id"
+              :options="[{ label: '全部', value: '' }, ...carrierOptions]"
+            />
+          </div>
+          <div class="query-item">
+            <span>状态</span>
+            <n-select v-model:value="filter.status" :options="filterStatusOptions" />
+          </div>
         </div>
-        <div class="page-card__field">
-          <span class="page-card__label">手机号</span>
-          <n-input
-            v-model:value="filter.phone"
-            class="page-card__input"
-            clearable
-            placeholder="请输入手机号"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">身份证号</span>
-          <n-input
-            v-model:value="filter.id_card"
-            class="page-card__input"
-            clearable
-            placeholder="请输入身份证号"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">驾驶证号</span>
-          <n-input
-            v-model:value="filter.license_no"
-            class="page-card__input"
-            clearable
-            placeholder="请输入驾驶证号"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">第三方司机ID</span>
-          <n-input
-            v-model:value="filter.external_driver_id"
-            class="page-card__input"
-            clearable
-            placeholder="外部系统司机ID"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">所属承运商</span>
-          <n-select
-            v-model:value="filter.carrier_id"
-            class="page-card__select"
-            :options="[{ label: '全部', value: '' }, ...carrierOptions]"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">状态</span>
-          <n-select v-model:value="filter.status" class="page-card__select" :options="filterStatusOptions" />
-        </div>
-        <div class="page-card__actions">
-          <n-button :loading="exporting" @click="handleExport">导出</n-button>
-          <n-button @click="handleReset">重置</n-button>
+        <div class="query-buttons">
+          <n-button type="primary" quaternary @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
         </div>
       </div>
     </n-card>
 
-    <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <span class="page-toolbar__hint">
-        司机信息支持系统录入与狮桥同步；姓名与身份证号创建后不可修改；停用后不可派新任务，不影响在途运单
-      </span>
-      <n-button type="primary" @click="openForm(null)">新增司机</n-button>
-    </div>
-
     <!-- 列表 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <span class="table-toolbar__hint">
+          司机信息支持系统录入与狮桥同步；姓名与身份证号创建后不可修改；停用后不可派新任务，不影响在途运单
+        </span>
+        <div class="table-toolbar__actions">
+          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+          <n-button type="primary" @click="openForm(null)">新增司机</n-button>
+        </div>
+      </div>
       <PageTable
         ref="tableRef"
         :columns="columns"
         :remote="fetchDrivers"
         :query="applied"
-        :scroll-x="1502"
+        :scroll-x="1650"
       />
     </n-card>
 
@@ -547,9 +545,11 @@ onActivated(loadCarrierOptions)
     <n-modal
       v-model:show="showForm"
       preset="card"
+      size="huge"
+      :bordered="false"
       :title="editing ? '编辑司机' : '新增司机'"
       class="form-modal"
-      :style="{ width: '600px' }"
+      :style="{ width: '600px', maxWidth: '94vw' }"
       :mask-closable="!submitting"
       :closable="!submitting"
     >
@@ -558,8 +558,8 @@ onActivated(loadCarrierOptions)
         :model="formModel"
         :rules="formRules"
         label-placement="left"
-        label-width="110"
-        require-mark-placement="right-hanging"
+        label-width="100"
+        require-mark-placement="left"
       >
         <n-form-item label="姓名" path="name">
           <n-input
@@ -663,11 +663,11 @@ onActivated(loadCarrierOptions)
         </n-form-item>
       </n-form>
       <template #footer>
-        <div class="form-modal__footer">
-          <n-button :disabled="submitting" @click="showForm = false">取 消</n-button>
+        <div class="modal-footer">
           <n-button type="primary" :loading="submitting" @click="submitForm">
-            {{ editing ? '保 存' : '新增司机' }}
+            {{ editing ? '保存' : '新增司机' }}
           </n-button>
+          <n-button :disabled="submitting" @click="showForm = false">取消</n-button>
         </div>
       </template>
     </n-modal>
@@ -679,7 +679,7 @@ onActivated(loadCarrierOptions)
       :title="statusConfirmTitle"
       :content="statusConfirmContent"
       :confirm-text="statusTarget && statusTarget.status === 1 ? '确认停用' : '确认启用'"
-      cancel-text="取 消"
+      cancel-text="取消"
       :loading="statusSubmitting"
       :auto-close="false"
       @confirm="confirmStatusChange"
@@ -688,75 +688,8 @@ onActivated(loadCarrierOptions)
 </template>
 
 <style scoped>
-.page-card {
-  margin-bottom: 12px;
-}
-
-.page-card__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 18px;
-}
-
-.page-card__field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.page-card__label {
-  font-size: 13px;
-  color: #595959;
-  white-space: nowrap;
-}
-
-.page-card__input {
-  width: 190px;
-}
-
-.page-card__select {
-  width: 160px;
-}
-
 .page-card__date {
   width: 100%;
-}
-
-.page-card__actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-}
-
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.page-toolbar__hint {
-  font-size: 12px;
-  color: #8c8c8c;
-}
-
-/* 列表单元格内元素（render 函数内无本组件 scopeId，需 :deep） */
-:deep(.row-actions) {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
-:deep(.muted) {
-  color: #bfbfbf;
-}
-
-:deep(.carrier-cell) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
 }
 
 .driver-detail > :last-child {
@@ -768,7 +701,6 @@ onActivated(loadCarrierOptions)
   overflow-wrap: anywhere;
 }
 
-/* 表单只读字段与提示 */
 .readonly-field {
   width: 100%;
   display: flex;
@@ -778,19 +710,13 @@ onActivated(loadCarrierOptions)
 
 .field-tip {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
   line-height: 1.5;
 }
 
 .locked-tip {
-  margin: -8px 0 14px 110px;
+  margin: -8px 0 14px 100px;
   font-size: 12px;
-  color: #fa8c16;
-}
-
-.form-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  color: #f0a020;
 }
 </style>
