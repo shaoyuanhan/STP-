@@ -2,72 +2,60 @@
 import { zhCN, dateZhCN } from 'naive-ui'
 import type { GlobalThemeOverrides } from 'naive-ui'
 
-/**
- * 品牌主题（对齐旧版设计系统，见仓库 git 历史 frontend/index.html :root 变量）：
- * 主色 #1677ff、成功 #389e0d、警告 #fa8c16、危险 #f5222d；
- * 文本 #262626/#595959/#8c8c8c、页面底 #f0f2f5、正文 13px PingFang SC。
- * 页面阶段如需调整主题，统一改这里的 themeOverrides，不改各页面。
- */
 const themeOverrides: GlobalThemeOverrides = {
   common: {
-    primaryColor: '#1677ff',
-    primaryColorHover: '#4096ff',
-    primaryColorPressed: '#0958d9',
-    primaryColorSuppl: '#4096ff',
-    infoColor: '#1677ff',
-    infoColorHover: '#4096ff',
-    infoColorPressed: '#0958d9',
-    infoColorSuppl: '#4096ff',
-    successColor: '#389e0d',
-    successColorHover: '#49b018',
-    successColorPressed: '#2f7d0b',
-    successColorSuppl: '#49b018',
-    warningColor: '#fa8c16',
-    warningColorHover: '#ffa940',
-    warningColorPressed: '#d46b08',
-    warningColorSuppl: '#ffa940',
-    errorColor: '#f5222d',
-    errorColorHover: '#ff4d4f',
-    errorColorPressed: '#cf1322',
-    errorColorSuppl: '#ff4d4f',
+    primaryColor: '#1890ff',
+    primaryColorHover: '#369cfd',
+    primaryColorPressed: '#087ae3',
+    primaryColorSuppl: '#1890ff',
+    infoColor: '#2080f0',
+    successColor: '#18a058',
+    warningColor: '#f0a020',
+    errorColor: '#d03050',
     borderRadius: '4px',
     borderRadiusSmall: '4px',
-    fontSize: '13px',
-    fontSizeMedium: '13px',
+    fontSize: '14px',
+    fontSizeMedium: '14px',
     fontSizeSmall: '12px',
     fontSizeLarge: '14px',
     fontFamily:
       "'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', 'Helvetica Neue', Arial, sans-serif",
-    textColorBase: '#262626',
-    textColor1: '#262626',
-    textColor2: '#595959',
-    textColor3: '#8c8c8c',
-    textColorDisabled: '#bfbfbf',
-    placeholderColor: '#bfbfbf',
-    borderColor: '#d9d9d9',
-    dividerColor: '#f0f0f0',
-    bodyColor: '#f0f2f5',
+    textColorBase: '#2d3033',
+    textColor1: '#2d3033',
+    textColor2: '#2d3033',
+    textColor3: '#666666',
+    textColorDisabled: '#999999',
+    placeholderColor: '#999999',
+    borderColor: '#eeeeee',
+    dividerColor: '#eeeeee',
+    bodyColor: '#f5f6fb',
     cardColor: '#ffffff',
     modalColor: '#ffffff',
     popoverColor: '#ffffff',
     tableColor: '#ffffff',
     inputColor: '#ffffff',
   },
+  Form: {
+    labelTextColor: '#666666',
+  },
   Card: {
-    borderRadius: '6px',
+    borderRadius: '4px',
     boxShadow: '0 1px 2px rgba(31, 45, 61, 0.04)',
   },
   Modal: {
-    borderRadius: '8px',
+    borderRadius: '4px',
   },
   DataTable: {
     thColor: '#fafafa',
-    thTextColor: '#595959',
+    thTextColor: '#2d3033',
     thFontWeight: '500',
+    thFontSizeSmall: '14px',
+    tdFontSizeSmall: '14px',
     tdColor: '#ffffff',
     tdColorHover: '#f7fafd',
     tdColorSorted: '#f7fafd',
-    borderColor: '#f0f0f0',
+    tdTextColor: '#2d3033',
+    borderColor: '#eeeeee',
     thPaddingSmall: '11px 12px',
     tdPaddingSmall: '10px 12px',
   },
@@ -114,11 +102,11 @@ body,
 body {
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei',
     'Helvetica Neue', Arial, sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  background-color: #f0f2f5;
-  color: #262626;
+  background-color: #f5f6fb;
+  color: #2d3033;
   overflow: hidden;
 }
 
@@ -126,9 +114,10 @@ body {
   box-sizing: border-box;
 }
 
-/* 页面通用容器：所有 views 页面根节点使用（对齐旧版 .content 内边距） */
+/* 页面通用容器：所有 views 页面根节点使用 */
 .stp-page {
-  padding: 14px 16px 26px;
+  min-width: 0;
+  padding: 10px 20px 20px;
 }
 
 /* 司机端 H5 页面（#/m/**）：body 高度受 .app-provider 影响，须显式拉满，否则布局 height:100% 失效、内容无法滚动 */
@@ -140,7 +129,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .stp-page__title {
@@ -148,6 +137,161 @@ body {
   font-weight: 600;
   line-height: 1.4;
   margin: 0;
+}
+
+.query-card,
+.table-card,
+.page-card {
+  border-color: #eeeeee !important;
+}
+
+.query-card {
+  margin-bottom: 10px;
+}
+
+.query-card > .n-card-content,
+.table-card > .n-card-content {
+  padding: 15px !important;
+}
+
+.query-bar {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px 20px;
+}
+
+.query-fields {
+  flex: 1 1 338px;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 20px;
+}
+
+.query-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.query-item > span:first-child {
+  width: 110px;
+  flex: none;
+  text-align: right;
+  color: #666666;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.query-item > .n-input,
+.query-item > .n-select,
+.query-item > .n-date-picker,
+.query-item > .n-input-number {
+  width: 220px;
+  flex: none;
+}
+
+.query-buttons {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-left: auto;
+}
+
+.table-toolbar {
+  min-height: 32px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.table-toolbar__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.table-toolbar__hint {
+  color: #999999;
+  font-size: 14px;
+}
+
+.table-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+  color: #666666;
+}
+
+.table-summary strong {
+  color: #d03050;
+  font-weight: 600;
+}
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.modal-footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.form-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+}
+
+.form-modal > .n-card-header,
+.form-modal > .n-card__footer {
+  flex: none;
+}
+
+.form-modal > .n-card-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.stp-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: #2d3033;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.stp-section-title::before {
+  content: '';
+  width: 4px;
+  height: 16px;
+  flex: none;
+  border-radius: 2px;
+  background: #1890ff;
 }
 
 /* 表格列宽拖拽手柄：默认隐藏竖杠，悬停/拖动时才显示高亮条，拖拽热区与 col-resize 光标保持不变 */

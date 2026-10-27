@@ -212,30 +212,41 @@ function renderDriver(row: ShippingTaskListItem) {
 }
 
 function renderActions(row: ShippingTaskListItem) {
-  const buttons = []
+  const buttons = [
+    h(
+      NButton,
+      { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
+      { default: () => '详情' },
+    ),
+  ]
   if (row.status === 'WAIT_DISPATCH' && can('tasks:dispatch')) {
     buttons.push(
-      h(NButton, { text: true, type: 'primary', onClick: () => openDispatch(row) }, { default: () => '派单' }),
+      h(
+        NButton,
+        { size: 'small', quaternary: true, type: 'primary', onClick: () => openDispatch(row) },
+        { default: () => '派单' },
+      ),
     )
   }
   if (row.status === 'DISPATCHED' && can('tasks:reassign')) {
     buttons.push(
-      h(NButton, { text: true, type: 'primary', onClick: () => openReassign(row) }, { default: () => '改派' }),
+      h(
+        NButton,
+        { size: 'small', quaternary: true, type: 'primary', onClick: () => openReassign(row) },
+        { default: () => '改派' },
+      ),
     )
   }
   if (row.status === 'DISPATCHED' && can('tasks:cancel')) {
     buttons.push(
       h(
         NButton,
-        { text: true, type: 'error', onClick: () => openCancel(row) },
+        { size: 'small', quaternary: true, type: 'error', onClick: () => openCancel(row) },
         { default: () => '取消派单' },
       ),
     )
   }
-  buttons.push(
-    h(NButton, { text: true, type: 'primary', onClick: () => openDetail(row) }, { default: () => '详情' }),
-  )
-  return h('div', { class: 'row-actions' }, buttons)
+  return h('div', { class: 'action-buttons' }, buttons)
 }
 
 const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
@@ -360,7 +371,8 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
   {
     title: '操作',
     key: 'actions',
-    width: 84,
+    width: 180,
+    align: 'center',
     fixed: 'right',
     render: (row) => renderActions(row),
   },
@@ -419,7 +431,7 @@ function refreshList() {
 <template>
   <div class="stp-page">
     <!-- 筛选栏 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="query-card" :bordered="false">
       <QueryBar>
         <QueryField label="任务单号">
           <n-input v-model:value="filter.task_no" clearable placeholder="请输入" @keydown.enter="handleSearch" />
@@ -465,17 +477,17 @@ function refreshList() {
           <n-button v-if="can('tasks:export')" :loading="exporting" @click="handleExport">导出</n-button>
           <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
-          <n-button quaternary class="page-card__toggle" @click="filterExpanded = !filterExpanded">
+          <n-button quaternary class="query-card__toggle" @click="filterExpanded = !filterExpanded">
             {{ filterExpanded ? '收起' : '展开' }}
-            <span class="page-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
+            <span class="query-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
           </n-button>
         </template>
       </QueryBar>
     </n-card>
 
     <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <span class="page-toolbar__hint">
+    <div class="table-toolbar">
+      <span class="table-toolbar__hint">
         仅「待派单」状态可勾选批量派单；「已派单」可改派或取消派单（需司机未接单）
       </span>
       <n-button
@@ -489,13 +501,13 @@ function refreshList() {
     </div>
 
     <!-- 列表 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="table-card" :bordered="false">
       <PageTable
         ref="tableRef"
         :columns="columns"
         :remote="fetchTasks"
         :query="applied"
-        :scroll-x="2020"
+        :scroll-x="2116"
         :init-page-size="20"
       />
     </n-card>
@@ -530,43 +542,19 @@ function refreshList() {
 </template>
 
 <style scoped>
-.page-card {
-  margin-bottom: 12px;
-}
-
-.page-card__caret {
+.query-card__caret {
   display: inline-block;
   margin-left: 2px;
   font-size: 12px;
   transition: transform 0.2s ease;
 }
 
-.page-card__caret.is-open {
+.query-card__caret.is-open {
   transform: rotate(180deg);
 }
 
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.page-toolbar__hint {
-  font-size: 12px;
-  color: #8c8c8c;
-}
-
-/* 列表单元格内元素（render 函数内无本组件 scopeId，需 :deep） */
-:deep(.row-actions) {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
 :deep(.muted) {
-  color: #bfbfbf;
+  color: #999999;
 }
 
 /* 交付地址完整展示（换行） */

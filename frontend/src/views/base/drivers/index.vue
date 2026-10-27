@@ -168,13 +168,13 @@ const columns: DataTableColumns<DriverRow> = [
   {
     title: '有效期自',
     key: 'license_valid_from',
-    width: 104,
+    width: 120,
     render: (row) => dateOnly(row.license_valid_from),
   },
   {
     title: '有效期至',
     key: 'license_valid_to',
-    width: 104,
+    width: 120,
     render: (row) => dateOnly(row.license_valid_to),
   },
   {
@@ -198,30 +198,32 @@ const columns: DataTableColumns<DriverRow> = [
   {
     title: '状态',
     key: 'status',
-    width: 88,
+    width: 100,
     render: (row) => h(StatusTag, { type: 'driver', value: row.status }),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 76,
+    width: 180,
+    align: 'center',
     fixed: 'right',
     render: (row) =>
-      h('div', { class: 'row-actions' }, [
+      h('div', { class: 'action-buttons' }, [
         h(
           NButton,
-          { text: true, type: 'primary', onClick: () => openDetail(row) },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '详情' },
         ),
         h(
           NButton,
-          { text: true, type: 'primary', onClick: () => openForm(row) },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openForm(row) },
           { default: () => '编辑' },
         ),
         h(
           NButton,
           {
-            text: true,
+            size: 'small',
+            quaternary: true,
             type: row.status === 1 ? 'error' : 'primary',
             onClick: () => openStatusConfirm(row),
           },
@@ -415,7 +417,7 @@ onActivated(loadCarrierOptions)
 <template>
   <div class="stp-page">
     <!-- 筛选栏 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="query-card" :bordered="false">
       <QueryBar>
         <QueryField label="司机姓名">
           <n-input v-model:value="filter.driver_name" clearable placeholder="请输入姓名" @keydown.enter="handleSearch" />
@@ -455,21 +457,21 @@ onActivated(loadCarrierOptions)
     </n-card>
 
     <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <span class="page-toolbar__hint">
+    <div class="table-toolbar">
+      <span class="table-toolbar__hint">
         司机信息支持系统录入与狮桥同步；姓名与身份证号创建后不可修改；停用后不可派新任务，不影响在途运单
       </span>
       <n-button type="primary" @click="openForm(null)">新增司机</n-button>
     </div>
 
     <!-- 列表 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="table-card" :bordered="false">
       <PageTable
         ref="tableRef"
         :columns="columns"
         :remote="fetchDrivers"
         :query="applied"
-        :scroll-x="1502"
+        :scroll-x="1650"
       />
     </n-card>
 
@@ -519,9 +521,11 @@ onActivated(loadCarrierOptions)
     <n-modal
       v-model:show="showForm"
       preset="card"
+      size="huge"
+      :bordered="false"
       :title="editing ? '编辑司机' : '新增司机'"
       class="form-modal"
-      :style="{ width: '600px' }"
+      :style="{ width: '600px', maxWidth: '94vw' }"
       :mask-closable="!submitting"
       :closable="!submitting"
     >
@@ -635,11 +639,11 @@ onActivated(loadCarrierOptions)
         </n-form-item>
       </n-form>
       <template #footer>
-        <div class="form-modal__footer">
-          <n-button :disabled="submitting" @click="showForm = false">取 消</n-button>
+        <div class="modal-footer">
           <n-button type="primary" :loading="submitting" @click="submitForm">
-            {{ editing ? '保 存' : '新增司机' }}
+            {{ editing ? '保存' : '新增司机' }}
           </n-button>
+          <n-button :disabled="submitting" @click="showForm = false">取消</n-button>
         </div>
       </template>
     </n-modal>
@@ -651,7 +655,7 @@ onActivated(loadCarrierOptions)
       :title="statusConfirmTitle"
       :content="statusConfirmContent"
       :confirm-text="statusTarget && statusTarget.status === 1 ? '确认停用' : '确认启用'"
-      cancel-text="取 消"
+      cancel-text="取消"
       :loading="statusSubmitting"
       :auto-close="false"
       @confirm="confirmStatusChange"
@@ -660,36 +664,12 @@ onActivated(loadCarrierOptions)
 </template>
 
 <style scoped>
-.page-card {
-  margin-bottom: 12px;
-}
-
 .page-card__date {
   width: 100%;
 }
 
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.page-toolbar__hint {
-  font-size: 12px;
-  color: #8c8c8c;
-}
-
-/* 列表单元格内元素（render 函数内无本组件 scopeId，需 :deep） */
-:deep(.row-actions) {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
 :deep(.muted) {
-  color: #bfbfbf;
+  color: #999999;
 }
 
 .driver-detail > :last-child {
@@ -711,19 +691,13 @@ onActivated(loadCarrierOptions)
 
 .field-tip {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
   line-height: 1.5;
 }
 
 .locked-tip {
   margin: -8px 0 14px 110px;
   font-size: 12px;
-  color: #fa8c16;
-}
-
-.form-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  color: #f0a020;
 }
 </style>

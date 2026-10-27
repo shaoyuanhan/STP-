@@ -184,8 +184,8 @@ async function handleSubmit() {
     :show="show"
     preset="card"
     :title="`取消派单 · ${task?.task_no ?? ''}`"
-    class="cancel-modal"
-    :style="{ width: '520px', maxWidth: '94vw' }"
+    class="form-modal cancel-modal"
+    :style="{ width: '600px', maxWidth: '94vw' }"
     :mask-closable="!submitting"
     @update:show="(value: boolean) => emit('update:show', value)"
   >
@@ -241,8 +241,7 @@ async function handleSubmit() {
     </div>
 
     <template #footer>
-      <div class="cancel-modal__footer">
-        <n-button :disabled="submitting" @click="close">返回</n-button>
+      <div class="modal-footer">
         <n-button
           type="error"
           :loading="submitting"
@@ -251,6 +250,7 @@ async function handleSubmit() {
         >
           确认取消派单
         </n-button>
+        <n-button :disabled="submitting" @click="close">返回</n-button>
       </div>
     </template>
   </n-modal>
@@ -274,41 +274,37 @@ async function handleSubmit() {
 
 .cancel-modal__snapshot-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: baseline;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .cancel-modal__label {
   flex: none;
-  color: #8c8c8c;
+  color: #666666;
 }
 
 .cancel-modal__value {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
-  color: #262626;
+  color: #2d3033;
   line-height: 1.5;
 }
 
 .cancel-modal__value.is-pass {
-  color: #389e0d;
+  color: #18a058;
   font-weight: 600;
 }
 
 .cancel-modal__value.is-block {
-  color: #f5222d;
+  color: #d03050;
   font-weight: 600;
 }
 
 .cancel-modal__value.is-checking {
-  color: #8c8c8c;
-}
-
-.cancel-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  color: #999999;
 }
 </style>

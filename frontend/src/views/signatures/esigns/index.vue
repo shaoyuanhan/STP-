@@ -29,9 +29,6 @@ const filters = reactive({
   sign_status: null as EsignStatus | null,
 })
 
-// 筛选区收起/展开：收起时仅显示首行高频字段，已填值不丢失
-const filterExpanded = ref(false)
-
 const signStatusOptions = computed<SelectOption[]>(() => [
   { label: '待签署', value: 'WAIT_SIGN' },
   { label: '已签署', value: 'SIGNED' },
@@ -247,16 +244,17 @@ const columns = computed<DataTableColumns<EsignRow>>(() => [
   {
     title: '操作',
     key: 'actions',
-    width: 155,
+    width: 100,
+    align: 'center',
     resizable: true,
     fixed: 'right',
     render: (row) => {
       return h(
         'div',
-        { class: 'esign-actions' },
+        { class: 'action-buttons' },
         h(
           NButton,
-          { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '详情' },
         ),
       )
@@ -271,98 +269,87 @@ onActivated(loadPage)
 </script>
 
 <template>
-  <div class="esign">
+  <div class="stp-page esign">
     <!-- 筛选 -->
-    <n-card size="small" :bordered="false" class="esign-card">
-      <div class="esign-filter">
-        <div class="esign-filter__field">
-          <span class="esign-filter__label">电子签 ID</span>
-          <n-input
-            v-model:value="filters.esign_id"
-            size="small"
-            clearable
-            placeholder="请输入电子签 ID"
-            @keyup.enter="handleSearch"
-          />
+    <n-card class="query-card" :bordered="false">
+      <div class="query-bar">
+        <div class="query-fields">
+          <div class="query-item">
+            <span>电子签 ID</span>
+            <n-input
+              v-model:value="filters.esign_id"
+              clearable
+              placeholder="请输入电子签 ID"
+              @keyup.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>任务单号</span>
+            <n-input
+              v-model:value="filters.task_no"
+              clearable
+              placeholder="请输入任务单号（FY 开头）"
+              @keyup.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>VIN</span>
+            <n-input
+              v-model:value="filters.vin"
+              clearable
+              placeholder="请输入 17 位车架号"
+              @keyup.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>订单号</span>
+            <n-input
+              v-model:value="filters.order_no"
+              clearable
+              placeholder="请输入订单号"
+              @keyup.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>发运申请号</span>
+            <n-input
+              v-model:value="filters.apply_no"
+              clearable
+              placeholder="请输入发运申请号"
+              @keyup.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>签署状态</span>
+            <n-select
+              v-model:value="filters.sign_status"
+              clearable
+              placeholder="请选择签署状态"
+              :options="signStatusOptions"
+            />
+          </div>
         </div>
-        <div class="esign-filter__field">
-          <span class="esign-filter__label">任务单号</span>
-          <n-input
-            v-model:value="filters.task_no"
-            size="small"
-            clearable
-            placeholder="请输入任务单号（FY 开头）"
-            @keyup.enter="handleSearch"
-          />
-        </div>
-        <div class="esign-filter__field">
-          <span class="esign-filter__label">VIN</span>
-          <n-input
-            v-model:value="filters.vin"
-            size="small"
-            clearable
-            placeholder="请输入 17 位车架号"
-            @keyup.enter="handleSearch"
-          />
-        </div>
-        <div class="esign-filter__field">
-          <span class="esign-filter__label">订单号</span>
-          <n-input
-            v-model:value="filters.order_no"
-            size="small"
-            clearable
-            placeholder="请输入订单号"
-            @keyup.enter="handleSearch"
-          />
-        </div>
-        <div v-show="filterExpanded" class="esign-filter__field">
-          <span class="esign-filter__label">发运申请号</span>
-          <n-input
-            v-model:value="filters.apply_no"
-            size="small"
-            clearable
-            placeholder="请输入发运申请号"
-            @keyup.enter="handleSearch"
-          />
-        </div>
-        <div v-show="filterExpanded" class="esign-filter__field">
-          <span class="esign-filter__label">签署状态</span>
-          <n-select
-            v-model:value="filters.sign_status"
-            size="small"
-            clearable
-            placeholder="全部状态"
-            :options="signStatusOptions"
-          />
-        </div>
-        <div class="esign-filter__actions">
-          <n-button size="small" :loading="exporting" @click="handleExport">导出</n-button>
-          <n-button size="small" @click="handleReset">重置</n-button>
-          <n-button size="small" type="primary" :loading="loading" @click="handleSearch">查询</n-button>
-          <n-button
-            size="small"
-            quaternary
-            class="esign-filter__toggle"
-            @click="filterExpanded = !filterExpanded"
-          >
-            {{ filterExpanded ? '收起' : '展开' }}
-            <span class="esign-filter__caret" :class="{ 'is-open': filterExpanded }">▾</span>
-          </n-button>
+        <div class="query-buttons">
+          <n-button type="primary" quaternary @click="handleReset">重置</n-button>
+          <n-button type="primary" :loading="loading" @click="handleSearch">查询</n-button>
         </div>
       </div>
     </n-card>
 
-    <!-- 提示条 -->
-    <div class="esign-summary">
-      <span>共 {{ total }} 条记录</span>
-      <span>当前页待签署：<b class="esign-summary__wait">{{ waitSignCount }}</b> 条</span>
-      <span class="esign-summary__tip">
-        电子签按 VIN + 发运申请号匹配任务；任务取消时关联待签署电子签自动置为已取消
-      </span>
-    </div>
-
     <!-- 列表 -->
-    <n-card size="small" :bordered="false" class="esign-card">
+    <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <div class="table-summary">
+          <span>共 {{ total }} 条记录</span>
+          <span>当前页待签署：<b class="esign-summary__wait">{{ waitSignCount }}</b> 条</span>
+          <span class="table-toolbar__hint">
+            电子签按 VIN + 发运申请号匹配任务；任务取消时关联待签署电子签自动置为已取消
+          </span>
+        </div>
+        <div class="table-toolbar__actions">
+          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+        </div>
+      </div>
       <n-data-table
         size="small"
         remote
@@ -371,13 +358,13 @@ onActivated(loadPage)
         :loading="loading"
         :pagination="pagination"
         :row-key="rowKey"
-        :scroll-x="1900"
+        :scroll-x="1907"
         :bordered="false"
       >
         <template #empty>
           <div v-if="loadError" class="esign-error">
             <span>{{ loadError }}</span>
-            <n-button size="tiny" type="primary" quaternary @click="loadPage()">重试</n-button>
+            <n-button size="small" type="primary" quaternary @click="loadPage()">重试</n-button>
           </div>
           <n-empty v-else description="暂无电子签记录（CRM 发起物流电子签后自动生成）" />
         </template>
@@ -433,81 +420,18 @@ onActivated(loadPage)
 </template>
 
 <style scoped>
-.esign-card {
-  border-radius: 6px;
-  margin-bottom: 12px;
+.esign .table-summary {
+  flex: 1;
+  min-width: 0;
 }
 
-.esign-filter {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.esign-filter__field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.esign-filter__label {
-  flex: none;
-  font-size: 13px;
-  color: #595959;
-}
-
-.esign-filter__field .n-input,
-.esign-filter__field .n-select {
-  width: 190px;
-}
-
-.esign-filter__actions {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.esign-filter__caret {
-  display: inline-block;
-  margin-left: 2px;
-  font-size: 12px;
-  transition: transform 0.2s ease;
-}
-
-.esign-filter__caret.is-open {
-  transform: rotate(180deg);
-}
-
-.esign-summary {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  flex-wrap: wrap;
-  font-size: 13px;
-  color: #595959;
-  margin-bottom: 12px;
-  padding: 0 4px;
-}
-
-.esign-summary b {
-  color: #262626;
+.table-summary b {
+  color: #2d3033;
   font-variant-numeric: tabular-nums;
 }
 
-.esign-summary__wait {
-  color: #fa8c16;
-}
-
-.esign-summary__tip {
-  margin-left: auto;
-  font-size: 12px;
-  color: #8c8c8c;
-}
-
-.esign-actions {
-  display: flex;
-  gap: 2px;
+.table-summary b.esign-summary__wait {
+  color: #f0a020;
 }
 
 .esign-error {
@@ -516,23 +440,18 @@ onActivated(loadPage)
   justify-content: center;
   gap: 8px;
   padding: 16px 0;
-  color: #f5222d;
-  font-size: 13px;
+  color: #d03050;
+  font-size: 14px;
 }
 
-.esign-muted {
-  color: #8c8c8c;
+:deep(.esign-muted) {
+  color: #999999;
 }
 
 .esign-drawer-skeleton {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.esign-drawer__footer {
-  display: flex;
-  justify-content: flex-end;
 }
 
 .esign-drawer__alert {

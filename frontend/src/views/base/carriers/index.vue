@@ -159,7 +159,7 @@ const columns: DataTableColumns<Carrier> = [
   {
     title: '状态',
     key: 'status',
-    width: 92,
+    width: 100,
     render: (row) => h(StatusTag, { type: 'carrier', value: row.status }),
   },
   {
@@ -173,30 +173,32 @@ const columns: DataTableColumns<Carrier> = [
   {
     title: '创建日期',
     key: 'create_time',
-    width: 104,
+    width: 120,
     render: (row) => dateOnly(row.create_time),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 76,
+    width: 180,
+    align: 'center',
     fixed: 'right',
     render: (row) =>
-      h('div', { class: 'row-actions' }, [
+      h('div', { class: 'action-buttons' }, [
         h(
           NButton,
-          { text: true, type: 'primary', onClick: () => openDetail(row) },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '详情' },
         ),
         h(
           NButton,
-          { text: true, type: 'primary', onClick: () => openForm(row) },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openForm(row) },
           { default: () => '编辑' },
         ),
         h(
           NButton,
           {
-            text: true,
+            size: 'small',
+            quaternary: true,
             type: row.status === 1 ? 'error' : 'primary',
             onClick: () => openStatusConfirm(row),
           },
@@ -347,7 +349,7 @@ async function confirmStatusChange() {
 <template>
   <div class="stp-page">
     <!-- 筛选栏 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="query-card" :bordered="false">
       <QueryBar>
         <QueryField label="承运商名称">
           <n-input v-model:value="filter.carrier_name" clearable placeholder="请输入承运商名称" @keydown.enter="handleSearch" />
@@ -381,21 +383,21 @@ async function confirmStatusChange() {
     </n-card>
 
     <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <span class="page-toolbar__hint">
+    <div class="table-toolbar">
+      <span class="table-toolbar__hint">
         承运商编码由系统自动生成（CAR-XXX）；已停用的承运商不可被派单，在途运单不受影响
       </span>
       <n-button type="primary" @click="openForm(null)">新增承运商</n-button>
     </div>
 
     <!-- 列表 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="table-card" :bordered="false">
       <PageTable
         ref="tableRef"
         :columns="columns"
         :remote="fetchCarriers"
         :query="applied"
-        :scroll-x="1342"
+        :scroll-x="1470"
       />
     </n-card>
 
@@ -437,9 +439,11 @@ async function confirmStatusChange() {
     <n-modal
       v-model:show="showForm"
       preset="card"
+      size="huge"
+      :bordered="false"
       :title="editing ? '编辑承运商' : '新增承运商'"
       class="form-modal"
-      :style="{ width: '560px' }"
+      :style="{ width: '600px', maxWidth: '94vw' }"
       :mask-closable="!submitting"
       :closable="!submitting"
     >
@@ -520,11 +524,11 @@ async function confirmStatusChange() {
         </n-form-item>
       </n-form>
       <template #footer>
-        <div class="form-modal__footer">
-          <n-button :disabled="submitting" @click="showForm = false">取 消</n-button>
+        <div class="modal-footer">
           <n-button type="primary" :loading="submitting" @click="submitForm">
-            {{ editing ? '保 存' : '新增承运商' }}
+            {{ editing ? '保存' : '新增承运商' }}
           </n-button>
+          <n-button :disabled="submitting" @click="showForm = false">取消</n-button>
         </div>
       </template>
     </n-modal>
@@ -536,7 +540,7 @@ async function confirmStatusChange() {
       :title="statusConfirmTitle"
       :content="statusConfirmContent"
       :confirm-text="statusTarget && statusTarget.status === 1 ? '确认停用' : '确认启用'"
-      cancel-text="取 消"
+      cancel-text="取消"
       :loading="statusSubmitting"
       :auto-close="false"
       @confirm="confirmStatusChange"
@@ -545,30 +549,6 @@ async function confirmStatusChange() {
 </template>
 
 <style scoped>
-.page-card {
-  margin-bottom: 12px;
-}
-
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.page-toolbar__hint {
-  font-size: 12px;
-  color: #8c8c8c;
-}
-
-/* 列操作按钮竖排（render 函数内的元素无本组件 scopeId，需 :deep） */
-:deep(.row-actions) {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
 .carrier-detail > :last-child {
   margin-bottom: 0;
 }
@@ -588,13 +568,7 @@ async function confirmStatusChange() {
 
 .field-tip {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
   line-height: 1.5;
-}
-
-.form-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 </style>

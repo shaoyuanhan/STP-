@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * 主布局（对齐旧版设计系统）：
- * 200px 深色侧栏（#1c2433，选中 #0e6e64）+ 44px 白色顶栏（面包屑 + 用户）
+ * 主布局：
+ * 220px 深色侧栏 + 60px 白色顶栏（面包屑 + 用户）
  * + 多页签栏（可关闭，工作台常驻）+ 内容区（keep-alive 缓存页面状态）。
  */
 import { computed, h, onMounted, ref, watch } from 'vue'
@@ -352,15 +352,15 @@ function itemActive(path: string) {
       </div>
       <nav class="side__menu">
         <template v-for="node in menu" :key="node.key">
-          <a
+          <RouterLink
             v-if="node.kind === 'link'"
             class="side__item"
             :class="{ 'is-active': itemActive(node.path) }"
-            @click="router.push(node.path)"
+            :to="node.path"
           >
             <component :is="() => renderIcon(node.icon)" />
             <span>{{ node.title }}</span>
-          </a>
+          </RouterLink>
           <div v-else-if="node.kind === 'branch'" class="side__branch">
             <button
               type="button"
@@ -374,14 +374,14 @@ function itemActive(path: string) {
             </button>
             <div v-show="isOpen(node.key)" class="side__sub">
               <template v-for="child in node.children" :key="child.key">
-                <a
+                <RouterLink
                   v-if="child.kind === 'link'"
                   class="side__subitem"
                   :class="{ 'is-active': itemActive(child.path) }"
-                  @click="router.push(child.path)"
+                  :to="child.path"
                 >
                   {{ child.title }}
-                </a>
+                </RouterLink>
                 <div v-else-if="child.kind === 'note'" class="side__note">{{ child.title }}</div>
                 <div v-else class="side__nest">
                   <button
@@ -394,15 +394,17 @@ function itemActive(path: string) {
                     <i class="side__caret"></i>
                   </button>
                   <div v-show="isOpen(child.key)">
-                    <a
-                      v-for="leaf in child.children"
-                      :key="leaf.key"
-                      class="side__leaf"
-                      :class="{ 'is-active': leaf.kind === 'link' && itemActive(leaf.path) }"
-                      @click="leaf.kind === 'link' && router.push(leaf.path)"
-                    >
-                      {{ leaf.title }}
-                    </a>
+                    <template v-for="leaf in child.children" :key="leaf.key">
+                      <RouterLink
+                        v-if="leaf.kind === 'link'"
+                        class="side__leaf"
+                        :class="{ 'is-active': itemActive(leaf.path) }"
+                        :to="leaf.path"
+                      >
+                        {{ leaf.title }}
+                      </RouterLink>
+                      <div v-else class="side__note">{{ leaf.title }}</div>
+                    </template>
                   </div>
                 </div>
               </template>
@@ -470,15 +472,15 @@ function itemActive(path: string) {
 /* ---- 侧栏（旧版 .sidebar） ---- */
 .side {
   flex: none;
-  width: 200px;
-  background: #1c2433;
+  width: 220px;
+  background: #001529;
   display: flex;
   flex-direction: column;
   user-select: none;
 }
 
 .side__logo {
-  height: 54px;
+  height: 60px;
   flex: none;
   display: flex;
   align-items: center;
@@ -523,7 +525,7 @@ function itemActive(path: string) {
   border-radius: 4px;
   background: transparent;
   color: #d7dee8;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   text-align: left;
 }
@@ -557,7 +559,7 @@ function itemActive(path: string) {
   padding: 9px 12px 9px 36px;
   border-radius: 4px;
   color: #b7c2d0;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -569,7 +571,7 @@ function itemActive(path: string) {
 
 .side__subitem.is-active,
 .side__leaf.is-active {
-  background: #14766b;
+  background: rgb(12 71 77 / 60%);
   color: #fff;
 }
 
@@ -585,7 +587,7 @@ function itemActive(path: string) {
   border-radius: 4px;
   background: transparent;
   color: #c5d0dc;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   text-align: left;
 }
@@ -599,7 +601,7 @@ function itemActive(path: string) {
   padding: 8px 10px 8px 34px;
   border-radius: 4px;
   color: #9aa8ba;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -607,6 +609,12 @@ function itemActive(path: string) {
   padding: 4px 12px 8px 22px;
   color: #6b7c93;
   font-size: 12px;
+}
+
+.side__item,
+.side__subitem,
+.side__leaf {
+  text-decoration: none;
 }
 
 .side__item {
@@ -618,7 +626,7 @@ function itemActive(path: string) {
   margin: 1px 6px;
   border-radius: 4px;
   color: #aab4c2;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -629,7 +637,7 @@ function itemActive(path: string) {
 }
 
 .side__item.is-active {
-  background: #14766b;
+  background: rgb(12 71 77 / 60%);
   color: #fff;
 }
 
@@ -655,13 +663,13 @@ function itemActive(path: string) {
 }
 
 .topbar {
-  height: 44px;
+  height: 60px;
   flex: none;
   background: #fff;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 24px;
   user-select: none;
 }
 
@@ -669,19 +677,19 @@ function itemActive(path: string) {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #8c8c8c;
+  color: #999999;
   min-width: 0;
   overflow: hidden;
 }
 
 .topbar__crumb-sep {
-  color: #d9d9d9;
+  color: #eeeeee;
   flex: none;
 }
 
 /* 前段面包屑允许收缩省略，末级（当前页）保持完整 */
 .topbar__crumb-mod {
-  color: #8c8c8c;
+  color: #999999;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -689,7 +697,7 @@ function itemActive(path: string) {
 }
 
 .topbar__crumb-cur {
-  color: #595959;
+  color: #2d3033;
   white-space: nowrap;
   flex: none;
 }
@@ -703,31 +711,31 @@ function itemActive(path: string) {
 }
 
 .topbar__user {
-  font-size: 13px;
-  color: #595959;
+  font-size: 14px;
+  color: #666666;
   white-space: nowrap;
 }
 
 .topbar__logout {
   border: 0;
   background: none;
-  color: #8c8c8c;
-  font-size: 12px;
+  color: #999999;
+  font-size: 14px;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .topbar__logout:hover {
-  color: #262626;
+  color: #2d3033;
 }
 
 .topbar__avatar {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: #1677ff;
+  background: #1890ff;
   color: #fff;
-  font-size: 13px;
+  font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -744,8 +752,10 @@ function itemActive(path: string) {
 /* ---- 页签栏（旧版 .tabs） ---- */
 .tabs {
   flex: none;
-  background: #e9edf2;
-  padding: 7px 10px;
+  height: 50px;
+  background: #ffffff;
+  border-bottom: 1px solid #eeeeee;
+  padding: 10px 20px;
   display: flex;
   gap: 8px;
   overflow-x: auto;
@@ -765,50 +775,52 @@ function itemActive(path: string) {
   padding: 0 12px;
   border-radius: 4px;
   border: 1px solid transparent;
-  font-size: 13px;
-  color: #595959;
+  font-size: 14px;
+  color: #666666;
   white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .tabs__item:hover {
-  background: #e0e6ee;
+  background: #f5f6fb;
 }
 
 .tabs__item.is-active {
-  background: #fff;
-  border-color: #dfe3e9;
-  color: #1677ff;
+  background: #ffffff;
+  border-color: #eeeeee;
+  color: #1890ff;
 }
 
 .tabs__close {
   font-size: 11px;
   line-height: 1;
-  color: #8c8c8c;
+  color: #999999;
   padding: 2px;
   border-radius: 2px;
   transition: background 0.15s, color 0.15s;
 }
 
 .tabs__close:hover {
-  background: #d9d9d9;
-  color: #595959;
+  background: #eeeeee;
+  color: #666666;
 }
 
 .tabs__item.is-active .tabs__close {
-  color: #1677ff;
+  color: #1890ff;
 }
 
 .tabs__item.is-active .tabs__close:hover {
-  background: rgba(22, 119, 255, 0.12);
+  background: rgb(24 144 255 / 12%);
 }
 
 /* ---- 内容区 ---- */
 .content {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  background: #f5f6fb;
 }
 
 .content::-webkit-scrollbar {
@@ -816,7 +828,7 @@ function itemActive(path: string) {
 }
 
 .content::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
+  background: #999999;
   border-radius: 4px;
 }
 </style>

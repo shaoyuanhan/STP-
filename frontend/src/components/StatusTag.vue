@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 状态标签（旧版设计系统 .tag 药丸样式）
+ * 状态文字：按任务、合作状态、对账与电子签语义展示统一状态色。
  *
  * 用法：<StatusTag type="task" :value="row.status" />
  *
@@ -11,9 +11,7 @@
  *  - reconcile 对账状态（tinyint 0 待对账 / 1 已对账）
  *  - esign    电子签状态（WAIT_SIGN / SIGNED / CANCELLED）
  *
- * 配色对齐旧版（浅底深字）：
- *  blue #e6f4ff/#1677ff · green #f6ffed/#389e0d · orange #fff7e6/#fa8c16
- *  red #fff1f0/#f5222d · gray #fafafa/#595959 · cyan #e6fffb/#08979c
+ * 状态使用语义色文字，不叠加标签底色。
  *
  * 内置映射优先；未知值回退到字典接口（stores/dictionary），
  * 字典未加载时静默拉取一次（失败不阻塞渲染，回显原始值）。
@@ -25,11 +23,11 @@ import type { DictKey } from '@/stores/dictionary'
 import type { EsignStatus, TaskStatus } from '@/types/api'
 
 type StatusKind = 'task' | 'carrier' | 'driver' | 'reconcile' | 'esign'
-type PillColor = 'blue' | 'green' | 'orange' | 'red' | 'gray' | 'cyan'
+type StatusColor = 'blue' | 'green' | 'orange' | 'red' | 'gray'
 
 interface StatusDisplay {
   label: string
-  color: PillColor
+  color: StatusColor
 }
 
 const props = withDefaults(
@@ -52,14 +50,14 @@ onMounted(() => {
   })
 })
 
-/** 任务状态映射（契约 3.1；配色对齐旧版 TASK_STATUS） */
+/** 任务状态映射（契约 3.1） */
 const TASK_STATUS_MAP: Record<TaskStatus, StatusDisplay> = {
-  WAIT_DISPATCH: { label: '待派单', color: 'gray' },
+  WAIT_DISPATCH: { label: '待派单', color: 'orange' },
   DISPATCHED: { label: '已派单', color: 'blue' },
-  CARRIER_ACCEPTED: { label: '承运商已接单', color: 'cyan' },
+  CARRIER_ACCEPTED: { label: '承运商已接单', color: 'blue' },
   OUTBOUND: { label: '已出库', color: 'blue' },
-  PICKED: { label: '已提车', color: 'cyan' },
-  IN_TRANSIT: { label: '在途', color: 'green' },
+  PICKED: { label: '已提车', color: 'blue' },
+  IN_TRANSIT: { label: '在途', color: 'blue' },
   ARRIVED: { label: '已到达', color: 'orange' },
   FINISHED: { label: '已完结', color: 'green' },
   CANCELLED: { label: '已取消', color: 'red' },
@@ -69,18 +67,18 @@ const TASK_STATUS_MAP: Record<TaskStatus, StatusDisplay> = {
 const ESIGN_STATUS_MAP: Record<EsignStatus, StatusDisplay> = {
   WAIT_SIGN: { label: '待签署', color: 'orange' },
   SIGNED: { label: '已签署', color: 'green' },
-  CANCELLED: { label: '已取消', color: 'gray' },
+  CANCELLED: { label: '已取消', color: 'red' },
 }
 
 /** 承运商/司机 tinyint 状态映射 */
 const ENABLE_STATUS_MAP: Record<'carrier' | 'driver', Record<'1' | '0', StatusDisplay>> = {
   carrier: {
     '1': { label: '合作中', color: 'green' },
-    '0': { label: '已停用', color: 'gray' },
+    '0': { label: '已停用', color: 'red' },
   },
   driver: {
     '1': { label: '启用', color: 'green' },
-    '0': { label: '停用', color: 'gray' },
+    '0': { label: '停用', color: 'red' },
   },
 }
 
@@ -131,51 +129,33 @@ const display = computed<StatusDisplay>(() => {
 </script>
 
 <template>
-  <span class="status-pill" :class="`status-pill--${display.color}`">{{ display.label }}</span>
+  <span class="status-text" :class="`status-text--${display.color}`">{{ display.label }}</span>
 </template>
 
 <style scoped>
-/* 旧版 .tag 药丸样式：22px 高、4px 圆角、12px 字号、浅底深字 */
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1;
+.status-text {
+  font-size: 14px;
+  line-height: 22px;
   white-space: nowrap;
 }
 
-.status-pill--blue {
-  background: #e6f4ff;
-  color: #1677ff;
+.status-text--blue {
+  color: #1890ff;
 }
 
-.status-pill--green {
-  background: #f6ffed;
-  color: #389e0d;
+.status-text--green {
+  color: #18a058;
 }
 
-.status-pill--orange {
-  background: #fff7e6;
-  color: #fa8c16;
+.status-text--orange {
+  color: #f0a020;
 }
 
-.status-pill--red {
-  background: #fff1f0;
-  color: #f5222d;
+.status-text--red {
+  color: #d03050;
 }
 
-.status-pill--gray {
-  background: #fafafa;
-  color: #595959;
-  border: 1px solid #f0f0f0;
-}
-
-.status-pill--cyan {
-  background: #e6fffb;
-  color: #08979c;
+.status-text--gray {
+  color: #999999;
 }
 </style>

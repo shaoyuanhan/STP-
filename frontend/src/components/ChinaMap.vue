@@ -242,11 +242,11 @@ function bubbleHtml(bubble: MapBubble): string {
   const count = Math.max(1, Number(bubble.count) || 1)
   const alertCount = Math.max(0, Number(bubble.alertCount) || 0)
   const allAlert = alertCount > 0 && (bubble.hideCount || alertCount >= count)
-  const dotColor = allAlert ? '#f5222d' : bubble.active ? '#fa8c16' : '#1677ff'
+  const dotColor = allAlert ? '#d03050' : bubble.active ? '#f0a020' : '#1890ff'
   const dot = `<span style="position:absolute;left:0;top:0;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:${dotColor};box-shadow:0 0 0 2px #fff"></span>`
   if (bubble.hideCount) return markerBox(dot)
-  const numColor = alertCount > 0 ? '#cf1322' : '#1677ff'
-  const nameColor = bubble.active ? '#d46b08' : '#334155'
+  const numColor = alertCount > 0 ? '#d03050' : '#1890ff'
+  const nameColor = bubble.active ? '#f0a020' : '#334155'
   const label = bubble.name
     ? `<span style="position:absolute;left:8px;top:0;transform:translateY(-50%);white-space:nowrap;font:500 12px/1.2 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:${nameColor};text-shadow:0 0 2px #fff,0 0 3px #fff,1px 0 #fff,-1px 0 #fff,0 1px #fff,0 -1px #fff">${bubble.name}<span style="margin-left:4px;font-weight:600;color:${numColor}">${count}</span></span>`
     : ''
@@ -260,7 +260,7 @@ function featureProps(feat: PulseFeature | null | undefined) {
 function applyPulseStyle() {
   if (!pulseLayer) return
   const hot = hotId.value
-  const blue = props.mode === 'history' ? '64,150,255' : '22,119,255'
+  const blue = props.mode === 'history' ? '54,156,253' : '24,144,255'
   pulseLayer.setStyle({
     unit: 'px',
     dash: [16, 0, 16, 0],
@@ -278,8 +278,8 @@ function applyPulseStyle() {
       const dim = hot != null && meta?.id !== hot
       if (meta?.alert) {
         return dim
-          ? ['rgba(245,34,45,0.04)', 'rgba(245,34,45,0.22)']
-          : ['rgba(245,34,45,0.12)', 'rgba(245,34,45,0.95)']
+          ? ['rgba(208,48,80,0.04)', 'rgba(208,48,80,0.22)']
+          : ['rgba(208,48,80,0.12)', 'rgba(208,48,80,0.95)']
       }
       return dim
         ? [`rgba(${blue},0.04)`, `rgba(${blue},0.18)`]
@@ -305,12 +305,13 @@ function applyHot() {
   })
 }
 
-function pixelOf(pixel: unknown): number[] | null {
+function pixelOf(pixel: unknown): [number, number] | null {
   if (!pixel || typeof pixel !== 'object') return null
   const point = pixel as { x?: number; y?: number; toArray?: () => number[] }
-  if (point.toArray) return point.toArray()
-  if (point.x == null || point.y == null) return null
-  return [point.x, point.y]
+  const values = point.toArray ? point.toArray() : [point.x, point.y]
+  const x = Number(values[0])
+  const y = Number(values[1])
+  return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null
 }
 
 function linkAt(pixel: unknown): number | null {
@@ -340,11 +341,11 @@ function districtStyles() {
     'province-stroke': 'rgba(148,163,184,.85)',
     fill: (feature: { NAME_CHN?: string }) => {
       const name = shortProvince(String(feature?.NAME_CHN ?? ''))
-      if (highlighted.has(name)) return 'rgba(250,140,22,.28)'
+      if (highlighted.has(name)) return 'rgba(240,160,32,.28)'
       if (!showHeat || !heat || !max) return 'rgba(255,255,255,0)'
       const count = heat[name] || 0
       if (!count) return 'rgba(255,255,255,0)'
-      return `rgba(250,140,22,${(0.14 + (count / max) * 0.36).toFixed(2)})`
+      return `rgba(240,160,32,${(0.14 + (count / max) * 0.36).toFixed(2)})`
     },
   }
 }
@@ -381,7 +382,7 @@ function addLine(
   if (!map || path.length < 2) return null
   const alert = Boolean(opts.alert)
   const weight = opts.weight ?? (alert ? 4 : 3)
-  const color = opts.color ?? (alert ? '#f5222d' : props.mode === 'history' ? '#4096ff' : '#1677ff')
+  const color = opts.color ?? (alert ? '#d03050' : props.mode === 'history' ? '#369cfd' : '#1890ff')
   const halo = opts.halo ?? (alert ? '#ffccc7' : '#91caff')
   const dash = opts.dashed ? { strokeStyle: 'dashed' as const, strokeDasharray: [10, 8] } : {}
   if (halo !== 'transparent') {
@@ -526,7 +527,7 @@ function paintOverview(AMap: Awaited<ReturnType<typeof loadAmap>>) {
       AMap,
       [lng, lat],
       markerBox(
-        `${circle('#1677ff', 10)}<div style="position:absolute;left:50%;top:-18px;transform:translateX(-50%);white-space:nowrap;font:600 12px/1 sans-serif;color:#0958d9;text-shadow:0 0 3px #fff,0 0 3px #fff">${hub.name}</div>`,
+        `${circle('#1890ff', 10)}<div style="position:absolute;left:50%;top:-18px;transform:translateX(-50%);white-space:nowrap;font:600 12px/1 sans-serif;color:#087ae3;text-shadow:0 0 3px #fff,0 0 3px #fff">${hub.name}</div>`,
       ),
       { title: hub.tip, zIndex: 40, clickable: false },
     )
@@ -549,7 +550,7 @@ function paintOverview(AMap: Awaited<ReturnType<typeof loadAmap>>) {
       AMap,
       [lng, lat],
       markerBox(
-        `<div style="position:absolute;left:50%;bottom:8px;transform:translateX(-50%);padding:2px 6px;border-radius:4px;background:#fff;border:1px solid #1677ff;color:#0958d9;font:600 11px/16px sans-serif;white-space:nowrap">${tag.name}</div>`,
+        `<div style="position:absolute;left:50%;bottom:8px;transform:translateX(-50%);padding:2px 6px;border-radius:4px;background:#fff;border:1px solid #1890ff;color:#087ae3;font:600 11px/16px sans-serif;white-space:nowrap">${tag.name}</div>`,
       ),
       { zIndex: 88, onClick: () => emit('task', tag.id) },
     )
@@ -569,7 +570,7 @@ function paintDetail(AMap: Awaited<ReturnType<typeof loadAmap>>) {
   if (cur) traveled.push([cur.lng, cur.lat])
   const tail = traveled[traveled.length - 1]
   if (props.arrived && dest) traveled.push([dest.lng, dest.lat])
-  addLine(AMap, traveled, { color: '#1677ff', halo: '#91caff', weight: 4 })
+  addLine(AMap, traveled, { color: '#1890ff', halo: '#91caff', weight: 4 })
   if (!props.arrived && dest && tail) {
     const remain: Array<[number, number]> = [tail, [dest.lng, dest.lat]]
     const dist = Math.hypot(dest.lng - tail[0], dest.lat - tail[1])
@@ -577,13 +578,13 @@ function paintDetail(AMap: Awaited<ReturnType<typeof loadAmap>>) {
   }
 
   if (origin) {
-    addMarker(AMap, [origin.lng, origin.lat], labeledDot('#52c41a', origin.label, 'top'), { title: origin.tip || origin.label, zIndex: 100 })
+    addMarker(AMap, [origin.lng, origin.lat], labeledDot('#18a058', origin.label, 'top'), { title: origin.tip || origin.label, zIndex: 100 })
   }
   stops.forEach((stop, index) => {
     const isLast = index === stops.length - 1
     const latest = isLast && props.routeAlert && !props.arrived
     const size = latest ? 20 : isLast ? 16 : 10
-    const color = latest ? '#f5222d' : '#1677ff'
+    const color = latest ? '#d03050' : '#1890ff'
     const html = latest
       ? `${circle(color, size)}<div class="cmap-latest__ring"></div>`
       : circle(color, size)
@@ -605,7 +606,7 @@ function paintDetail(AMap: Awaited<ReturnType<typeof loadAmap>>) {
     )
   }
   if (dest) {
-    addMarker(AMap, [dest.lng, dest.lat], labeledDot('#fa8c16', dest.label, 'bottom'), { title: dest.tip || dest.label, zIndex: 100 })
+    addMarker(AMap, [dest.lng, dest.lat], labeledDot('#f0a020', dest.label, 'bottom'), { title: dest.tip || dest.label, zIndex: 100 })
   }
 }
 
@@ -914,9 +915,9 @@ defineExpose({ render, highlight, locate: () => focusActive(true) })
   height: 46px;
   margin: -23px 0 0 -23px;
   border-radius: 50%;
-  border: 2px solid #1677ff;
-  background: rgba(22, 119, 255, 0.14);
-  box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.12);
+  border: 2px solid #1890ff;
+  background: rgba(24, 144, 255, 0.14);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.12);
   animation: cmap-active-pulse 1.6s ease-out infinite;
 }
 
@@ -958,7 +959,7 @@ defineExpose({ render, highlight, locate: () => focusActive(true) })
 .china-map__mask p {
   max-width: 460px;
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -983,7 +984,7 @@ defineExpose({ render, highlight, locate: () => focusActive(true) })
   color: #334155;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid #e6eef5;
-  border-left: 3px solid #1677ff;
+  border-left: 3px solid #1890ff;
   border-radius: 10px;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
   flex-wrap: wrap;

@@ -47,9 +47,6 @@ const filters = reactive({
   reconcile_status: null as ReconcileStatus | null,
 })
 
-// 筛选区收起/展开：收起时仅显示首行高频字段，已填值不丢失
-const filterExpanded = ref(false)
-
 const carrierOptions = ref<SelectOption[]>([])
 const reconcileOptions = computed<SelectOption[]>(() => [
   { label: '待对账', value: 0 },
@@ -324,14 +321,15 @@ const columns = computed<DataTableColumns<FreightBillRow>>(() => [
   {
     title: '操作',
     key: 'actions',
-    width: 190,
+    width: 220,
+    align: 'center',
     resizable: true,
     fixed: 'right',
     render: (row) => {
       const buttons = [
         h(
           NButton,
-          { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '费用明细' },
         ),
       ]
@@ -339,17 +337,17 @@ const columns = computed<DataTableColumns<FreightBillRow>>(() => [
         buttons.push(
           h(
             NButton,
-            { size: 'tiny', quaternary: true, type: 'warning', onClick: () => openAdjust(row) },
+            { size: 'small', quaternary: true, type: 'primary', onClick: () => openAdjust(row) },
             { default: () => '修改运费' },
           ),
           h(
             NButton,
-            { size: 'tiny', quaternary: true, type: 'success', onClick: () => askReconcile(row) },
+            { size: 'small', quaternary: true, type: 'primary', onClick: () => askReconcile(row) },
             { default: () => '确认对账' },
           ),
         )
       }
-      return h('div', { class: 'freight-actions' }, buttons)
+      return h('div', { class: 'action-buttons' }, buttons)
     },
   },
 ])
@@ -390,7 +388,7 @@ const adjustColumns = computed<DataTableColumns<FreightAdjustLog>>(() => [
   {
     title: '调整时间',
     key: 'create_time',
-    width: 138,
+    width: 180,
     render: (row) => datetime(row.create_time),
   },
   {
@@ -540,88 +538,78 @@ onActivated(() => {
 </script>
 
 <template>
-  <div class="freight">
+  <div class="stp-page freight">
     <!-- 筛选 -->
-    <n-card size="small" :bordered="false" class="freight-card">
-      <div class="freight-filter">
-        <div class="freight-filter__field">
-          <span class="freight-filter__label">运费单号</span>
-          <n-input
-            v-model:value="filters.freight_no"
-            size="small"
-            clearable
-            placeholder="请输入运费单号（YF 开头）"
-            @keyup.enter="handleSearch"
-          />
+    <n-card class="query-card" :bordered="false">
+      <div class="query-bar">
+        <div class="query-fields">
+          <div class="query-item">
+            <span>运费单号</span>
+            <n-input
+              v-model:value="filters.freight_no"
+              clearable
+              placeholder="请输入运费单号（YF 开头）"
+              @keyup.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>任务单号</span>
+            <n-input
+              v-model:value="filters.task_no"
+              clearable
+              placeholder="请输入任务单号"
+              @keyup.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>订单号</span>
+            <n-input
+              v-model:value="filters.order_no"
+              clearable
+              placeholder="请输入订单号"
+              @keyup.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>承运商</span>
+            <n-select
+              v-model:value="filters.carrier_id"
+              clearable
+              filterable
+              placeholder="请选择承运商"
+              :options="carrierOptions"
+            />
+          </div>
+          <div class="query-item">
+            <span>对账状态</span>
+            <n-select
+              v-model:value="filters.reconcile_status"
+              clearable
+              placeholder="请选择对账状态"
+              :options="reconcileOptions"
+            />
+          </div>
         </div>
-        <div class="freight-filter__field">
-          <span class="freight-filter__label">任务单号</span>
-          <n-input
-            v-model:value="filters.task_no"
-            size="small"
-            clearable
-            placeholder="请输入任务单号"
-            @keyup.enter="handleSearch"
-          />
-        </div>
-        <div class="freight-filter__field">
-          <span class="freight-filter__label">订单号</span>
-          <n-input
-            v-model:value="filters.order_no"
-            size="small"
-            clearable
-            placeholder="请输入订单号"
-            @keyup.enter="handleSearch"
-          />
-        </div>
-        <div class="freight-filter__field">
-          <span class="freight-filter__label">承运商</span>
-          <n-select
-            v-model:value="filters.carrier_id"
-            size="small"
-            clearable
-            filterable
-            placeholder="全部承运商"
-            :options="carrierOptions"
-          />
-        </div>
-        <div v-show="filterExpanded" class="freight-filter__field">
-          <span class="freight-filter__label">对账状态</span>
-          <n-select
-            v-model:value="filters.reconcile_status"
-            size="small"
-            clearable
-            placeholder="全部状态"
-            :options="reconcileOptions"
-          />
-        </div>
-        <div class="freight-filter__actions">
-          <n-button size="small" :loading="exporting" @click="handleExport">导出</n-button>
-          <n-button size="small" @click="handleReset">重置</n-button>
-          <n-button size="small" type="primary" :loading="loading" @click="handleSearch">查询</n-button>
-          <n-button
-            size="small"
-            quaternary
-            class="freight-filter__toggle"
-            @click="filterExpanded = !filterExpanded"
-          >
-            {{ filterExpanded ? '收起' : '展开' }}
-            <span class="freight-filter__caret" :class="{ 'is-open': filterExpanded }">▾</span>
-          </n-button>
+        <div class="query-buttons">
+          <n-button type="primary" quaternary @click="handleReset">重置</n-button>
+          <n-button type="primary" :loading="loading" @click="handleSearch">查询</n-button>
         </div>
       </div>
     </n-card>
 
-    <!-- 合计提示条 -->
-    <div class="freight-summary">
-      <span>共 {{ total }} 笔</span>
-      <span>计划运费合计：<b>¥{{ money(summary.plan_amount) }}</b></span>
-      <span>实际运费合计：<b class="freight-summary__actual">¥{{ money(summary.amount) }}</b></span>
-      <span class="freight-summary__tip">运费单于任务到达时自动生成；仅「待对账」可修改运费</span>
-    </div>
-
     <!-- 列表 -->
-    <n-card size="small" :bordered="false" class="freight-card">
+    <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <div class="table-summary">
+          <span>共 {{ total }} 笔</span>
+          <span>计划运费合计：<b>¥{{ money(summary.plan_amount) }}</b></span>
+          <span>实际运费合计：<b class="freight-summary__actual">¥{{ money(summary.amount) }}</b></span>
+          <span class="table-toolbar__hint">运费单于任务到达时自动生成；仅「待对账」可修改运费</span>
+        </div>
+        <div class="table-toolbar__actions">
+          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+        </div>
+      </div>
       <n-data-table
         size="small"
         remote
@@ -630,13 +618,13 @@ onActivated(() => {
         :loading="loading"
         :pagination="pagination"
         :row-key="rowKey"
-        :scroll-x="1492"
+        :scroll-x="1846"
         :bordered="false"
       >
         <template #empty>
           <div v-if="loadError" class="freight-error">
             <span>{{ loadError }}</span>
-            <n-button size="tiny" type="primary" quaternary @click="loadPage()">重试</n-button>
+            <n-button size="small" type="primary" quaternary @click="loadPage()">重试</n-button>
           </div>
           <n-empty v-else description="暂无运费单，任务到达后自动生成" />
         </template>
@@ -689,8 +677,7 @@ onActivated(() => {
 
             <div class="freight-section">
               <div class="freight-section__header">
-                <span class="freight-section__bar"></span>
-                <span class="freight-section__title">调整记录</span>
+                <span class="stp-section-title">调整记录</span>
                 <span class="freight-muted">共 {{ adjustLogs.length }} 条（每次修改运费留痕）</span>
               </div>
               <n-data-table
@@ -701,7 +688,7 @@ onActivated(() => {
                 :row-key="adjustRowKey"
                 :bordered="false"
                 :single-line="false"
-                :scroll-x="600"
+                :scroll-x="620"
               />
               <n-empty v-else description="暂无调整记录（未修改过运费）" style="padding: 16px 0" />
             </div>
@@ -713,8 +700,8 @@ onActivated(() => {
         </n-spin>
         <template v-if="drawerBill && isPending(drawerBill)" #footer>
           <div class="freight-drawer__footer">
-            <n-button size="small" @click="drawerAdjust">修改运费</n-button>
-            <n-button size="small" type="primary" @click="drawerReconcile">确认对账</n-button>
+            <n-button @click="drawerAdjust">修改运费</n-button>
+            <n-button type="primary" @click="drawerReconcile">确认对账</n-button>
           </div>
         </template>
       </n-drawer-content>
@@ -724,8 +711,11 @@ onActivated(() => {
     <n-modal
       v-model:show="showAdjustModal"
       preset="card"
+      size="huge"
+      class="form-modal"
       :title="`修改运费 · ${adjustTarget?.freight_no ?? ''}`"
       :bordered="false"
+      :style="{ width: '600px', maxWidth: '94vw' }"
       :mask-closable="false"
     >
       <n-alert type="warning" :show-icon="false" class="freight-adjust__alert">
@@ -737,8 +727,8 @@ onActivated(() => {
         :model="adjustForm"
         :rules="adjustRules"
         label-placement="left"
-        label-width="96"
-        size="small"
+        label-width="100"
+        require-mark-placement="left"
       >
         <n-form-item label="新实际运费" path="amount">
           <n-input-number
@@ -763,11 +753,9 @@ onActivated(() => {
         </n-form-item>
       </n-form>
       <template #footer>
-        <div class="freight-adjust__footer">
-          <n-button size="small" :disabled="adjustSubmitting" @click="showAdjustModal = false">取 消</n-button>
-          <n-button size="small" type="warning" :loading="adjustSubmitting" @click="submitAdjust">
-            确认修改
-          </n-button>
+        <div class="modal-footer">
+          <n-button type="primary" :loading="adjustSubmitting" @click="submitAdjust">确认修改</n-button>
+          <n-button :disabled="adjustSubmitting" @click="showAdjustModal = false">取消</n-button>
         </div>
       </template>
     </n-modal>
@@ -786,81 +774,19 @@ onActivated(() => {
 </template>
 
 <style scoped>
-.freight-card {
-  border-radius: 6px;
-  margin-bottom: 12px;
+.freight .table-summary {
+  flex: 1;
+  min-width: 0;
 }
 
-.freight-filter {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.freight-filter__field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.freight-filter__label {
-  flex: none;
-  font-size: 13px;
-  color: #595959;
-}
-
-.freight-filter__field .n-input,
-.freight-filter__field .n-select {
-  width: 200px;
-}
-
-.freight-filter__actions {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.freight-filter__caret {
-  display: inline-block;
-  margin-left: 2px;
-  font-size: 12px;
-  transition: transform 0.2s ease;
-}
-
-.freight-filter__caret.is-open {
-  transform: rotate(180deg);
-}
-
-.freight-summary {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  flex-wrap: wrap;
-  font-size: 13px;
-  color: #595959;
-  margin-bottom: 12px;
-  padding: 0 4px;
-}
-
-.freight-summary b {
-  color: #262626;
+.table-summary b {
+  color: #2d3033;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.freight-summary__actual {
-  color: #fa8c16;
-}
-
-.freight-summary__tip {
-  margin-left: auto;
-  font-size: 12px;
-  color: #8c8c8c;
-}
-
-.freight-actions {
-  display: flex;
-  gap: 2px;
+.table-summary b.freight-summary__actual {
+  color: #f0a020;
 }
 
 .freight-error {
@@ -869,8 +795,8 @@ onActivated(() => {
   justify-content: center;
   gap: 8px;
   padding: 16px 0;
-  color: #f5222d;
-  font-size: 13px;
+  color: #d03050;
+  font-size: 14px;
 }
 
 .freight-error--drawer {
@@ -879,7 +805,7 @@ onActivated(() => {
 }
 
 .freight-muted {
-  color: #8c8c8c;
+  color: #999999;
   font-size: 12px;
 }
 
@@ -890,27 +816,16 @@ onActivated(() => {
 .freight-section__header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
-.freight-section__bar {
-  flex: none;
-  width: 3px;
-  height: 14px;
-  border-radius: 2px;
-  background: #1677ff;
+.freight-section__header .stp-section-title {
+  margin-bottom: 0;
 }
 
-.freight-section__title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #262626;
-}
-
-/* 调整记录表格：调整后金额沿用列表中「已调整」的橙色强调 */
-.freight-adjust-cell {
-  color: #fa8c16;
+:deep(.freight-adjust-cell) {
+  color: #f0a020;
   font-weight: 600;
 }
 
@@ -923,7 +838,7 @@ onActivated(() => {
 .freight-drawer__footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 20px;
 }
 
 .freight-adjust__alert {
@@ -934,14 +849,8 @@ onActivated(() => {
   width: 100%;
 }
 
-.freight-adjust__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 :deep(.freight-adjusted) {
-  color: #fa8c16;
+  color: #f0a020;
   font-weight: 600;
 }
 </style>

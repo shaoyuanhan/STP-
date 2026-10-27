@@ -61,13 +61,13 @@ defineProps<{
 
 .page-placeholder__desc {
   margin: 0 0 6px;
-  font-size: 13px;
-  color: #4e5969;
+  font-size: 14px;
+  color: #666666;
 }
 
 .page-placeholder__note {
   margin: 0;
   font-size: 12px;
-  color: #8f959e;
+  color: #999999;
 }
 </style>
