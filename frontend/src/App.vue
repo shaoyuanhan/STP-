@@ -135,7 +135,7 @@ body {
 
 .query-card {
   margin-bottom: 10px;
-  border-color: #eae5e5 !important;
+  border-color: #eeeeee !important;
 }
 
 .query-card > .n-card-content,
