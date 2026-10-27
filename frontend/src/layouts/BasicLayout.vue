@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
- * 主布局（对齐旧版设计系统）：
- * 200px 深色侧栏（#1c2433，选中 #0e6e64）+ 44px 白色顶栏（面包屑 + 用户）
- * + 多页签栏（可关闭，工作台常驻）+ 内容区（keep-alive 缓存页面状态）。
+ * 主布局：220px 深色侧栏 + 60px 顶栏 + 50px 多页签栏。
+ * 内容区通过 keep-alive 缓存页面状态，工作台页签常驻。
  */
 import { computed, h, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -145,16 +144,16 @@ const avatarText = computed(() => session.userName.slice(0, 1))
       <nav class="side__menu">
         <div v-for="section in MENU" :key="section.group" class="side__group">
           <div class="side__group-title">{{ section.group }}</div>
-          <a
+          <router-link
             v-for="item in section.items"
             :key="item.path"
+            :to="item.path"
             class="side__item"
             :class="{ 'is-active': route.path === item.path }"
-            @click="router.push(item.path)"
           >
             <component :is="() => renderIcon(item.icon)" />
             <span>{{ item.title }}</span>
-          </a>
+          </router-link>
         </div>
       </nav>
     </aside>
@@ -215,21 +214,21 @@ const avatarText = computed(() => session.userName.slice(0, 1))
 /* ---- 侧栏（旧版 .sidebar） ---- */
 .side {
   flex: none;
-  width: 200px;
-  background: #1c2433;
+  width: 220px;
+  background: #001529;
   display: flex;
   flex-direction: column;
   user-select: none;
 }
 
 .side__logo {
-  height: 54px;
+  height: 60px;
   flex: none;
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 0 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgb(255 255 255 / 6%);
 }
 
 .side__logo-brand {
@@ -250,14 +249,14 @@ const avatarText = computed(() => session.userName.slice(0, 1))
 }
 
 .side__menu::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgb(255 255 255 / 14%);
   border-radius: 3px;
 }
 
 .side__group-title {
   padding: 12px 14px 4px;
-  font-size: 11px;
-  color: #6b7c93;
+  font-size: 12px;
+  color: rgb(255 255 255 / 55%);
   letter-spacing: 1px;
 }
 
@@ -268,20 +267,21 @@ const avatarText = computed(() => session.userName.slice(0, 1))
   gap: 10px;
   padding: 0 14px;
   margin: 1px 6px;
-  border-radius: 4px;
-  color: #aab4c2;
-  font-size: 13px;
+  border-radius: 6px;
+  color: rgb(255 255 255 / 55%);
+  font-size: 14px;
+  text-decoration: none;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .side__item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(255 255 255 / 6%);
   color: #fff;
 }
 
 .side__item.is-active {
-  background: #0e6e64;
+  background: rgb(12 71 77 / 60%);
   color: #fff;
 }
 
@@ -307,13 +307,13 @@ const avatarText = computed(() => session.userName.slice(0, 1))
 }
 
 .topbar {
-  height: 44px;
+  height: 60px;
   flex: none;
   background: #fff;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 24px;
   user-select: none;
 }
 
@@ -321,19 +321,19 @@ const avatarText = computed(() => session.userName.slice(0, 1))
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #8c8c8c;
+  color: #666666;
 }
 
 .topbar__crumb-mod {
-  color: #8c8c8c;
+  color: #666666;
 }
 
 .topbar__crumb-sep {
-  color: #d9d9d9;
+  color: #999999;
 }
 
 .topbar__crumb-cur {
-  color: #595959;
+  color: #2d3033;
 }
 
 .topbar__right {
@@ -344,17 +344,17 @@ const avatarText = computed(() => session.userName.slice(0, 1))
 }
 
 .topbar__user {
-  font-size: 13px;
-  color: #595959;
+  font-size: 14px;
+  color: #666666;
 }
 
 .topbar__avatar {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: #1677ff;
+  background: #1890ff;
   color: #fff;
-  font-size: 13px;
+  font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -363,8 +363,10 @@ const avatarText = computed(() => session.userName.slice(0, 1))
 /* ---- 页签栏（旧版 .tabs） ---- */
 .tabs {
   flex: none;
-  background: #e9edf2;
-  padding: 7px 10px;
+  height: 50px;
+  background: #ffffff;
+  border-bottom: 1px solid #eeeeee;
+  padding: 10px 20px;
   display: flex;
   gap: 8px;
   overflow-x: auto;
@@ -384,50 +386,52 @@ const avatarText = computed(() => session.userName.slice(0, 1))
   padding: 0 12px;
   border-radius: 4px;
   border: 1px solid transparent;
-  font-size: 13px;
-  color: #595959;
+  font-size: 14px;
+  color: #666666;
   white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .tabs__item:hover {
-  background: #e0e6ee;
+  background: #f5f6fb;
 }
 
 .tabs__item.is-active {
-  background: #fff;
-  border-color: #dfe3e9;
-  color: #1677ff;
+  background: #ffffff;
+  border-color: #eeeeee;
+  color: #1890ff;
 }
 
 .tabs__close {
   font-size: 11px;
   line-height: 1;
-  color: #8c8c8c;
+  color: #999999;
   padding: 2px;
   border-radius: 2px;
   transition: background 0.15s, color 0.15s;
 }
 
 .tabs__close:hover {
-  background: #d9d9d9;
-  color: #595959;
+  background: #eeeeee;
+  color: #2d3033;
 }
 
 .tabs__item.is-active .tabs__close {
-  color: #1677ff;
+  color: #1890ff;
 }
 
 .tabs__item.is-active .tabs__close:hover {
-  background: rgba(22, 119, 255, 0.12);
+  background: rgb(24 144 255 / 12%);
 }
 
 /* ---- 内容区 ---- */
 .content {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  background: #f5f6fb;
 }
 
 .content::-webkit-scrollbar {
@@ -435,7 +439,7 @@ const avatarText = computed(() => session.userName.slice(0, 1))
 }
 
 .content::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
+  background: #999999;
   border-radius: 4px;
 }
 </style>

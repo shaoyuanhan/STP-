@@ -79,18 +79,23 @@ const resolvedLabelStyle = computed(() => props.labelStyle)
 
 .detail-section__bar {
   flex: none;
-  width: 3px;
-  height: 14px;
+  width: 4px;
+  height: 16px;
   border-radius: 2px;
-  background: #1677ff;
+  background: #1890ff;
 }
 
 .detail-section__title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: #1f2329;
+  font-size: 14px;
+  font-weight: 900;
+  color: #2d3033;
   line-height: 1.4;
+}
+
+.detail-section :deep(.n-descriptions-item__label) {
+  color: #666666 !important;
+  font-size: 14px;
 }
 
 .detail-section__extra {

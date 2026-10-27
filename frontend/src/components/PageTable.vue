@@ -179,7 +179,7 @@ defineExpose({
 }
 
 .page-table__error-text {
-  color: #e5484d;
-  font-size: 13px;
+  color: #d03050;
+  font-size: 14px;
 }
 </style>

@@ -3,7 +3,7 @@
  * 运输调度 - 发运任务（契约 5.4 / 既有需求 2/3/5/6）
  *
  * - 筛选：任务单号/发运申请号/VIN/客户名称/状态（9 态）/承运商/创建日期区间
- * - 列表：交付地址完整展示、承运商司机合并列、计划提车/出库/发运/到达四列、操作竖排
+ * - 列表：交付地址完整展示、承运商司机合并列、计划提车/出库/发运/到达四列、操作横排
  * - 行多选：仅「待派单」可勾选，选中后顶部「批量派单（N）」
  * - 派单/改派/取消派单携带列表行 version，D0001 冲突时提示并刷新列表
  */
@@ -21,7 +21,7 @@ import { splitVins } from './shared'
 import { listCarriers } from '@/services/carriers'
 import { exportShippingTasks, listShippingTasks } from '@/services/tasks'
 import { useDictionaryStore } from '@/stores/dictionary'
-import { dateOnly, dateShort, datetime } from '@/utils/format'
+import { dateOnly, datetime } from '@/utils/format'
 import type { ShippingTaskListItem, ShippingTaskQuery, TaskStatus } from '@/types/api'
 
 /** PageTable 实例句柄 */
@@ -202,26 +202,37 @@ function renderDriver(row: ShippingTaskListItem) {
 }
 
 function renderActions(row: ShippingTaskListItem) {
-  const buttons = []
+  const buttons = [
+    h(
+      NButton,
+      { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
+      { default: () => '详情' },
+    ),
+  ]
   if (row.status === 'WAIT_DISPATCH') {
     buttons.push(
-      h(NButton, { text: true, type: 'primary', onClick: () => openDispatch(row) }, { default: () => '派单' }),
+      h(
+        NButton,
+        { size: 'small', quaternary: true, type: 'primary', onClick: () => openDispatch(row) },
+        { default: () => '派单' },
+      ),
     )
   }
   if (row.status === 'DISPATCHED') {
     buttons.push(
-      h(NButton, { text: true, type: 'primary', onClick: () => openReassign(row) }, { default: () => '改派' }),
       h(
         NButton,
-        { text: true, type: 'error', onClick: () => openCancel(row) },
+        { size: 'small', quaternary: true, type: 'primary', onClick: () => openReassign(row) },
+        { default: () => '改派' },
+      ),
+      h(
+        NButton,
+        { size: 'small', quaternary: true, type: 'error', onClick: () => openCancel(row) },
         { default: () => '取消派单' },
       ),
     )
   }
-  buttons.push(
-    h(NButton, { text: true, type: 'primary', onClick: () => openDetail(row) }, { default: () => '详情' }),
-  )
-  return h('div', { class: 'row-actions' }, buttons)
+  return h('div', { class: 'action-buttons' }, buttons)
 }
 
 const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
@@ -286,25 +297,25 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
   {
     title: '计划提车日期',
     key: 'plan_pickup_date',
-    width: 108,
+    width: 120,
     render: (row) => (row.plan_pickup_date ? dateOnly(row.plan_pickup_date) : '-'),
   },
   {
     title: '发运时间',
     key: 'ship_time',
-    width: 130,
+    width: 180,
     render: (row) => (row.ship_time ? datetime(row.ship_time) : '-'),
   },
   {
     title: '出库日期',
     key: 'outbound_date',
-    width: 130,
+    width: 180,
     render: (row) => (row.outbound_date ? datetime(row.outbound_date) : '-'),
   },
   {
     title: '到达日期',
     key: 'arrive_time',
-    width: 130,
+    width: 180,
     render: (row) => (row.arrive_time ? datetime(row.arrive_time) : '-'),
   },
   {
@@ -333,19 +344,20 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
   {
     title: '状态',
     key: 'status',
-    width: 104,
+    width: 120,
     render: (row) => h(StatusTag, { type: 'task', value: row.status }),
   },
   {
     title: '创建时间',
     key: 'create_time',
-    width: 92,
-    render: (row) => dateShort(row.create_time),
+    width: 180,
+    render: (row) => datetime(row.create_time),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 84,
+    width: 180,
+    align: 'center',
     fixed: 'right',
     render: (row) => renderActions(row),
   },
@@ -404,109 +416,104 @@ function refreshList() {
 <template>
   <div class="stp-page">
     <!-- 筛选栏 -->
-    <n-card class="page-card" :bordered="false">
-      <div class="page-card__filters">
-        <div class="page-card__field">
-          <span class="page-card__label">任务单号</span>
-          <n-input
-            v-model:value="filter.task_no"
-            class="page-card__input page-card__input--s"
-            clearable
-            placeholder="请输入"
-            @keydown.enter="handleSearch"
-          />
+    <n-card class="query-card" :bordered="false">
+      <div class="query-bar">
+        <div class="query-fields">
+          <div class="query-item">
+            <span>任务单号</span>
+            <n-input
+              v-model:value="filter.task_no"
+              clearable
+              placeholder="请输入任务单号"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>发运申请号</span>
+            <n-input
+              v-model:value="filter.apply_no"
+              clearable
+              placeholder="请输入发运申请号"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>VIN</span>
+            <n-input
+              v-model:value="filter.vin"
+              clearable
+              placeholder="请输入VIN"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>客户名称</span>
+            <n-input
+              v-model:value="filter.customer_name"
+              clearable
+              placeholder="请输入客户名称"
+              @keydown.enter="handleSearch"
+            />
+          </div>
+          <div class="query-item">
+            <span>状态</span>
+            <n-select
+              v-model:value="filter.status"
+              clearable
+              :options="statusOptions"
+              placeholder="请选择任务状态"
+            />
+          </div>
+          <div class="query-item">
+            <span>承运商</span>
+            <n-select
+              v-model:value="filter.carrier_id"
+              clearable
+              filterable
+              :options="carrierOptions"
+              placeholder="请选择承运商"
+            />
+          </div>
+          <div class="query-item">
+            <span>创建日期</span>
+            <n-date-picker
+              v-model:formatted-value="filter.range"
+              type="daterange"
+              value-format="yyyy-MM-dd"
+              clearable
+            />
+          </div>
         </div>
-        <div class="page-card__field">
-          <span class="page-card__label">发运申请号</span>
-          <n-input
-            v-model:value="filter.apply_no"
-            class="page-card__input page-card__input--s"
-            clearable
-            placeholder="请输入"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">VIN</span>
-          <n-input
-            v-model:value="filter.vin"
-            class="page-card__input page-card__input--s"
-            clearable
-            placeholder="请输入"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">客户名称</span>
-          <n-input
-            v-model:value="filter.customer_name"
-            class="page-card__input page-card__input--s"
-            clearable
-            placeholder="请输入"
-            @keydown.enter="handleSearch"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">状态</span>
-          <n-select
-            v-model:value="filter.status"
-            class="page-card__select"
-            clearable
-            :options="statusOptions"
-            placeholder="全部状态"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">承运商</span>
-          <n-select
-            v-model:value="filter.carrier_id"
-            class="page-card__select"
-            clearable
-            filterable
-            :options="carrierOptions"
-            placeholder="全部承运商"
-          />
-        </div>
-        <div class="page-card__field">
-          <span class="page-card__label">创建日期</span>
-          <n-date-picker
-            v-model:formatted-value="filter.range"
-            type="daterange"
-            value-format="yyyy-MM-dd"
-            clearable
-            class="page-card__range"
-          />
-        </div>
-        <div class="page-card__actions">
-          <n-button :loading="exporting" @click="handleExport">导出</n-button>
-          <n-button @click="handleReset">重置</n-button>
+        <div class="query-buttons">
+          <n-button type="primary" quaternary @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
         </div>
       </div>
     </n-card>
 
-    <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <span class="page-toolbar__hint">
-        仅「待派单」状态可勾选批量派单；「已派单」可改派或取消派单（需司机未接单）
-      </span>
-      <n-button
-        type="primary"
-        :disabled="checkedSelectable.length === 0"
-        @click="openBatchDispatch"
-      >
-        {{ checkedSelectable.length ? `批量派单（${checkedSelectable.length}）` : '批量派单' }}
-      </n-button>
-    </div>
-
     <!-- 列表 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <span class="table-toolbar__hint">
+          仅「待派单」状态可勾选批量派单；「已派单」可改派或取消派单（需司机未接单）
+        </span>
+        <div class="table-toolbar__actions">
+          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+          <n-button
+            type="primary"
+            :disabled="checkedSelectable.length === 0"
+            @click="openBatchDispatch"
+          >
+            {{ checkedSelectable.length ? `批量派单（${checkedSelectable.length}）` : '批量派单' }}
+          </n-button>
+        </div>
+      </div>
       <PageTable
         ref="tableRef"
         :columns="columns"
         :remote="fetchTasks"
         :query="applied"
-        :scroll-x="2020"
+        :scroll-x="2478"
         :init-page-size="20"
       />
     </n-card>
@@ -541,72 +548,10 @@ function refreshList() {
 </template>
 
 <style scoped>
-.page-card {
-  margin-bottom: 12px;
-}
-
-.page-card__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 18px;
-}
-
-.page-card__field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.page-card__label {
-  font-size: 13px;
-  color: #595959;
-  white-space: nowrap;
-}
-
-.page-card__input--s {
-  width: 140px;
-}
-
-.page-card__select {
-  width: 150px;
-}
-
-.page-card__range {
-  width: 240px;
-}
-
-.page-card__actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-}
-
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.page-toolbar__hint {
-  font-size: 12px;
-  color: #8c8c8c;
-}
-
-/* 列表单元格内元素（render 函数内无本组件 scopeId，需 :deep） */
-:deep(.row-actions) {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
 :deep(.muted) {
-  color: #bfbfbf;
+  color: #999999;
 }
 
-/* 交付地址完整展示（换行） */
 :deep(.cell-wrap) {
   display: block;
   white-space: normal;

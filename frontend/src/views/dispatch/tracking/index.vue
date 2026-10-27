@@ -493,30 +493,30 @@ const anomalyRecords = computed<AnomalyRecord[]>(() => {
 const mapLegend = computed(() => {
   if (selectedId.value !== null) {
     const items: Array<{ color: string; text: string; kind: 'line' | 'dot'; dashed?: boolean }> = [
-      { color: '#52c41a', text: `起始地：${cityLabel(focusTask.value?.ship_location)}`, kind: 'dot' },
-      { color: '#fa8c16', text: `目的地：${cityLabel(focusTask.value?.delivery_address)}`, kind: 'dot' },
-      { color: '#1677ff', text: '已行驶', kind: 'line' },
+      { color: '#18a058', text: `起始地：${cityLabel(focusTask.value?.ship_location)}`, kind: 'dot' },
+      { color: '#f0a020', text: `目的地：${cityLabel(focusTask.value?.delivery_address)}`, kind: 'dot' },
+      { color: '#1890ff', text: '已行驶', kind: 'line' },
     ]
     if (!focusArrived.value) {
       items.push({ color: '#94a3b8', text: '未行驶', kind: 'line' as const, dashed: true })
     }
-    items.push({ color: '#1677ff', text: '位置回传点（点击查看）', kind: 'dot' as const })
+    items.push({ color: '#1890ff', text: '位置回传点（点击查看）', kind: 'dot' as const })
     if (selectedAbnormal.value) {
-      items.push({ color: '#f5222d', text: '最新位置超时未上报', kind: 'dot' as const })
+      items.push({ color: '#d03050', text: '最新位置超时未上报', kind: 'dot' as const })
     }
     return items
   }
   if (isHistory.value) {
     return [
-      { color: 'linear-gradient(90deg,#FFF7E6,#FFD591,#FA8C16)', text: '到达热度（越深单量越多）', kind: 'line' as const },
-      { color: '#1677ff', text: '历史轨迹（点击定位运单）', kind: 'line' as const },
-      { color: '#1677ff', text: '圆点为目的地，城市名后的数字为同城单量', kind: 'dot' as const },
+      { color: 'linear-gradient(90deg,#FFF7E6,#FFD591,#F0A020)', text: '到达热度（越深单量越多）', kind: 'line' as const },
+      { color: '#1890ff', text: '历史轨迹（点击定位运单）', kind: 'line' as const },
+      { color: '#1890ff', text: '圆点为目的地，城市名后的数字为同城单量', kind: 'dot' as const },
     ]
   }
   return [
-    { color: '#1677ff', text: '正常线路', kind: 'line' as const },
-    { color: '#f5222d', text: '异常线路 · 超 1 小时未上报，再次上报后恢复', kind: 'line' as const },
-    { color: '#1677ff', text: '圆点为目的地，城市名后的数字为同城单量', kind: 'dot' as const },
+    { color: '#1890ff', text: '正常线路', kind: 'line' as const },
+    { color: '#d03050', text: '异常线路 · 超 1 小时未上报，再次上报后恢复', kind: 'line' as const },
+    { color: '#1890ff', text: '圆点为目的地，城市名后的数字为同城单量', kind: 'dot' as const },
   ]
 })
 
@@ -1101,18 +1101,18 @@ function onMapHover(id: number | null) {
   display: inline-flex;
   flex: none;
   padding: 2px;
-  background: #f0f2f5;
+  background: #f5f6fb;
   border-radius: 4px;
 }
 
 .ov-tab {
-  height: 26px;
+  height: 28px;
   padding: 0 18px;
   border: none;
   border-radius: 3px;
   background: transparent;
-  color: #595959;
-  font-size: 13px;
+  color: #666666;
+  font-size: 14px;
   white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -1139,7 +1139,7 @@ function onMapHover(id: number | null) {
 
 .ov-tab.is-active {
   background: #ffffff;
-  color: #1677ff;
+  color: #1890ff;
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(31, 45, 61, 0.12);
 }
@@ -1148,12 +1148,13 @@ function onMapHover(id: number | null) {
   margin-left: auto;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 .ov-toolbar__live {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
 }
 
 /* ---- KPI ---- */
@@ -1185,7 +1186,7 @@ function onMapHover(id: number | null) {
 .kpi--cyan::before,
 .kpi--indigo::before,
 .kpi--amber::before {
-  background: #1677ff;
+  background: #1890ff;
 }
 
 .kpi--danger {
@@ -1198,7 +1199,7 @@ function onMapHover(id: number | null) {
 }
 
 .kpi--danger::before {
-  background: #f5222d;
+  background: #d03050;
 }
 
 .kpi--danger.is-on {
@@ -1207,7 +1208,7 @@ function onMapHover(id: number | null) {
 }
 
 .kpi__value--danger {
-  color: #cf1322;
+  color: #d03050;
 }
 
 .kpi__label {
@@ -1249,7 +1250,8 @@ function onMapHover(id: number | null) {
 
 .card {
   background: #ffffff;
-  border-radius: 6px;
+  border: 1px solid #eeeeee;
+  border-radius: 4px;
   box-shadow: 0 1px 2px rgba(31, 45, 61, 0.04);
 }
 
@@ -1268,7 +1270,7 @@ function onMapHover(id: number | null) {
 
 .ov-map__hint {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
 }
 
 .ov-chip {
@@ -1279,7 +1281,7 @@ function onMapHover(id: number | null) {
   padding: 0 8px;
   border-radius: 11px;
   background: #e6f4ff;
-  color: #1677ff;
+  color: #1890ff;
   font-size: 12px;
 }
 
@@ -1293,9 +1295,9 @@ function onMapHover(id: number | null) {
   justify-content: space-between;
   align-items: center;
   padding: 13px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
 }
 
 .ov-list {
@@ -1315,18 +1317,19 @@ function onMapHover(id: number | null) {
 .ov-list__clear {
   font-weight: 400;
   font-size: 12px;
-  color: #1677ff;
+  color: #1890ff;
   cursor: pointer;
 }
 
 .ov-list__body {
+  min-height: 0;
   overflow-y: auto;
   max-height: 500px;
 }
 
 .ov-row {
   padding: 10px 14px;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #eeeeee;
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -1337,13 +1340,13 @@ function onMapHover(id: number | null) {
 
 .ov-row.selected {
   background: #f0f7ff;
-  border-left: 3px solid #1677ff;
+  border-left: 3px solid #1890ff;
   padding-left: 11px;
 }
 
 /* 异常线路：左侧红色提示条；悬停与地图线路联动 */
 .ov-row.is-alert:not(.selected) {
-  box-shadow: inset 3px 0 0 #f5222d;
+  box-shadow: inset 3px 0 0 #d03050;
 }
 
 .ov-row.is-hot:not(.selected) {
@@ -1356,11 +1359,11 @@ function onMapHover(id: number | null) {
 
 .ov-row.is-alert.selected {
   background: #fff1f0;
-  border-left-color: #f5222d;
+  border-left-color: #d03050;
 }
 
 .ov-row__time.is-late {
-  color: #cf1322;
+  color: #d03050;
   font-weight: 600;
 }
 
@@ -1372,7 +1375,7 @@ function onMapHover(id: number | null) {
   padding: 0 6px;
   border-radius: 9px;
   background: #fff1f0;
-  color: #cf1322;
+  color: #d03050;
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -1386,25 +1389,25 @@ function onMapHover(id: number | null) {
 }
 
 .ov-row__l1 b {
-  font-size: 13px;
-  color: #262626;
+  font-size: 14px;
+  color: #2d3033;
 }
 
 .ov-row__route {
   margin-top: 3px;
   font-size: 12px;
-  color: #595959;
+  color: #666666;
 }
 
 .ov-row__arrow {
   margin: 0 4px;
-  color: #bfbfbf;
+  color: #999999;
 }
 
 .ov-row__mile {
   margin-left: 8px;
   font-style: normal;
-  color: #8c8c8c;
+  color: #999999;
 }
 
 .ov-row__l2 {
@@ -1413,7 +1416,7 @@ function onMapHover(id: number | null) {
   justify-content: space-between;
   gap: 8px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
 }
 
 .ov-row__loc {
@@ -1430,7 +1433,7 @@ function onMapHover(id: number | null) {
 .ov-empty {
   padding: 46px 0;
   text-align: center;
-  color: #8c8c8c;
+  color: #999999;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1438,7 +1441,7 @@ function onMapHover(id: number | null) {
 }
 
 .ov-empty__error {
-  color: #f5222d;
+  color: #d03050;
 }
 
 /* ---- 抽屉 ---- */
@@ -1463,7 +1466,7 @@ function onMapHover(id: number | null) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
 }
 
 .ov-drawer__title {
@@ -1474,13 +1477,13 @@ function onMapHover(id: number | null) {
 }
 
 .ov-drawer__title > span {
-  font-size: 13px;
-  color: #8c8c8c;
+  font-size: 14px;
+  color: #666666;
 }
 
 .ov-drawer__title > b {
   font-size: 14px;
-  color: #262626;
+  color: #2d3033;
   white-space: nowrap;
 }
 
@@ -1490,18 +1493,19 @@ function onMapHover(id: number | null) {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: #8c8c8c;
+  color: #999999;
   cursor: pointer;
   font-size: 13px;
 }
 
 .ov-drawer__close:hover {
-  background: #f0f2f5;
-  color: #262626;
+  background: #f5f6fb;
+  color: #2d3033;
 }
 
 .ov-drawer__body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 14px 16px 24px;
   display: flex;
@@ -1530,8 +1534,8 @@ function onMapHover(id: number | null) {
 .ov-fields > div {
   display: flex;
   padding: 5px 0;
-  border-bottom: 1px dashed #e8edf5;
-  font-size: 12px;
+  border-bottom: 1px dashed #eeeeee;
+  font-size: 14px;
 }
 
 .ov-fields > div.wide {
@@ -1541,16 +1545,16 @@ function onMapHover(id: number | null) {
 .ov-fields label {
   width: 64px;
   flex: none;
-  color: #8c8c8c;
+  color: #999999;
 }
 
 .ov-fields span {
-  color: #262626;
+  color: #2d3033;
   word-break: break-all;
 }
 
 .ov-fields__alert {
-  color: #cf1322;
+  color: #d03050;
   font-weight: 600;
 }
 
@@ -1560,7 +1564,7 @@ function onMapHover(id: number | null) {
 }
 
 .ov-block--alert .ov-block__head em {
-  color: #cf1322;
+  color: #d03050;
 }
 
 /* ---- 进度条 ---- */
@@ -1581,7 +1585,7 @@ function onMapHover(id: number | null) {
   left: 0;
   top: 0;
   height: 100%;
-  background: #1677ff;
+  background: #1890ff;
   border-radius: 3px;
   transition: width 0.4s;
 }
@@ -1599,13 +1603,13 @@ function onMapHover(id: number | null) {
   height: 12px;
   margin: 0 auto;
   border-radius: 50%;
-  border: 3px solid #d9d9d9;
+  border: 3px solid #eeeeee;
   background: #ffffff;
 }
 
 .ov-progress__node.done i {
-  border-color: #1677ff;
-  background: #1677ff;
+  border-color: #1890ff;
+  background: #1890ff;
 }
 
 .ov-progress__txt {
@@ -1615,7 +1619,7 @@ function onMapHover(id: number | null) {
   bottom: 18px;
   white-space: nowrap;
   font-size: 12px;
-  color: #595959;
+  color: #666666;
 }
 
 .ov-progress__txt.bottom {
@@ -1636,33 +1640,42 @@ function onMapHover(id: number | null) {
 
 /* ---- 区块 / 记录 ---- */
 .ov-block {
-  border: 1px solid #e8edf5;
-  border-radius: 6px;
+  border: 1px solid #eeeeee;
+  border-radius: 4px;
   padding: 10px 12px;
-  background: #f9fbfe;
+  background: #ffffff;
 }
 
 .ov-block__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #262626;
+  font-size: 14px;
+  font-weight: 900;
+  color: #2d3033;
+}
+
+.ov-block__head::before {
+  content: '';
+  width: 4px;
+  height: 16px;
+  flex: none;
+  border-radius: 2px;
+  background: #1890ff;
 }
 
 .ov-block__head em {
   font-style: normal;
   font-size: 12px;
   font-weight: 400;
-  color: #8c8c8c;
+  color: #999999;
 }
 
 .ov-block__empty {
   padding: 14px 0;
   text-align: center;
-  color: #8c8c8c;
+  color: #999999;
   font-size: 12px;
 }
 
@@ -1679,7 +1692,7 @@ function onMapHover(id: number | null) {
 }
 
 .ov-anomaly-list::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
+  background: #999999;
   border-radius: 3px;
 }
 
@@ -1689,24 +1702,24 @@ function onMapHover(id: number | null) {
 
 .ov-anomaly__sep {
   margin: 0 3px;
-  color: #bfbfbf;
+  color: #999999;
 }
 
 .ov-anomaly__muted {
-  color: #8c8c8c;
+  color: #999999;
 }
 
 .ov-anomaly__tip {
   margin-top: 8px;
   font-size: 12px;
   line-height: 1.6;
-  color: #8c8c8c;
+  color: #999999;
 }
 
 .ov-table-scroll {
   max-height: 200px;
   overflow: auto;
-  border: 1px solid #f0f0f0;
+  border: 1px solid #eeeeee;
   border-radius: 4px;
   background: #ffffff;
 }
@@ -1714,24 +1727,24 @@ function onMapHover(id: number | null) {
 .ov-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .ov-table th {
   position: sticky;
   top: 0;
   background: #fafafa;
-  color: #595959;
+  color: #666666;
   font-weight: 500;
   text-align: left;
   padding: 7px 10px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
 }
 
 .ov-table td {
   padding: 7px 10px;
-  border-bottom: 1px solid #f5f5f5;
-  color: #262626;
+  border-bottom: 1px solid #eeeeee;
+  color: #2d3033;
 }
 
 .ov-table tbody tr {
@@ -1744,11 +1757,11 @@ function onMapHover(id: number | null) {
 
 .ov-table tbody tr.active {
   background: #e8f3ff;
-  box-shadow: inset 3px 0 0 #1677ff;
+  box-shadow: inset 3px 0 0 #1890ff;
 }
 
 .ov-table tbody tr.active td {
-  color: #0958d9;
+  color: #087ae3;
   font-weight: 600;
 }
 
@@ -1779,6 +1792,22 @@ function onMapHover(id: number | null) {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .ov-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-basis: 100%;
+  }
+
+  .ov-filter,
+  .ov-filter--range {
+    width: auto;
+    min-width: 0;
+  }
+
+  .ov-filter--range {
+    grid-column: span 2;
+  }
+
   .ov-list {
     max-height: 380px;
   }
@@ -1795,6 +1824,28 @@ function onMapHover(id: number | null) {
 
   .ov-toolbar__actions {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .ov-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  }
+
+  .ov-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ov-filter--range {
+    grid-column: span 1;
+  }
+
+  .ov-toolbar__actions {
+    width: 100%;
+  }
+
+  .ov-list__body {
+    max-height: 260px;
   }
 }
 </style>

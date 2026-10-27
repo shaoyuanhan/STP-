@@ -42,8 +42,8 @@ const props = withDefaults(
   {
     content: '',
     type: 'default',
-    confirmText: '确 定',
-    cancelText: '取 消',
+    confirmText: '确认',
+    cancelText: '取消',
     loading: false,
     autoClose: true,
   },

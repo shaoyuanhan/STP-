@@ -199,7 +199,7 @@ async function handleSubmit() {
     preset="card"
     :title="`${isReassign ? '改派' : '派单'} · ${task?.task_no ?? ''}`"
     class="dispatch-modal"
-    :style="{ width: '560px', maxWidth: '94vw' }"
+    :style="{ width: '600px', maxWidth: '94vw' }"
     :mask-closable="!submitting"
     @update:show="(value: boolean) => emit('update:show', value)"
   >
@@ -221,8 +221,8 @@ async function handleSubmit() {
         :model="form"
         :rules="rules"
         label-placement="left"
-        label-width="110px"
-        :show-require-mark="false"
+        label-width="100"
+        require-mark-placement="left"
       >
         <n-form-item v-if="isReassign" label="当前承运商">
           <span>{{ task.carrier_name || '-' }}</span>
@@ -262,8 +262,7 @@ async function handleSubmit() {
     </div>
 
     <template #footer>
-      <div class="dispatch-modal__footer">
-        <n-button :disabled="submitting" @click="close">取消</n-button>
+      <div class="modal-footer">
         <n-button
           type="primary"
           :loading="submitting"
@@ -272,6 +271,7 @@ async function handleSubmit() {
         >
           {{ isReassign ? '确认改派' : '确认派单' }}
         </n-button>
+        <n-button :disabled="submitting" @click="close">取消</n-button>
       </div>
     </template>
   </n-modal>
@@ -291,7 +291,7 @@ async function handleSubmit() {
   border-radius: 4px;
   font-size: 12px;
   line-height: 1.6;
-  color: #595959;
+  color: #666666;
 }
 
 .dispatch-modal__alert {
@@ -306,7 +306,7 @@ async function handleSubmit() {
 
 .dispatch-modal__price-note {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
 }
 
 .dispatch-modal__field {
@@ -322,13 +322,7 @@ async function handleSubmit() {
 
 .dispatch-modal__hint {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #999999;
   line-height: 1.5;
-}
-
-.dispatch-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 </style>

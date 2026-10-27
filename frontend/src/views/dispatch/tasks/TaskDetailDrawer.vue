@@ -154,7 +154,7 @@ const vehicleColumns: DataTableColumns<ShippingTaskVehicle> = [
     render: (row) =>
       row.actual_freight !== null && row.actual_freight !== undefined && row.actual_freight !== ''
         ? h(MoneyText, { value: row.actual_freight, prefix: '¥' })
-        : h('span', { style: 'color:#bfbfbf' }, '到达后回填'),
+        : h('span', { style: 'color:#999999' }, '到达后回填'),
   },
 ]
 
@@ -267,7 +267,7 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
 
           <!-- 物料明细：仓库/库位与运费已并入发运信息，此处只保留多物料清单 -->
           <div class="drawer-section__table">
-            <div class="drawer-section__caption">物料明细</div>
+            <div class="stp-section-title">物料明细</div>
             <n-data-table
               :columns="vehicleColumns"
               :data="vehicles"
@@ -357,8 +357,7 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
           <!-- 运输时间轴 -->
           <section class="drawer-section">
             <div class="drawer-section__header">
-              <span class="drawer-section__bar"></span>
-              <h3 class="drawer-section__title">运输时间轴</h3>
+              <h3 class="stp-section-title drawer-section__title">运输时间轴</h3>
               <button
                 v-if="statusLogs.length"
                 type="button"
@@ -417,12 +416,12 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
 
 .drawer-error__text {
   margin-bottom: 12px;
-  font-size: 13px;
-  color: #8c8c8c;
+  font-size: 14px;
+  color: #666666;
 }
 
 .muted {
-  color: #bfbfbf;
+  color: #999999;
 }
 
 .pre-wrap {
@@ -430,7 +429,6 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
   word-break: break-all;
 }
 
-/* 与 DetailSection 分区头一致的样式（承载表格/时间轴类分区），对齐旧版 sec-title */
 .drawer-section {
   margin-bottom: 20px;
 }
@@ -442,39 +440,12 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
   margin-bottom: 12px;
 }
 
-.drawer-section__bar {
-  flex: none;
-  width: 3px;
-  height: 14px;
-  border-radius: 2px;
-  background: #1677ff;
-}
-
 .drawer-section__title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: #262626;
-  line-height: 1.4;
-}
-
-/* DetailSection 分区头对齐旧版 sec-title（主色竖条 + 主文本色；公共组件不在此修改） */
-:deep(.detail-section__header .detail-section__bar) {
-  background: #1677ff;
-}
-
-:deep(.detail-section__header .detail-section__title) {
-  color: #262626;
 }
 
 .drawer-section__table {
   margin: -8px 0 20px;
-}
-
-.drawer-section__caption {
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: #595959;
 }
 
 .drawer-section__timeline {
@@ -489,13 +460,13 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
   padding: 0;
   border: none;
   background: none;
-  font-size: 12px;
-  color: #8c8c8c;
+  font-size: 14px;
+  color: #666666;
   cursor: pointer;
 }
 
 .drawer-section__toggle:hover {
-  color: #1677ff;
+  color: #1890ff;
 }
 
 .drawer-section__arrow {
@@ -517,9 +488,9 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
 
 .tl-text {
   white-space: pre-line;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
-  color: #595959;
+  color: #666666;
 }
 
 .tl-photos {
@@ -531,14 +502,14 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
 .tl-photo {
   border-radius: 4px;
   overflow: hidden;
-  border: 1px solid #f0f0f0;
+  border: 1px solid #eeeeee;
   background: #fafafa;
 }
 
 .drawer-section__empty {
   padding: 12px 0;
-  font-size: 13px;
-  color: #bfbfbf;
+  font-size: 14px;
+  color: #999999;
 }
 
 .cancel-records {
