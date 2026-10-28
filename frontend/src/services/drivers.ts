@@ -5,10 +5,12 @@
  * 页面优先用后端 message 作为成功提示，message 为空或占位（'success'）时才用前端兜底文案。
  */
 
-import { download, get, postEnvelope, request } from './http'
+import type { AxiosRequestConfig } from 'axios'
+import { download, get, post, postEnvelope, request } from './http'
 import type {
   ApiEnvelope,
   Driver,
+  DriverImportResult,
   DriverOption,
   DriverPayload,
   DriverQuery,
@@ -18,6 +20,17 @@ import type {
 /** 司机分页列表（list 含 carriers 所属承运商名） */
 export function listDrivers(query: DriverQuery = {}): Promise<PageResult<Driver>> {
   return get<PageResult<Driver>>('/drivers', query as Record<string, unknown>)
+}
+
+/** Excel 导入（multipart/form-data，返回逐行失败原因） */
+export function importDrivers(data: FormData): Promise<DriverImportResult> {
+  const config: AxiosRequestConfig = { timeout: 60000 }
+  return post<DriverImportResult>('/drivers/import', data, config)
+}
+
+/** 下载司机 Excel 导入模板 */
+export function downloadDriverTemplate(): Promise<string> {
+  return download('/drivers/import/template')
 }
 
 /** 新增司机（source=1 自建；carrier_id 为档案归属的唯一承运商） */

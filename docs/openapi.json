@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
-    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：orderNo（订单号，一车一单唯一）优先，其次 taskNo，兼容 applyNo（须唯一对应单任务，多任务时提示改用 orderNo）；都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()\n- 一车一单：一个发运申请可含多台车（单次 ≤200 台），每台车一个全局唯一订单号 orderNo 并生成独立任务；shipping_task.apply_no 为普通索引、order_no 为非空唯一索引；里程 mileage 由 CRM 发运申请下发（同申请多车共用线路里程），司机到达回传可按车覆盖，结算运费单继承\n- 订单号全链路：发运任务、承运商任务、司机任务、电子签台账、应付运费、在途监控均展示订单号，详情页订单号排在发运申请号之前\n- 在途点位：STP 定时拉取狮桥（配置 LQ_TRACKING_URL 启用，默认每 5 分钟，LQ_TRACKING_INTERVAL_MS 可调），按订单号→任务单号→VIN 匹配任务，去重后写入 transport_track 供运输监控地图与轨迹使用；原 /api/external/tracking/report 推送接口仅保留兼容，后续停用",
-    "version": "2.6.0"
+    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：orderNo（订单号，一车一单唯一）优先，其次 taskNo，兼容 applyNo（须唯一对应单任务，多任务时提示改用 orderNo）；都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()\n- 一车一单：一个发运申请可含多台车（单次 ≤200 台），每台车一个全局唯一订单号 orderNo 并生成独立任务；shipping_task.apply_no 为普通索引、order_no 为非空唯一索引；里程 mileage 由 CRM 发运申请下发（同申请多车共用线路里程），司机到达回传可按车覆盖，结算运费单继承\n- 订单号全链路：发运任务、承运商任务、司机任务、电子签台账、应付运费、在途监控均展示订单号，详情页订单号排在发运申请号之前\n- 在途点位：STP 定时拉取狮桥（配置 LQ_TRACKING_URL 启用，默认每 5 分钟，LQ_TRACKING_INTERVAL_MS 可调），按订单号→任务单号→VIN 匹配任务，去重后写入 transport_track 供运输监控地图与轨迹使用；原 /api/external/tracking/report 推送接口仅保留兼容，后续停用\n- 管理端兼容：列表支持 POST {资源}/queryPage，导出支持 POST {资源}/export；分页同时接受 size 与 pageSize，筛选字段同时接受 snake_case 与 camelCase\n- 外部路径别名：CRM 接口另挂 /api/external/crm/...，狮桥与承运商回传另挂 /api/external/sq/...，处理函数与原路径相同\n- 承运商接单可回填 transportNo、planPickupDate、estimatedArriveTime；POST /api/external/shipping-tasks/cancel-accept 取消接单。计划提车日期可由 CRM 下发，未下发时接单必填\n- 公共支撑：GET /api/app/allCities、GET /api/app/allEnums、POST /api/bos/file/upload、POST /api/operationLog/queryPage、POST /api/drivers/import",
+    "version": "2.7.0"
   },
   "servers": [
     {
@@ -2077,7 +2077,7 @@
           "08 外部接口·CRM"
         ],
         "summary": "① 发运申请任务接收",
-        "description": "一车一单：一个发运申请可下发多台车（单次 ≤200 台），STP 按 VIN 逐台拆分生成独立任务，各自独立事务；每台车 orderNo（订单号）必填且全局唯一（跨申请不可重复，重复 → C0001），applyNo 为申请级单号由多任务共享。同一 applyNo 重复下发 → C0001；任务单号 STP 自动生成（FY+yyyyMMdd+4 位）；计划提车日期 planPickupDate 必填；mileage 为 CRM 下发的线路里程，同申请多车共用，落 shipping_task.mileage，到达回传可按车覆盖，运费单继承；计划运费 planFreight 为单车运费；交付地址必填；备注 ≤500 字落任务。返回本次生成的 tasks 列表（taskNo/orderNo/vin），便于 CRM 逐台建档。",
+        "description": "一个 CRM 申请可包含多个订单，vehicles 中每个订单对应一台车并生成独立任务；orderNo 必填且全局幂等，同一申请重复下发已存在订单时返回原任务（created=false），不重复创建。计划提车日期 planPickupDate 可选，未下发时由承运商接单补齐。可传起终点经纬度。mileage 为线路里程，单车可用 vehicles[].mileage 覆盖。同路径另挂 POST /api/external/crm/shipping-tasks/receive。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2152,8 +2152,7 @@
                   },
                   "planPickupDate": {
                     "type": "string",
-                    "description": "计划提车日期（必填，YYYY-MM-DD，主来源）",
-                    "title": "计划提车日期"
+                    "description": "计划提车日期 YYYY-MM-DD，可选；未传则承运商接单时必填"
                   },
                   "mileage": {
                     "type": "number",
@@ -2225,6 +2224,22 @@
                       }
                     },
                     "title": "车辆明细"
+                  },
+                  "startLongitude": {
+                    "type": "number",
+                    "description": "起点经度，取值 -180 ~ 180"
+                  },
+                  "startLatitude": {
+                    "type": "number",
+                    "description": "起点纬度，取值 -90 ~ 90"
+                  },
+                  "endLongitude": {
+                    "type": "number",
+                    "description": "终点经度，取值 -180 ~ 180"
+                  },
+                  "endLatitude": {
+                    "type": "number",
+                    "description": "终点纬度，取值 -90 ~ 90"
                   }
                 },
                 "required": [
@@ -2233,7 +2248,6 @@
                   "deliveryAddress",
                   "factory",
                   "storageLocation",
-                  "planPickupDate",
                   "vehicles"
                 ]
               },
@@ -2905,8 +2919,8 @@
             "description": "D0001 当前状态不允许该动作（状态机校验）"
           }
         },
-        "summary": "⑫ 承运商接单（分配司机）",
-        "description": "承运商确认接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）。计划提车日期由 CRM 在 ① receive 随发运申请下发，本接口不接收。司机支持 driverId（STP 内部ID）或 externalDriverId（第三方司机ID）；承运商支持 carrierId（内部ID）或 externalCarrierId（第三方ID），carrierName 为旧字段仅兼容。",
+        "summary": "⑫ 承运商接单（分配司机并反馈计划）",
+        "description": "DISPATCHED→CARRIER_ACCEPTED。任务尚无计划提车日期时必须提供 planPickupDate，可一并提供 transportNo 和 estimatedArriveTime。司机可通过 driverId、externalDriverId 或手机号 phone 定位；新司机提供 driverName、phone、idCard 及驾驶证有效期时，按任务承运商自动建档并生成登录账号。重复接单幂等返回已保存值。同路径另挂 POST /api/external/sq/shipping-tasks/accept。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2956,6 +2970,48 @@
                     "maxLength": 64,
                     "description": "第三方司机ID（与 driverId 二选一）",
                     "title": "第三方司机ID"
+                  },
+                  "carrierCode": {
+                    "type": "string",
+                    "description": "承运商编码"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "司机手机号，driverId / externalDriverId 都未传时使用"
+                  },
+                  "driverName": {
+                    "type": "string",
+                    "description": "新司机姓名，与 phone、idCard、驾驶证有效期一起用于自动建档"
+                  },
+                  "idCard": {
+                    "type": "string",
+                    "description": "新司机身份证号"
+                  },
+                  "licenseNo": {
+                    "type": "string"
+                  },
+                  "licenseType": {
+                    "type": "string"
+                  },
+                  "licenseValidFrom": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD"
+                  },
+                  "licenseValidTo": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD"
+                  },
+                  "planPickupDate": {
+                    "type": "string",
+                    "description": "计划提车日期 YYYY-MM-DD；任务尚无该日期时必填"
+                  },
+                  "transportNo": {
+                    "type": "string",
+                    "description": "承运商运输单号"
+                  },
+                  "estimatedArriveTime": {
+                    "type": "string",
+                    "description": "预计到达时间 YYYY-MM-DD HH:mm:ss"
                   }
                 },
                 "required": []
@@ -3397,6 +3453,132 @@
           },
           "400": {
             "description": "A0001 演示工具未开启（PORTAL_DEV_TOOLS≠1）"
+          }
+        }
+      }
+    },
+    "/api/external/shipping-tasks/cancel-accept": {
+      "post": {
+        "tags": [
+          "12 外部接口·承运商通用"
+        ],
+        "summary": "⑫ 承运商取消接单",
+        "description": "仅 CARRIER_ACCEPTED 可取消，退回 DISPATCHED 并清除司机、承运单号、计划提车日期和预计到达时间；已是 DISPATCHED 时幂等返回。同路径另挂 POST /api/external/sq/shipping-tasks/cancel-accept。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "taskNo": {
+                    "type": "string"
+                  },
+                  "applyNo": {
+                    "type": "string"
+                  },
+                  "orderNo": {
+                    "type": "string"
+                  },
+                  "cancelReason": {
+                    "type": "string",
+                    "description": "取消接单原因"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "取消接单成功或幂等返回"
+          },
+          "409": {
+            "description": "D0001 当前状态不允许取消接单"
+          }
+        }
+      }
+    },
+    "/api/app/allCities": {
+      "get": {
+        "tags": [
+          "01 通用"
+        ],
+        "summary": "城市字典",
+        "description": "返回 sys_area 未删除记录。",
+        "responses": {
+          "200": {
+            "description": "成功，data 为业务数据"
+          }
+        }
+      }
+    },
+    "/api/app/allEnums": {
+      "get": {
+        "tags": [
+          "01 通用"
+        ],
+        "summary": "数据字典别名",
+        "description": "与 GET /api/dictionaries 相同。",
+        "responses": {
+          "200": {
+            "description": "成功，data 为业务数据"
+          }
+        }
+      }
+    },
+    "/api/drivers/import": {
+      "post": {
+        "tags": [
+          "03 基础数据·司机"
+        ],
+        "summary": "司机 Excel 导入",
+        "description": "multipart 字段 file，仅 .xlsx。按承运商编码逐行建档，承运商内身份证唯一，并自动生成司机登录账号。逐行独立事务。",
+        "responses": {
+          "200": {
+            "description": "{total,success,failed,results[]}"
+          }
+        }
+      }
+    },
+    "/api/drivers/import/template": {
+      "get": {
+        "tags": [
+          "03 基础数据·司机"
+        ],
+        "summary": "司机导入模板",
+        "description": "下载仅含表头的 xlsx。别名 GET /api/drivers/import-template。",
+        "responses": {
+          "200": {
+            "description": "xlsx 文件"
+          }
+        }
+      }
+    },
+    "/api/operationLog/queryPage": {
+      "post": {
+        "tags": [
+          "01 通用"
+        ],
+        "summary": "操作日志分页",
+        "description": "POST 分页查询 sys_operation_log。详情为 GET /api/operationLog/{id}。",
+        "responses": {
+          "200": {
+            "description": "分页列表"
+          }
+        }
+      }
+    },
+    "/api/bos/file/upload": {
+      "post": {
+        "tags": [
+          "01 通用"
+        ],
+        "summary": "文件上传",
+        "description": "multipart 字段 file。另有 GET /url、/temporary-url、/exist、/content 与 DELETE /delete。",
+        "responses": {
+          "200": {
+            "description": "文件元数据"
           }
         }
       }

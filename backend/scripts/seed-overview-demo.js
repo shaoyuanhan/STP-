@@ -278,18 +278,19 @@ async function main() {
       existNos.add(taskNo);
 
       const applyNo = `CRM-DEMO${dayCode(createTime)}${pad(i + 1, 4)}`;
+      const orderNo = `SO-26${pad(createTime.getMonth() + 1)}${pad(createTime.getDate())}-${pad(i + 1, 4)}`;
       const outboundTime = addHours(shipTime, -3);
       const planPickup = dateOnly(addDays(shipTime, -1));
 
       const [taskResult] = await conn.query(
         `INSERT INTO shipping_task
-        (task_no, apply_no, customer_name, region, sales_person, sales_phone, delivery_area, delivery_address,
+        (task_no, apply_no, order_no, customer_name, region, sales_person, sales_phone, delivery_area, delivery_address,
          receiver_name, receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date, outbound_date,
          ship_time, arrive_time, finish_time, carrier_id, driver_id, plan_freight, mileage, actual_freight, status,
          remark, create_name, create_time)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
-          taskNo, applyNo, CUSTOMERS[i % CUSTOMERS.length], region, salesPerson, salesPhone,
+          taskNo, applyNo, orderNo, CUSTOMERS[i % CUSTOMERS.length], region, salesPerson, salesPhone,
           deliveryArea, destAddr, RECEIVERS[i % RECEIVERS.length], `+86139${pad(50000000 + i * 137, 8)}`,
           '合肥工厂', '合肥成品库', '送车', from.addr,
           planPickup, fmt(outboundTime), fmt(shipTime), arriveTime ? fmt(arriveTime) : null,
@@ -310,7 +311,7 @@ async function main() {
             vehicle_model, engine_config, cabin_type, create_name, create_time)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
-            taskId, taskNo, vin, `SO-26${pad(createTime.getMonth() + 1)}${pad(createTime.getDate())}-${pad(i + 1, 4)}`,
+            taskId, taskNo, vin, orderNo,
             `BD-26${pad(createTime.getMonth() + 1)}${pad(createTime.getDate())}-${pad(i + 1, 4)}`,
             (planFreight / vehicleCount).toFixed(2), isFinished ? (planFreight / vehicleCount).toFixed(2) : null,
             from.addr, model, engine, cabin, '演示数据生成器', fmt(createTime),

@@ -13,6 +13,16 @@ export function listCarriers(query: CarrierQuery = {}): Promise<PageResult<Carri
   return get<PageResult<Carrier>>('/carriers', query as Record<string, unknown>)
 }
 
+/** 承运商详情 */
+export function getCarrier(id: number | string): Promise<Carrier> {
+  return get<Carrier>(`/carriers/${id}`)
+}
+
+/** 全部合作中承运商（无分页） */
+export function listEnabledCarriers(): Promise<Carrier[]> {
+  return get<Carrier[]>('/carriers/enabled')
+}
+
 /** 导出 Excel：按当前筛选条件导出全量（不分页） */
 export function exportCarriers(query: CarrierQuery = {}): Promise<string> {
   const params = { ...query } as Record<string, unknown>

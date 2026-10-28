@@ -45,7 +45,8 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 
 转换触发：
 - 派单（STP）：WAIT_DISPATCH→DISPATCHED，写 dispatch_record(DISPATCH) + status_log
-- 接单（承运商 #12 POST /shipping-tasks/accept）：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id
+- 接单（承运商 #12 POST /shipping-tasks/accept）：DISPATCHED→CARRIER_ACCEPTED，回填司机、承运单号、计划提车日期和预计到达时间；任务尚无计划提车日期时接单必填。新司机可在接单时按 driverName+phone+idCard+驾驶证有效期自动建档，并生成司机登录账号
+- 取消接单（承运商 #12 POST /shipping-tasks/cancel-accept）：CARRIER_ACCEPTED→DISPATCHED，清除接单时回填的司机、承运单号、计划提车日期和预计到达时间
 - 提车（#12 POST /shipping-tasks/pickup，=司机提车发运+拍照）：CARRIER_ACCEPTED→PICKED，回填 ship_time（实际提车日期=发运时间，允许早于计划提车日期，不得晚于当前日期）；照片 URL 结构化写 status_log.photos；提车后待仓库出库
 - 出库（WMS #8）：PICKED→OUTBOUND→IN_TRANSIT，回填 outbound_date（出库时间不得早于发运时间，不得晚于当前时间）；OUTBOUND 为出库瞬时留痕节点，任务当前状态直接置 IN_TRANSIT（PRD：在途=确认发车后、未到达前）
 - 到达（#12 POST /shipping-tasks/arrive）：→ARRIVED，回填 arrive_time；可选 actualFreight/mileage/arriveTime 回填实际运费、里程、到达时间；mileage 覆盖 CRM 下发里程，未传沿用任务主表里程；一车一单，vehicles 兼容传入但仅允许 1 台且 VIN/金额须与任务一致；缺省按计划运费/当前时间/任务里程生成待对账运费单；到达时间须晚于提车发运/出库时间且不得晚于当前时间
@@ -62,7 +63,7 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 - OUTBOUND 及之后：不可，"车辆已出库发运，不可取消"
 - 取消时：任务置 CANCELLED（cancel_reason/cancel_time），关联待签署电子签置 CANCELLED
 
-**取消派单（STP 内部）**：仅 DISPATCHED（司机未接单）→ WAIT_DISPATCH；原因枚举：承运商无法履约/调度调整/其他 + 补充说明（非必填）；清空 carrier_id/driver_id，保留 CRM 下发的 plan_pickup_date。
+**取消派单（STP 内部）**：仅 DISPATCHED（司机未接单）→ WAIT_DISPATCH；原因枚举：承运商无法履约/调度调整/其他 + 补充说明（非必填）；清空 carrier_id/driver_id。此时尚未接单，不清除 CRM 已下发的计划提车日期。承运商取消接单走 #12 cancel-accept，会清除接单回填信息。
 
 **版本控制（多人冲突）**：shipping_task.version，每次 UPDATE +1。派单/取消派单/改派请求必须携带 `version`，不匹配返回 D0001"任务状态已变化，请刷新后重试"。列表/详情返回 version。allowedActions 由状态计算：
 - WAIT_DISPATCH：`["DISPATCH","BATCH_DISPATCH"]`
@@ -88,24 +89,26 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 | --- | --- | --- |
 | carrier | carrier_code(uk), **external_carrier_id(uk 第三方承运商ID)**, carrier_name(uk), contact_person, contact_phone, cooperation_routes, remark, status **tinyint 1 合作中/0 已停用** | 第三方ID选填；派单/回传可用其定位 |
 | driver | driver_name, **carrier_id(必填)**, **external_driver_id**, phone, id_card, license_no, license_type, license_valid_from, license_valid_to, source **tinyint 1 自建/2 狮桥同步**, status tinyint 1/0 | **司机档案按承运商隔离**：一家承运商一份档案，同身份证可在不同承运商各自建档；唯一键为 (carrier_id, external_driver_id) 与 (carrier_id, id_card)；姓名身份证不可改；第三方ID选填 |
-| shipping_task | task_no(uk), apply_no(uk), customer_name, region, sales_person, sales_phone, delivery_area, **delivery_address**(PRD 要求补), receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date, outbound_date, ship_time, arrive_time, finish_time, carrier_id, driver_id, plan_freight, **mileage(CRM 下发里程)**, actual_freight, status, cancel_reason, cancel_time, remark, **version** | head 表，VIN 明细下沉；**一车一单** |
+| shipping_task | task_no(uk), apply_no, **order_no(uk)**, transport_no, customer_name, region, sales_person, sales_phone, delivery_area, **delivery_address**, receiver_phone, factory, storage_location, ship_method, ship_location, start/end 经纬度, plan_pickup_date（CRM 可下发，未下发则承运商接单必填）, estimated_arrive_time, outbound_date, ship_time, arrive_time, finish_time, carrier_id, driver_id, plan_freight, **mileage(CRM 下发里程)**, actual_freight, status, cancel_reason, cancel_time, remark, **version** | 一个申请可包含多个订单；每个订单一个任务一台车（一车一单） |
 | shipping_task_vehicle | task_id, task_no(冗余), vin, order_no, report_no, plan_freight(单台), actual_freight, ship_location, vehicle_model, engine_config, cabin_type | **一车一单：每个任务仅 1 台车**；head.plan_freight=该车计划运费 |
 | dispatch_record | task_id, task_no, action(DISPATCH/REASSIGN/CANCEL_DISPATCH), carrier_id, driver_id, batch_no, dispatch_person, dispatch_time, cancel_reason, remark | 派单备注存此表 remark |
-| task_status_log | task_id, task_no, from_status(初始 null), to_status, source(STP/CRM/SQ狮桥/CARRIER承运商通用回传/WMS), operator, remark | 每次状态流转一条；提车照片 URL 写 remark |
+| task_status_log | task_id, task_no, from_status(初始 null), to_status, source(STP/CRM/SQ狮桥/CARRIER承运商通用回传/WMS), operator, remark, photos | 每次状态流转一条；提车照片 URL 写入 photos（JSON 数组） |
 | transport_track | task_id, task_no, transport_no(狮桥 SQ+日期+任务补零), longitude, latitude, location_desc, speed, report_time | |
 | freight_bill | freight_no(uk), task_id, task_no, carrier_id, driver_id, start_location, end_location, mileage, plan_freight, actual_freight, finish_time, reconcile_status tinyint 0 待对账/1 已对账, reconcile_time, reconciler | 到达时生成；mileage 继承任务主表（回传值优先） |
 | freight_adjust_log | freight_bill_id, freight_no, before_freight, after_freight, adjust_reason, operator | 每次修改一条 |
-| esign_record | esign_id(uk), task_id, task_no, vin, apply_no, sign_type, trigger_node, sign_party, initiate_time, sign_status **WAIT_SIGN/SIGNED/CANCELLED**, sign_time | 按 VIN+applyNo 匹配任务（vin 查 vehicle 表） |
+| esign_record | esign_id(uk), task_id, task_no, vin, apply_no, sign_type, trigger_node, sign_party, initiate_time, sign_status **WAIT_SIGN/SIGNED/CANCELLED**, sign_time, receipt_time | 按 VIN+orderNo（优先）或 VIN+applyNo 匹配任务 |
 
 ## 5. 内部管理接口（/api，snake_case）
 
 ### 5.1 通用
 - `GET /api/health` → `{ok:true}`
 - `GET /api/stats` → 工作台统计：各状态任务数、今日新增、待对账笔数/金额、在途数、电子签待签署数（结构自定，前端适配）
-- `GET /api/dictionaries` → `{ taskStatus:[{value,label}], carrierStatus:[{value:1,label:'合作中'},{value:0,label:'已停用'}], driverStatus:[...], driverSource:[{value:1,label:'自建'},{value:2,label:'狮桥同步'}], reconcileStatus:[{value:0,label:'待对账'},{value:1,label:'已对账'}], esignStatus:[{value:'WAIT_SIGN',label:'待签署'},...], cancelReasons:['承运商无法履约','调度调整','其他'] }`
+- `GET /api/dictionaries` 与 `GET /api/app/allEnums` → `{ taskStatus:[{value,label}], carrierStatus:[{value:1,label:'合作中'},{value:0,label:'已停用'}], driverStatus:[...], driverSource:[{value:1,label:'自建'},{value:2,label:'狮桥同步'}], reconcileStatus:[{value:0,label:'待对账'},{value:1,label:'已对账'}], esignStatus:[{value:'WAIT_SIGN',label:'待签署'},...], cancelReasons:['承运商无法履约','调度调整','其他'] }`
 
 ### 5.2 承运商
-- `GET /api/carriers?carrier_name=&carrier_code=&external_carrier_id=&contact_person=&contact_phone=&status=&page=&size=` → 按字段分项模糊筛选；list 含 driver_count（关联启用司机数）
+- `GET /api/carriers?carrier_name=&carrier_code=&external_carrier_id=&contact_person=&contact_phone=&status=&page=&size=` → 按字段分项模糊筛选；list 含 driver_count（关联启用司机数）。同时支持 `POST /api/carriers/queryPage`（body 可用 camelCase，`pageSize` 映射为 `size`）与 `POST /api/carriers/export`
+- `GET /api/carriers/enabled` → 全部合作中承运商，不分页
+- `GET /api/carriers/:id` → 承运商详情（含在册启用司机数）
 - `POST /api/carriers` `{carrier_name*, external_carrier_id, contact_person*, contact_phone*, cooperation_routes, remark}` → 编码自动生成，名称/第三方ID 去重(A0002)
 - `PUT /api/carriers/:id` 同上字段（编码只读；名称/第三方ID 改名校验去重）
 - `PUT /api/carriers/:id/status` `{status: 1|0}` 停用后不可被派单、在途不受影响
@@ -116,9 +119,12 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 - `PUT /api/drivers/:id` 姓名/身份证不可改（A0002），carrier_id 可改归属（改后仍在该承运商内查重）
 - `PUT /api/drivers/:id/status` `{status:1|0}` 停用后不可分派、不影响在途
 - `GET /api/drivers/options?carrier_id=` → 该承运商名下启用的司机 `[{id,name,phone,license_type}]`（狮桥接单模拟用）
+- `POST /api/drivers/queryPage`、`POST /api/drivers/export`：与 GET 列表/导出同筛选，body 支持 camelCase 与 `pageSize`
+- `GET /api/drivers/import/template`（别名 `/api/drivers/import-template`）下载 xlsx 模板；`POST /api/drivers/import` multipart 字段 `file`，按承运商编码逐行建档。同一承运商内身份证/第三方司机 ID 唯一，导入成功后自动生成司机登录账号。逐行独立事务，返回 `{total,success,failed,results[]}`
 
 ### 5.4 发运任务
-- `GET /api/shipping-tasks?task_no=&order_no=&apply_no=&vin=&customer_name=&status=&carrier_id=&start_date=&end_date=&page=&size=`
+- `GET /api/shipping-tasks?task_no=&order_no=&apply_no=&vin=&customer_name=&status=&carrier_id=&start_date=&end_date=&plan_pickup_start=&plan_pickup_end=&page=&size=`
+  同时支持 `POST /api/shipping-tasks/queryPage` 与 `POST /api/shipping-tasks/export`（camelCase / pageSize；派单类写接口同时接受 taskId/carrierId 等驼峰字段）。列表仍按登录账号的承运商数据权限过滤。
   list 行：`id, task_no, order_no, apply_no, customer_name, vins(GROUP_CONCAT 顿号), vehicle_models, ship_location, delivery_address, carrier_name, driver_name, plan_pickup_date, outbound_date, ship_time, arrive_time, status, create_time, version`
 - `GET /api/shipping-tasks/:id` → `{ task(head 全字段+carrier_name/driver_name/driver_phone), vehicles:[], dispatchRecords:[], statusLogs:[], tracks:[], esigns:[], allowedActions:[] }`
 - `POST /api/shipping-tasks/dispatch` `{task_id*, carrier_id 或 external_carrier_id*, remark, version*}` → 承运商支持 STP 内部ID 或第三方ID；狮桥同步模拟（返回同步说明文案）
@@ -127,7 +133,8 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 - `POST /api/shipping-tasks/batch-dispatch` `{task_ids*:[], carrier_id 或 external_carrier_id*, remark}` → `{ dispatched:n, total_freight:成功单计划运费合计, skipped:[{task_id, task_no, reason}] }`，每单写 dispatch_record（batch_no 同批相同）
 
 ### 5.5 在途监控
-- `GET /api/tracking/tasks?scope=&task_no=&order_no=&transport_no=&page=&size=`
+- `GET /api/tracking/tasks?scope=&task_no=&order_no=&apply_no=&transport_no=&customer_name=&vin=&carrier_id=&page=&size=`
+  同时支持 `POST /api/tracking/tasks/queryPage`。点位拉取与在途落库规则不变。
   - `scope=transit`（默认）→ 仅「在途」任务，用于在途监控页
   - `scope=history` → 仅「已完结」任务，按完成时间倒序，用于历史轨迹子页面
   - 行内含 VIN/车型（车辆明细聚合）与最近一条位置 `latest_track:{transport_no,location_desc,longitude,latitude,speed,report_time}`（无回传为 null）
@@ -136,29 +143,41 @@ DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改
 - **点位来源**：STP 定时拉取狮桥（`LQ_TRACKING_URL`，默认每 5 分钟，`LQ_TRACKING_INTERVAL_MS` 可调），按订单号→任务单号→VIN 匹配任务，同任务同上报时间幂等，仅「在途」任务落库（其余状态不记点位）；未配置 `LQ_TRACKING_URL` 则不启用，原推送接口 `/api/external/tracking/report` 仅保留兼容
 
 ### 5.6 结算管理
-- `GET /api/freight-bills?freight_no=&task_no=&order_no=&carrier_id=&reconcile_status=&page=&size=` → 含合计 amount
+- `GET /api/freight-bills?freight_no=&task_no=&order_no=&carrier_id=&reconcile_status=&start_time=&end_time=&page=&size=` → 含合计 amount。同时支持 `POST /api/freight-bills/queryPage` 与 `POST /api/freight-bills/export`
 - `GET /api/freight-bills/:id/detail` → `{ bill, adjustLogs:[] }`（无修改则空数组）
 - `PUT /api/freight-bills/:id/freight` `{actual_freight*, reason*}` → 仅待对账可改（已对账 A0002），写调整记录
 - `POST /api/freight-bills/:id/reconcile` → 0→1，reconciler=系统管理员
 
 ### 5.7 电子签台账
 - `GET /api/esign-records?esign_id=&task_no=&order_no=&vin=&apply_no=&sign_status=&page=&size=`
+  同时支持 `POST /api/esign-records/queryPage` 与 `POST /api/esign-records/export`。sign_status 也可传 1/2/3（待签署/已签署/已取消）
+
+### 5.8 管理查询兼容与公共支撑接口
+- 承运商、司机、发运任务、运费单、电子签台账保留原 GET 列表，同时支持 `POST {资源路径}/queryPage`，请求体使用 camelCase，`pageSize` 自动映射为 `size`
+- 在途监控支持 `POST /api/tracking/tasks/queryPage`
+- 上述资源均支持 `POST {资源路径}/export`，并保留原 GET 导出
+- 操作日志：`POST /api/operationLog/queryPage`、`GET /api/operationLog/:id`
+- 城市字典：`GET /api/app/allCities`
+- 文件：`POST /api/bos/file/upload`、`GET /api/bos/file/url`、`GET /api/bos/file/temporary-url`、`GET /api/bos/file/exist`、`GET /api/bos/file/content`、`DELETE /api/bos/file/delete`
 
 ## 6. 外部接口（/api/external，camelCase，均幂等）
 
-**统一定位**：优先 `orderNo`（订单号，一车一单唯一），其次 `taskNo`，兼容 `applyNo`（须唯一对应单任务，多任务时提示改用 orderNo）；都无 → A0001。
+**统一定位**：优先 `orderNo`（订单号，一车一单唯一），其次 `taskNo`，兼容 `applyNo`（须唯一对应单任务，多订单时提示改用 orderNo）；都无 → A0001。
+
+**路径别名**（与原路径同一处理函数）：CRM 类接口另挂 `/api/external/crm/...`，狮桥/承运商回传另挂 `/api/external/sq/...`（司机同步另有 `/api/external/sq/drivers/batch-sync`）。原 `/api/external/...` 路径保留。
 
 | # | 方法 路径 | 调用方 | 请求（关键字段） | 响应 data |
 | --- | --- | --- | --- | --- |
-| 1 | POST /shipping-tasks/receive | CRM | applyNo*, customerName*, vehicles*:[{vin*, orderNo*, reportNo, planFreight, shipLocation*（或顶层统一提供）, vehicleModel, engineConfig, cabinType}]（**一车一单：单次可多台，每台 orderNo 必填且全局唯一，单次 ≤200 台**）, region, salesPerson, salesPhone, deliveryArea, deliveryAddress*, receiverName, receiverPhone, factory*, storageLocation*, shipMethod, planPickupDate*（CRM 随申请下发）, mileage?（CRM 下发线路里程）, operator?（CRM 操作人账号，写状态日志展示，缺省记「CRM 系统」）, remark | `{applyNo, total, tasks:[{taskNo, orderNo, vin}]}`（每台车生成独立任务，各自独立事务）；订单号已下发/本次重复 → C0001 |
+| 1 | POST /shipping-tasks/receive | CRM | applyNo*, customerName*, vehicles*:[{vin*, orderNo*, reportNo, planFreight, mileage?, shipLocation*（或顶层统一提供）, vehicleModel, engineConfig, cabinType}]（**一申请多订单，每个订单一台车并生成独立任务，单次 ≤200**）, region, salesPerson, salesPhone, deliveryArea, deliveryAddress*, receiverName, receiverPhone, factory*, storageLocation*, shipMethod, planPickupDate?（CRM 可下发，未下发则接单必填）, startLongitude/startLatitude/endLongitude/endLatitude?, mileage?, operator?, remark | `{applyNo, total, mileage, tasks:[{orderNo, taskNo, vin, status, created}]}`；orderNo 全局幂等，同一申请重复下发返回原任务（created=false），订单已属于其他申请 → C0001 |
 | 2 | POST /esign/sync | CRM | esignId*, vin*, orderNo*（VIN+订单号定位任务，推荐）或 applyNo（VIN+申请号，须唯一对应单任务；vin 查车辆明细）, signType='物流电子签', triggerNode, signParty | `{}`；esignId 重复 → C0001 |
 | 3 | GET /shipping-tasks/cancel-check?orderNo= | CRM | -（定位优先 orderNo，兼容 applyNo/taskNo） | `{taskNo, status, cancellable, message}` |
-| 4 | POST /esign/receipt-sync | 狮桥 | esignId* | `{esignId, signStatus}`（回执确认，幂等） |
+| 4 | POST /esign/receipt-sync | 狮桥 | esignId*, receiptTime?, operator? | `{esignId, signStatus, receiptTime, idempotent}`（回执确认并写入 receipt_time，重复回执幂等） |
 | 5 | POST /shipping-tasks/cancel | CRM | orderNo*（推荐）/ applyNo / taskNo, cancelReason*, operator?（CRM 操作人账号，写状态日志展示） | 按取消规则校验；关联待签署电子签置 CANCELLED |
 | 6 | POST /wms/outbound-status | WMS | orderNo/taskNo（兼容 applyNo）, outboundTime? | PICKED→OUTBOUND→IN_TRANSIT（司机提车在前、仓库出库在后，出库完成即进在途），回填 outbound_date（不得早于发运时间）；未提车返回 D0001；重复回传仅补记日志（幂等） |
 | 7 | POST /drivers/sync | 狮桥 | 单条：司机对象；批量：司机对象数组或 `{drivers:[...]}`（≤200 条）。字段 `externalDriverId?`（第三方司机ID，推荐；传入时优先按其 UPSERT）, driverName*, phone*, idCard*, licenseNo, licenseType, licenseValidFrom, licenseValidTo, carrierId? / carrierIds? / externalCarrierId?；**兼容 snake_case 写法**（`name`/`driver_name`、`id_card`、`external_driver_id`、`carrier_id`、`carrier_ids` 等，camelCase 优先） | **按承运商逐份建档**：carrierIds 有 N 家就维护 N 份独立档案（匹配顺序 external_driver_id → 承运商内 external_driver_id → 承运商内 id_card）；未传承运商时沿用已有档案归属，仍无法确定则报错；source=2；自动保证司机登录账号存在（sys_account，account_type=DRIVER，按承运商隔离，不设密码、仅支持手机号验证码登录）；批量逐条独立事务，返回 `{total,success,created,updated,failed,results[]}` |
 | 8 | POST /tracking/report（**已停用，兼容保留**） | 狮桥 | orderNo/taskNo（兼容 applyNo）, longitude*（-180~180）, latitude*（-90~90）, locationDesc?, speed?, reportTime?（缺省当前时间，不得晚于当前时间、不得早于上次上报） | 原推送模式：写 transport_track（transport_no=`SQ+yyyyMMdd+任务id补零4位`），**不改任务状态**；点位取数已改为 STP 定时拉取，本接口后续停用 |
-| 9 | POST /shipping-tasks/accept | 承运商通用（狮桥/任意三方物流） | orderNo/taskNo（兼容 applyNo）, carrierId / externalCarrierId（回传承运商ID，须与任务承运商一致；carrierName 旧字段仅兼容）, driverId / externalDriverId*（STP 内部ID 或第三方司机ID） | DISPATCHED→CARRIER_ACCEPTED，回填 driver_id；司机须启用且属于任务承运商；计划提车日期由 ① receive 下发，本接口不接收 |
+| 9 | POST /shipping-tasks/accept | 承运商通用（狮桥/任意三方物流） | orderNo/taskNo（兼容 applyNo）；carrierId / externalCarrierId / carrierCode / carrierName；driverId / externalDriverId / phone；planPickupDate（任务尚无计划提车日期时必填）, transportNo, estimatedArriveTime；新司机可传 driverName+phone+idCard+驾驶证有效期，按任务承运商自动建档并生成登录账号 | DISPATCHED→CARRIER_ACCEPTED，回填司机、承运单号、计划提车日期和预计到达时间；司机须启用且属于任务承运商；重复接单幂等补记 |
+| 9b | POST /shipping-tasks/cancel-accept | 承运商通用 | orderNo/taskNo（兼容 applyNo）, cancelReason? | 仅 CARRIER_ACCEPTED→DISPATCHED；清除司机、承运单号、计划提车日期和预计到达时间；已是 DISPATCHED 时幂等返回 |
 | 10 | POST /shipping-tasks/pickup | 承运商通用 | orderNo/taskNo（兼容 applyNo）, carrierName?, actualPickupDate?（实际提车时间=发运时间，YYYY-MM-DD HH:mm:ss，兼容仅日期；允许早于计划提车日期，不得晚于当前时间）, photos?:[](提车照片) | 仅 CARRIER_ACCEPTED→PICKED，回填 ship_time，待仓库出库；重复回传仅补记日志 |
 | 11 | POST /shipping-tasks/arrive | 承运商通用 | orderNo/taskNo（兼容 applyNo）, carrierName?, actualFreight?/mileage?/arriveTime?, vehicles?:[{vin*, actualFreight*}]（兼容，仅 1 台） | IN_TRANSIT→ARRIVED，回填 arrive_time 与实际运费/里程并生成待对账运费单（里程优先取回传值，否则继承 CRM 下发里程）；到达时间须晚于提车/出库时间且不得晚于当前时间；一车一单，VIN/金额须与任务一致 |
 | 12 | POST /shipping-tasks/finish | 承运商通用 | orderNo/taskNo（兼容 applyNo）, carrierName? | ARRIVED→FINISHED，回填 finish_time 并同步运费单；当前时间须晚于到达时间 |

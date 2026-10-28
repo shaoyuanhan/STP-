@@ -7,15 +7,28 @@ const { Router } = require('express');
 const { query, withTransaction } = require('../db');
 const {
   wrap, ok, errParam, errBiz, errState, errNotFound,
-  pageOf, pageData, assertAmount,
+  pageOf, pageData, queryOf, assertAmount,
 } = require('../helpers');
 const { sendXlsx, text, dateTime } = require('../exporter');
 
 const router = Router();
 
+const FREIGHT_QUERY_ALIASES = {
+  freightNo: 'freight_no',
+  taskNo: 'task_no',
+  orderNo: 'order_no',
+  carrierId: 'carrier_id',
+  reconcileStatus: 'reconcile_status',
+  startTime: 'start_time',
+  endTime: 'end_time',
+};
+
 /** 列表与导出共用的筛选条件 */
 function freightWhere(q) {
-  const { freight_no = '', task_no = '', order_no = '', carrier_id = '', reconcile_status = '' } = q;
+  const {
+    freight_no = '', task_no = '', order_no = '', carrier_id = '', reconcile_status = '',
+    start_time = '', end_time = '',
+  } = q;
   const where = ['f.deleted = 0'];
   const params = [];
   if (freight_no) where.push('f.freight_no LIKE ?'), params.push(`%${freight_no}%`);
@@ -25,6 +38,14 @@ function freightWhere(q) {
   if (reconcile_status !== '' && reconcile_status !== undefined && reconcile_status !== null) {
     where.push('f.reconcile_status = ?');
     params.push(Number(reconcile_status));
+  }
+  if (start_time) {
+    where.push('f.create_time >= ?');
+    params.push(String(start_time).length === 10 ? `${start_time} 00:00:00` : start_time);
+  }
+  if (end_time) {
+    where.push('f.create_time <= ?');
+    params.push(String(end_time).length === 10 ? `${end_time} 23:59:59` : end_time);
   }
   return { whereSql: `WHERE ${where.join(' AND ')}`, params };
 }
@@ -59,9 +80,10 @@ const BILL_SELECT = `
   LEFT JOIN shipping_task t ON t.id = f.task_id`;
 
 /** 运费单列表：多条件筛选 + 合计金额 */
-router.get('/', wrap(async (req, res) => {
-  const { page, size, offset } = pageOf(req.query);
-  const { whereSql, params } = freightWhere(req.query);
+async function listFreightBills(req, res) {
+  const q = queryOf(req, FREIGHT_QUERY_ALIASES);
+  const { page, size, offset } = pageOf(q);
+  const { whereSql, params } = freightWhere(q);
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM freight_bill f LEFT JOIN shipping_task t ON t.id = f.task_id ${whereSql}`, params);
   const sumRows = await query(
@@ -74,17 +96,21 @@ router.get('/', wrap(async (req, res) => {
     amount: Number(sumRows[0].amount),       // 实际运费合计
     plan_amount: Number(sumRows[0].plan_amount), // 计划运费合计
   }));
-}));
+}
+router.get('/', wrap(listFreightBills));
+router.post('/queryPage', wrap(listFreightBills));
 
 /** 导出：按当前筛选条件导出全部（不分页） */
-router.get('/export', wrap(async (req, res) => {
-  const { whereSql, params } = freightWhere(req.query);
+async function exportFreightBills(req, res) {
+  const { whereSql, params } = freightWhere(queryOf(req, FREIGHT_QUERY_ALIASES));
   const rows = await query(
     `${BILL_SELECT} ${whereSql} ORDER BY f.create_time DESC, f.id DESC LIMIT 50000`,
     params
   );
   sendXlsx(res, { prefix: '应付运费对账', sheetName: '运费单', columns: FREIGHT_EXPORT_COLUMNS, rows });
-}));
+}
+router.get('/export', wrap(exportFreightBills));
+router.post('/export', wrap(exportFreightBills));
 
 /** 费用明细：运费单 + 调整记录（无修改则空数组） */
 router.get('/:id/detail', wrap(async (req, res) => {
@@ -101,8 +127,8 @@ router.get('/:id/detail', wrap(async (req, res) => {
 /** 修改运费：仅「待对账」可改（已对账 A0002），写调整记录（每次修改一条） */
 router.put('/:id/freight', wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const amount = assertAmount(req.body.actual_freight, { label: '实际运费' });
-  const reason = String(req.body.reason ?? '').trim();
+  const amount = assertAmount(req.body.actual_freight ?? req.body.actualFreight, { label: '实际运费' });
+  const reason = String(req.body.reason ?? req.body.adjustReason ?? '').trim();
   if (!reason) throw errParam('请填写修改原因');
   if (reason.length > 255) throw errParam('修改原因不能超过 255 字');
 
