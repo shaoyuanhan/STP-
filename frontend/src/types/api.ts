@@ -230,6 +230,24 @@ export interface DriverQuery extends PageQuery {
   status?: DriverStatus | '' | null
 }
 
+/** Excel 导入逐行处理结果 */
+export interface DriverImportRowResult {
+  /** Excel 行号（含表头） */
+  row: number
+  success: boolean
+  code: string
+  message: string
+  driverId?: number
+}
+
+/** POST /api/drivers/import 响应 */
+export interface DriverImportResult {
+  total: number
+  success: number
+  failed: number
+  results: DriverImportRowResult[]
+}
+
 /** GET /api/drivers/options 返回项（狮桥接单模拟用） */
 export interface DriverOption {
   id: number
@@ -249,6 +267,8 @@ export interface ShippingTaskListItem extends AuditFields {
   apply_no: string
   /** 订单号：一车一单唯一标识（CRM 下发，全局唯一） */
   order_no?: string | null
+  /** 承运商接单返回的第三方运输单号 */
+  transport_no?: string | null
   customer_name: string
   /** GROUP_CONCAT 顿号连接 */
   vins?: string
@@ -261,6 +281,7 @@ export interface ShippingTaskListItem extends AuditFields {
   /** 里程 km（CRM 发运申请下发，到达回传可覆盖） */
   mileage?: number | string | null
   plan_pickup_date?: string | null
+  estimated_arrive_time?: string | null
   outbound_date?: string | null
   ship_time?: string | null
   arrive_time?: string | null
@@ -374,6 +395,8 @@ export interface ShippingTaskQuery extends PageQuery {
   carrier_id?: number | '' | null
   start_date?: string
   end_date?: string
+  plan_pickup_start?: string
+  plan_pickup_end?: string
 }
 
 /** 派单/改派请求体 */
@@ -531,6 +554,8 @@ export interface FreightBillQuery extends PageQuery {
   order_no?: string
   carrier_id?: number | '' | null
   reconcile_status?: ReconcileStatus | '' | null
+  start_time?: string
+  end_time?: string
 }
 
 /** 运费列表响应（含合计金额，契约 5.6） */

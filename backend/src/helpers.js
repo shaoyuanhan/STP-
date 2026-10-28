@@ -66,16 +66,28 @@ function errorHandler(err, req, res, _next) {
   res.status(500).json({ code: 'B0001', message: '系统内部异常，请稍后重试', data: null });
 }
 
-/** 从 req.query 读取分页参数：?page=1&size=10，size 上限 100 */
+/** 从查询参数读取分页：兼容 size 与 pageSize，上限 100 */
 function pageOf(query) {
   const page = Math.max(1, parseInt(query.page, 10) || 1);
-  const size = Math.min(100, Math.max(1, parseInt(query.size, 10) || 10));
+  const size = Math.min(100, Math.max(1, parseInt(query.size ?? query.pageSize, 10) || 10));
   return { page, size, offset: (page - 1) * size };
 }
 
 /** 分页数据结构 */
 function pageData(list, total, page, size, extra = {}) {
   return { list, total, page, size, ...extra };
+}
+
+/** GET 读取 query，POST 读取 body，并把驼峰字段映射到现有筛选字段 */
+function queryOf(req, aliases = {}) {
+  const source = req.method === 'GET' ? req.query : (req.body || {});
+  const result = { ...source };
+  for (const [camelName, snakeName] of Object.entries(aliases)) {
+    if (result[snakeName] === undefined && source[camelName] !== undefined) {
+      result[snakeName] = source[camelName];
+    }
+  }
+  return result;
 }
 
 const { parsePhoneNumberFromString: parsePhone } = require('libphonenumber-js/max');
@@ -154,6 +166,7 @@ module.exports = {
   errorHandler,
   pageOf,
   pageData,
+  queryOf,
   localDateStr,
   assertPhone,
   assertIdCard,

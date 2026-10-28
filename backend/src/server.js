@@ -45,9 +45,8 @@ app.get('/api/health', wrap(async (req, res) => {
 }));
 
 // 数据字典（契约 5.1：任务状态/承运商状态/司机状态/司机来源/对账状态/电子签状态/取消派单原因）
-app.get('/api/dictionaries', wrap(async (req, res) => {
-  ok(res, {
-    taskStatus: [
+const ALL_ENUMS = {
+  taskStatus: [
       { value: 'WAIT_DISPATCH', label: '待派单' },
       { value: 'DISPATCHED', label: '已派单' },
       { value: 'CARRIER_ACCEPTED', label: '承运商已接单' },
@@ -79,8 +78,10 @@ app.get('/api/dictionaries', wrap(async (req, res) => {
       { value: 'SIGNED', label: '已签署' },
       { value: 'CANCELLED', label: '已取消' },
     ],
-    cancelReasons: ['承运商无法履约', '调度调整', '其他'],
-  });
+  cancelReasons: ['承运商无法履约', '调度调整', '其他'],
+};
+app.get(['/api/dictionaries', '/api/app/allEnums'], wrap(async (req, res) => {
+  ok(res, ALL_ENUMS);
 }));
 
 // 业务路由（契约第 5/6/7 节）
@@ -92,6 +93,9 @@ app.use('/api/tracking', trackingRoutes);
 app.use('/api/freight-bills', freightBillRoutes);
 app.use('/api/esign-records', esignRoutes);
 app.use('/api/external', externalRoutes);
+app.use('/api/bos/file', require('./routes/files'));
+app.use('/api/operationLog', require('./routes/operationLogs'));
+app.use('/api/app', require('./routes/cities'));
 
 // 承运商端/司机端（JWT 登录态，数据按 token 内的 carrier_id / driver_id 隔离）
 app.use('/api/portal/auth', portalAuthRoutes);

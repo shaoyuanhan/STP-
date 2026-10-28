@@ -8,7 +8,7 @@
  * - 停用/启用：停用后不可再分派新任务，不影响在途运单
  */
 import { computed, h, onActivated, onMounted, reactive, ref } from 'vue'
-import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, SelectOption, UploadFileInfo } from 'naive-ui'
 import { NButton, NTag } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
@@ -19,9 +19,17 @@ import ConfirmAction from '@/components/ConfirmAction.vue'
 import PhoneInput from '@/components/PhoneInput.vue'
 import DetailSection from '@/components/DetailSection.vue'
 import { listCarriers } from '@/services/carriers'
-import { createDriver, exportDrivers, listDrivers, updateDriver, updateDriverStatus } from '@/services/drivers'
+import {
+  createDriver,
+  downloadDriverTemplate,
+  exportDrivers,
+  importDrivers,
+  listDrivers,
+  updateDriver,
+  updateDriverStatus,
+} from '@/services/drivers'
 import { dateOnly, datetime, formatPhone } from '@/utils/format'
-import type { Driver, DriverPayload, DriverQuery, DriverStatus } from '@/types/api'
+import type { Driver, DriverImportResult, DriverImportRowResult, DriverPayload, DriverQuery, DriverStatus } from '@/types/api'
 
 /** PageTable 实例句柄 */
 interface PageTableHandle {
@@ -139,6 +147,72 @@ async function handleExport() {
     message.error(error instanceof Error ? error.message : '导出失败，请稍后重试')
   } finally {
     exporting.value = false
+  }
+}
+
+// ---------------- Excel 导入 ----------------
+const showImport = ref(false)
+const importing = ref(false)
+const templateDownloading = ref(false)
+const importFileList = ref<UploadFileInfo[]>([])
+const importResult = ref<DriverImportResult | null>(null)
+const importFailures = computed(
+  () => importResult.value?.results.filter((item) => !item.success) ?? [],
+)
+
+const importFailureColumns: DataTableColumns<DriverImportRowResult> = [
+  { title: 'Excel 行号', key: 'row', width: 100 },
+  { title: '失败原因', key: 'message', minWidth: 260 },
+]
+
+function openImport() {
+  importFileList.value = []
+  importResult.value = null
+  showImport.value = true
+}
+
+function handleImportFileListChange(files: UploadFileInfo[]) {
+  importResult.value = null
+  if (files.length && !files[0].name.toLowerCase().endsWith('.xlsx')) {
+    importFileList.value = []
+    message.warning('请选择 .xlsx 格式的文件')
+    return
+  }
+  importFileList.value = files
+}
+
+async function handleTemplateDownload() {
+  if (templateDownloading.value) return
+  templateDownloading.value = true
+  try {
+    const filename = await downloadDriverTemplate()
+    message.success(`已下载：${filename}`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '模板下载失败，请稍后重试')
+  } finally {
+    templateDownloading.value = false
+  }
+}
+
+async function submitImport() {
+  const file = importFileList.value[0]?.file
+  if (!file) {
+    message.warning('请先选择要导入的 .xlsx 文件')
+    return
+  }
+  if (importing.value) return
+  importing.value = true
+  try {
+    const data = new FormData()
+    data.append('file', file)
+    const result = await importDrivers(data)
+    importResult.value = result
+    message.success(`导入完成：成功 ${result.success} 条，失败 ${result.failed} 条`)
+    await tableRef.value?.refresh()
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '司机导入失败，请稍后重试')
+  } finally {
+    importing.value = false
   }
 }
 
@@ -461,7 +535,10 @@ onActivated(loadCarrierOptions)
       <span class="table-toolbar__hint">
         司机信息支持系统录入与狮桥同步；姓名与身份证号创建后不可修改；停用后不可派新任务，不影响在途运单
       </span>
-      <n-button type="primary" @click="openForm(null)">新增司机</n-button>
+      <div class="table-toolbar__actions">
+        <n-button @click="openImport">Excel 导入</n-button>
+        <n-button type="primary" @click="openForm(null)">新增司机</n-button>
+      </div>
     </div>
 
     <!-- 列表 -->
@@ -474,6 +551,73 @@ onActivated(loadCarrierOptions)
         :scroll-x="1650"
       />
     </n-card>
+
+    <!-- Excel 导入 -->
+    <n-modal
+      v-model:show="showImport"
+      preset="card"
+      title="导入司机"
+      :bordered="false"
+      :style="{ width: '640px', maxWidth: '94vw' }"
+      :mask-closable="!importing"
+      :closable="!importing"
+    >
+      <div class="driver-import">
+        <div class="driver-import__template">
+          <span>请按模板填写司机信息，仅支持 .xlsx 文件。导入后按承运商各建一份档案，并自动生成司机登录账号。</span>
+          <n-button
+            text
+            type="primary"
+            :loading="templateDownloading"
+            @click="handleTemplateDownload"
+          >
+            下载导入模板
+          </n-button>
+        </div>
+        <n-upload
+          :file-list="importFileList"
+          :default-upload="false"
+          :max="1"
+          :disabled="importing"
+          accept=".xlsx"
+          @update:file-list="handleImportFileListChange"
+        >
+          <n-button :disabled="importing">选择 .xlsx 文件</n-button>
+        </n-upload>
+        <n-alert
+          v-if="importResult"
+          :type="importResult.failed > 0 ? 'warning' : 'success'"
+          :show-icon="false"
+        >
+          导入结果：共 {{ importResult.total }} 条，成功 {{ importResult.success }} 条，失败
+          {{ importResult.failed }} 条
+        </n-alert>
+        <n-data-table
+          v-if="importFailures.length"
+          size="small"
+          :columns="importFailureColumns"
+          :data="importFailures"
+          :row-key="(row: DriverImportRowResult) => row.row"
+          :max-height="240"
+          :bordered="false"
+        />
+      </div>
+      <template #footer>
+        <div class="modal-footer">
+          <n-button
+            type="primary"
+            :loading="importing"
+            :disabled="!importFileList.length"
+            @click="submitImport"
+          >
+            开始导入
+          </n-button>
+          <n-button :disabled="importing" @click="showImport = false">
+            {{ importResult ? '关闭' : '取消' }}
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
 
     <!-- 司机详情 -->
     <n-drawer
@@ -664,6 +808,26 @@ onActivated(loadCarrierOptions)
 </template>
 
 <style scoped>
+.driver-import {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.driver-import__template {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #666666;
+  font-size: 13px;
+}
+
+.table-toolbar__actions {
+  display: flex;
+  gap: 8px;
+}
+
 .page-card__date {
   width: 100%;
 }

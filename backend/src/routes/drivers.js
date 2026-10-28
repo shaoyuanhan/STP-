@@ -5,9 +5,11 @@
  *       停用后不可分派任务、不影响在途运单；外部狮桥同步 source=2，自建 source=1
  */
 const { Router } = require('express');
+const multer = require('multer');
+const ExcelJS = require('exceljs');
 const { query, withTransaction } = require('../db');
 const {
-  wrap, ok, errParam, errBiz, errNotFound, pageOf, pageData,
+  wrap, ok, errParam, errBiz, errNotFound, pageOf, pageData, queryOf,
   assertPhone, assertIdCard,
 } = require('../helpers');
 const { sendXlsx, text, dateOnly, dateTime, phoneText } = require('../exporter');
@@ -16,6 +18,7 @@ const { loadAccess } = require('../services/access');
 const { ensureDriverAccount, syncDriverAccountStatus } = require('../services/driverAccount');
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 /** 登录账号的数据权限；未登录/司机端不按承运商范围过滤（司机端不走本接口） */
 async function accessOf(req) {
@@ -104,10 +107,19 @@ const DRIVER_SELECT = `
   FROM driver d
   LEFT JOIN carrier c ON c.id = d.carrier_id AND c.deleted = 0`;
 
+const DRIVER_QUERY_ALIASES = {
+  driverName: 'driver_name',
+  idCard: 'id_card',
+  externalDriverId: 'external_driver_id',
+  carrierId: 'carrier_id',
+  licenseNo: 'license_no',
+};
+
 /** 列表：按字段分项筛选，含所属承运商 */
-router.get('/', wrap(async (req, res) => {
-  const { page, size, offset } = pageOf(req.query);
-  const { whereSql, params } = driverWhere(req.query, await accessOf(req));
+async function listDrivers(req, res) {
+  const q = queryOf(req, DRIVER_QUERY_ALIASES);
+  const { page, size, offset } = pageOf(q);
+  const { whereSql, params } = driverWhere(q, await accessOf(req));
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM driver d ${whereSql}`, params);
   const rows = await query(
@@ -118,11 +130,13 @@ router.get('/', wrap(async (req, res) => {
     [...params, size, offset]
   );
   ok(res, pageData(rows.map(decorateDriver), Number(totalRows[0].n), page, size));
-}));
+}
+router.get('/', wrap(listDrivers));
+router.post('/queryPage', wrap(listDrivers));
 
 /** 导出：按当前筛选条件导出全部（不分页） */
-router.get('/export', wrap(async (req, res) => {
-  const { whereSql, params } = driverWhere(req.query, await accessOf(req));
+async function exportDrivers(req, res) {
+  const { whereSql, params } = driverWhere(queryOf(req, DRIVER_QUERY_ALIASES), await accessOf(req));
   const rows = await query(
     `${DRIVER_SELECT}
      ${whereSql}
@@ -136,7 +150,9 @@ router.get('/export', wrap(async (req, res) => {
     columns: DRIVER_EXPORT_COLUMNS,
     rows: rows.map(decorateDriver),
   });
-}));
+}
+router.get('/export', wrap(exportDrivers));
+router.post('/export', wrap(exportDrivers));
 
 /** 可选司机下拉（狮桥接单模拟用）：该承运商下启用的司机 */
 router.get('/options', wrap(async (req, res) => {
@@ -171,17 +187,25 @@ function assertLicenseRange(from, to) {
 /** 校验并归一化司机入参（新增/编辑共用，不含姓名身份证不可改校验） */
 function normalizeDriverBody(body) {
   const phone = assertPhone(body.phone, { label: '手机号', mobileOnly: true });
-  const id_card = assertIdCard(body.id_card, { label: '身份证号' });
-  assertLicenseRange(body.license_valid_from, body.license_valid_to);
-  const license_no = body.license_no?.toString().trim() || null;
-  const license_type = body.license_type?.toString().trim() || null;
+  const id_card = assertIdCard(body.id_card ?? body.idCard, { label: '身份证号' });
+  const license_valid_from = body.license_valid_from ?? body.licenseValidFrom;
+  const license_valid_to = body.license_valid_to ?? body.licenseValidTo;
+  assertLicenseRange(license_valid_from, license_valid_to);
+  const license_no = (body.license_no ?? body.licenseNo)?.toString().trim() || null;
+  const license_type = (body.license_type ?? body.licenseType)?.toString().trim() || null;
   const remark = body.remark?.toString().trim() || null;
   // 第三方司机ID：外部系统主键，承运商内唯一（接单/回传可用其定位）
-  const external_driver_id = body.external_driver_id?.toString().trim() || null;
+  const external_driver_id = (body.external_driver_id ?? body.externalDriverId)?.toString().trim() || null;
   if (external_driver_id && external_driver_id.length > 64) throw errParam('第三方司机ID不能超过 64 字');
-  const carrier_id = Number(body.carrier_id);
+  const carrier_id = Number(body.carrier_id ?? body.carrierId);
   if (!Number.isInteger(carrier_id) || carrier_id <= 0) throw errParam('所属承运商必填');
-  return { phone, id_card, license_no, license_type, license_valid_from: body.license_valid_from, license_valid_to: body.license_valid_to, remark, carrier_id, external_driver_id };
+  return { phone, id_card, license_no, license_type, license_valid_from, license_valid_to, remark, carrier_id, external_driver_id };
+}
+
+async function queryRows(conn, sql, params = []) {
+  if (!conn) return query(sql, params);
+  const [rows] = await conn.query(sql, params);
+  return rows;
 }
 
 /** 所属承运商必须存在 */
@@ -192,49 +216,179 @@ async function assertCarrierExists(carrierId) {
 }
 
 /** 第三方司机ID去重（A0002）：承运商内唯一 */
-async function assertExternalDriverIdUnique(externalDriverId, carrierId, excludeId) {
+async function assertExternalDriverIdUnique(externalDriverId, carrierId, excludeId, conn) {
   if (!externalDriverId) return;
-  const dup = await query(
+  const dup = await queryRows(
+    conn,
     `SELECT id FROM driver WHERE carrier_id = ? AND external_driver_id = ? AND deleted = 0${excludeId ? ' AND id != ?' : ''}`,
     excludeId ? [carrierId, externalDriverId, excludeId] : [carrierId, externalDriverId]
   );
   if (dup.length) throw errBiz(`第三方司机ID ${externalDriverId} 已被本承运商其他司机使用`);
 }
 
-/** 新增司机：source=1 自建；同一承运商内身份证唯一(A0002) */
-router.post('/', wrap(async (req, res) => {
-  const name = String(req.body.name ?? '').trim();
+/** 新增校验与写入供单条新增、Excel 导入共用；同步生成司机登录账号 */
+async function createDriver(body, conn) {
+  const name = String(body.name ?? body.driverName ?? '').trim();
   if (!name) throw errParam('司机姓名必填');
   if (name.length > 64) throw errParam('司机姓名不能超过 64 字');
-  const v = normalizeDriverBody(req.body);
+  const v = normalizeDriverBody(body);
+  const access = body.__access;
+  if (access && access.carriers !== 'ALL' && !access.carriers.map(Number).includes(v.carrier_id)) {
+    throw errBiz('无权为该承运商导入或新增司机');
+  }
   await assertCarrierExists(v.carrier_id);
 
-  const dup = await query(
+  const dup = await queryRows(
+    conn,
     'SELECT id FROM driver WHERE carrier_id = ? AND id_card = ? AND deleted = 0',
     [v.carrier_id, v.id_card]
   );
   if (dup.length) throw errBiz('该承运商下已存在相同身份证号的司机，请勿重复添加');
-  await assertExternalDriverIdUnique(v.external_driver_id, v.carrier_id);
+  await assertExternalDriverIdUnique(v.external_driver_id, v.carrier_id, null, conn);
 
-  const createdId = await withTransaction(async (conn) => {
-    const [r] = await conn.query(
-      `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, carrier_id, license_no, license_type, license_valid_from, license_valid_to, source, status, remark, create_name, update_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, '系统管理员', '系统管理员')`,
-      [name, v.external_driver_id, v.phone, v.id_card, v.carrier_id, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark]
-    );
-    const account = await ensureDriverAccount(conn, {
-      driverId: r.insertId,
-      driverName: name,
-      phone: v.phone,
-      carrierId: v.carrier_id,
-      operator: '系统管理员',
-    });
-    assertNoPhoneConflict(account, v.phone);
-    return r.insertId;
+  const inserted = await queryRows(
+    conn,
+    `INSERT INTO driver (driver_name, external_driver_id, phone, id_card, carrier_id, license_no, license_type, license_valid_from, license_valid_to, source, status, remark, create_name, update_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, '系统管理员', '系统管理员')`,
+    [name, v.external_driver_id, v.phone, v.id_card, v.carrier_id, v.license_no, v.license_type, v.license_valid_from, v.license_valid_to, v.remark]
+  );
+  const driverId = inserted.insertId;
+  const account = await ensureDriverAccount(conn, {
+    driverId,
+    driverName: name,
+    phone: v.phone,
+    carrierId: v.carrier_id,
+    operator: '系统管理员',
   });
+  assertNoPhoneConflict(account, v.phone);
+  const [created] = await queryRows(conn, `${DRIVER_SELECT} WHERE d.id = ?`, [driverId]);
+  return created ? decorateDriver(created) : null;
+}
 
-  const [created] = await query(`${DRIVER_SELECT} WHERE d.id = ?`, [createdId]);
-  ok(res, created ? decorateDriver(created) : null);
+/** 导入模板列；required 表示表头必须存在 */
+const DRIVER_IMPORT_COLUMNS = [
+  { key: 'name', header: '司机姓名', width: 12, required: true },
+  { key: 'phone', header: '手机号', width: 16, required: true },
+  { key: 'id_card', header: '身份证号', width: 22, required: true },
+  { key: 'carrier_code', header: '承运商编码', width: 16, required: true },
+  { key: 'license_no', header: '驾驶证号', width: 22 },
+  { key: 'license_type', header: '准驾车型', width: 10 },
+  { key: 'license_valid_from', header: '驾驶证有效期自', width: 18, required: true, date: true },
+  { key: 'license_valid_to', header: '驾驶证有效期至', width: 18, required: true, date: true },
+  { key: 'external_driver_id', header: '第三方司机ID', width: 20 },
+  { key: 'remark', header: '备注', width: 30 },
+];
+
+/** 导入模板：仅生成表头，导入时按表头名称定位列 */
+router.get(['/import/template', '/import-template'], wrap(async (req, res) => {
+  sendXlsx(res, {
+    prefix: '司机导入模板',
+    sheetName: '司机导入',
+    columns: DRIVER_IMPORT_COLUMNS,
+    rows: [],
+  });
+}));
+
+function formatExcelDate(value) {
+  if (Number.isNaN(value.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`;
+}
+
+function importCellValue(value) {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date || typeof value !== 'object') return value;
+  if (Array.isArray(value.richText)) return value.richText.map((part) => part.text || '').join('');
+  if (value.result !== undefined) return importCellValue(value.result);
+  if (value.text !== undefined) return importCellValue(value.text);
+  return '';
+}
+
+function importCellText(cell) {
+  return String(importCellValue(cell.value) ?? '').trim();
+}
+
+function importCellDate(cell) {
+  const value = importCellValue(cell.value);
+  if (!value) return '';
+  if (value instanceof Date) return formatExcelDate(value);
+  const valueText = String(value).trim();
+  const matched = /^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(?:[ T].*)?$/.exec(valueText);
+  if (!matched) return valueText;
+  return `${matched[1]}-${matched[2].padStart(2, '0')}-${matched[3].padStart(2, '0')}`;
+}
+
+async function importDriverRow(conn, body, access) {
+  const carrierCode = String(body.carrier_code ?? '').trim();
+  if (!carrierCode) throw errParam('承运商编码必填');
+  const carriers = await queryRows(conn, 'SELECT id FROM carrier WHERE carrier_code = ? AND deleted = 0', [carrierCode]);
+  if (!carriers.length) throw errNotFound(`承运商编码 ${carrierCode} 对应的承运商不存在`);
+  const created = await createDriver({ ...body, carrier_id: Number(carriers[0].id), __access: access }, conn);
+  if (!created) throw new Error('司机新增后读取详情失败');
+  return created;
+}
+
+/** Excel 导入：逐行校验、逐行独立事务，失败行不影响其他行；仍按承运商隔离并生成登录账号 */
+router.post('/import', upload.single('file'), wrap(async (req, res) => {
+  if (!req.file) throw errParam('请上传 Excel 文件（multipart 字段名 file）');
+  if (!/\.xlsx$/i.test(req.file.originalname || '')) throw errParam('仅支持 .xlsx 格式文件');
+
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(req.file.buffer);
+  } catch (e) {
+    throw errParam('Excel 文件解析失败，请确认文件有效且未损坏');
+  }
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) throw errParam('Excel 文件中没有工作表');
+
+  const headerMap = new Map();
+  worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, colNumber) => {
+    const header = importCellText(cell).replace(/^\uFEFF/, '').trim();
+    if (header) headerMap.set(header, colNumber);
+  });
+  const missing = DRIVER_IMPORT_COLUMNS.filter((column) => column.required && !headerMap.has(column.header));
+  if (missing.length) {
+    throw errParam(`导入文件缺少必需列：${missing.map((column) => column.header).join('、')}`);
+  }
+
+  const access = await accessOf(req);
+  const results = [];
+  for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+    const excelRow = worksheet.getRow(rowNumber);
+    const body = {};
+    let hasValue = false;
+    for (const column of DRIVER_IMPORT_COLUMNS) {
+      const colNumber = headerMap.get(column.header);
+      const cell = colNumber ? excelRow.getCell(colNumber) : null;
+      const value = cell ? (column.date ? importCellDate(cell) : importCellText(cell)) : '';
+      body[column.key] = value;
+      if (value !== '') hasValue = true;
+    }
+    if (!hasValue) continue;
+
+    try {
+      const created = await withTransaction((conn) => importDriverRow(conn, body, access));
+      results.push({ row: rowNumber, success: true, code: '00000', message: '导入成功', driverId: created.id });
+    } catch (err) {
+      const dup = err.code === 'ER_DUP_ENTRY';
+      const code = dup ? 'A0002' : (/^[A-D]\d{4}$/.test(String(err.code ?? '')) ? err.code : 'B0001');
+      const message = dup ? '该承运商下身份证号或第三方司机ID已存在' : (err.message || '导入失败');
+      results.push({ row: rowNumber, success: false, code, message });
+    }
+  }
+
+  if (!results.length) throw errParam('导入文件没有可处理的数据行');
+  const success = results.filter((result) => result.success).length;
+  const failed = results.length - success;
+  ok(res, { total: results.length, success, failed, results }, `司机导入完成：成功 ${success} 条，失败 ${failed} 条`);
+}));
+
+/** 新增司机：source=1 自建；同一承运商内身份证唯一(A0002) */
+router.post('/', wrap(async (req, res) => {
+  const access = await accessOf(req);
+  const created = await withTransaction((conn) => createDriver({ ...req.body, __access: access }, conn));
+  ok(res, created);
 }));
 
 /** 编辑：姓名与身份证号不可修改(A0002)；可调整所属承运商（有在途任务时禁止） */

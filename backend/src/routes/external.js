@@ -2,7 +2,7 @@
  * 外部系统接口（契约第 6 节，前缀 /api/external，camelCase，均幂等，不走登录态）
  *
  * 调用方与接口清单：
- *   CRM  ① POST /shipping-tasks/receive        发运申请任务接收（applyNo 幂等 C0001，taskNo 自动生成）
+ *   CRM  ① POST /shipping-tasks/receive        发运申请任务接收（orderNo 幂等，一个订单一个任务一台车；同路径另挂 /crm/*）
  *   CRM  ② POST /esign/sync                     物流电子签同步（esignId 幂等，VIN+applyNo 匹配，vin 查车辆明细表）
  *   CRM  ③ GET  /shipping-tasks/cancel-check    送车发运申请取消前状态查询
  *   狮桥 ④ POST /esign/receipt-sync             物流电子签签收回执确认（幂等）
@@ -10,7 +10,8 @@
  *   WMS  ⑧ POST /wms/outbound-status            WMS 出库状态同步（PICKED→OUTBOUND→IN_TRANSIT，司机提车在前、仓库出库在后）
  *   狮桥 ⑩ POST /drivers/sync                   司机信息同步（支持单条/批量，承运商内按身份证号/第三方ID UPSERT，source=2）
  *   狮桥 ⑪ POST /tracking/report                在途点位上报（写 transport_track，仅记录轨迹不改状态）
- *   狮桥 ⑫ POST /shipping-tasks/accept          承运商接单（DISPATCHED→CARRIER_ACCEPTED，分配司机）
+ *   狮桥 ⑫ POST /shipping-tasks/accept          承运商接单（DISPATCHED→CARRIER_ACCEPTED，分配司机，可回填承运单号/计划提车/预计到达；同路径另挂 /sq/*）
+ *   狮桥 ⑫ POST /shipping-tasks/cancel-accept   承运商取消接单（CARRIER_ACCEPTED→DISPATCHED）
  *   狮桥 ⑫ POST /shipping-tasks/pickup          司机提车（CARRIER_ACCEPTED→PICKED，含提车照片）
  *   狮桥 ⑫ POST /shipping-tasks/arrive          司机到达（IN_TRANSIT→ARRIVED，回填实际运费/里程）
  *   狮桥 ⑫ POST /shipping-tasks/finish          司机完结（ARRIVED→FINISHED）
@@ -82,6 +83,18 @@ function parseDateTime(v, label = '时间') {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+function parseDateOnly(value, label) {
+  const parsed = parseDateTime(value, label);
+  return parsed ? parsed.slice(0, 10) : null;
+}
+
+function optionalCoordinate(value, label, min, max) {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < min || n > max) throw errParam(`${label}格式不正确，取值范围 ${min} ~ ${max}`);
+  return n;
+}
+
 /** 本地当前时间 YYYY-MM-DD HH:mm:ss（与 parseDateTime 输出同格式，可直接字符串比较） */
 function nowStr() {
   const d = new Date();
@@ -124,152 +137,169 @@ function cancelRule(status) {
 
 /* ======================= ① CRM：发运申请任务接收 ======================= */
 // POST /api/external/shipping-tasks/receive
-router.post('/shipping-tasks/receive', wrap(async (req, res) => {
+// 同时挂载 /api/external/crm/shipping-tasks/receive
+// 一个申请可含多个订单，每个订单一台车、一条任务。orderNo 全局幂等：同申请同 VIN 重复下发返回原任务。
+router.post(['/shipping-tasks/receive', '/crm/shipping-tasks/receive'], wrap(async (req, res) => {
   const b = req.body || {};
-
-  // ---- 参数校验（camelCase）----
   const applyNo = String(b.applyNo ?? '').trim();
   if (!applyNo) throw errParam('发运申请号 applyNo 必填');
   const customerName = String(b.customerName ?? '').trim();
   if (!customerName) throw errParam('客户名称 customerName 必填');
   const deliveryAddress = String(b.deliveryAddress ?? '').trim();
   if (!deliveryAddress) throw errParam('交付地址 deliveryAddress 必填');
-  if (!Array.isArray(b.vehicles) || !b.vehicles.length) throw errParam('车辆明细 vehicles 必填（至少一台车）');
-  // 一车一单：一台车 = 一个订单任务；一个发运申请（applyNo）可含多台车，按 VIN 拆成多条任务
+  if (!Array.isArray(b.vehicles) || !b.vehicles.length) throw errParam('车辆明细 vehicles 必填（至少一个订单）');
   if (b.vehicles.length > 200) throw errParam('单次发运申请车辆数不能超过 200 台');
-  const seenVin = new Set();
-  const seenOrder = new Set();
-  b.vehicles.forEach((v, i) => {
-    const vin = String(v?.vin ?? '').trim();
-    if (!vin) throw errParam(`第 ${i + 1} 台车的 VIN 必填`);
-    if (!/^[A-HJ-NPR-Z0-9]{17}$/i.test(vin)) throw errParam(`第 ${i + 1} 台车的 VIN 格式不正确，应为 17 位`);
-    const vinUp = vin.toUpperCase();
-    if (seenVin.has(vinUp)) throw errParam(`VIN ${vinUp} 在本次申请中重复`);
-    seenVin.add(vinUp);
-    // 订单号：一车一单的唯一标识，必填且全局唯一
-    const orderNo = String(v?.orderNo ?? '').trim();
-    if (!orderNo) throw errParam(`第 ${i + 1} 台车的订单号 orderNo 必填（一车一单）`);
-    if (seenOrder.has(orderNo)) throw errParam(`订单号 ${orderNo} 在本次申请中重复`);
-    seenOrder.add(orderNo);
-  });
   if (b.remark && String(b.remark).length > 500) throw errParam('备注 remark 不能超过 500 字');
-  // CRM 操作人账号：随申请推送，状态日志「操作人」展示用；缺省记「CRM 系统」
   const operator = cutStr(String(b.operator ?? '').trim(), 64) || 'CRM 系统';
+
+  const orderNos = new Set();
+  const vins = new Set();
+  const vehicles = b.vehicles.map((vehicle, index) => {
+    const orderNo = String(vehicle?.orderNo ?? '').trim();
+    const vin = String(vehicle?.vin ?? '').trim().toUpperCase();
+    if (!orderNo) throw errParam(`第 ${index + 1} 台车的订单号 orderNo 必填（一车一单）`);
+    if (orderNos.has(orderNo)) throw errParam(`订单号 ${orderNo} 在本次申请中重复`);
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) throw errParam(`第 ${index + 1} 台车的 VIN 格式不正确，应为 17 位`);
+    if (vins.has(vin)) throw errParam(`VIN ${vin} 在本次申请中重复`);
+    orderNos.add(orderNo);
+    vins.add(vin);
+    return { ...vehicle, orderNo: cutStr(orderNo, 64), vin };
+  });
 
   const salesPhone = assertPhone(b.salesPhone, { label: '销售人员电话 salesPhone', required: false });
   const receiverPhone = assertPhone(b.receiverPhone, { label: '接车人电话 receiverPhone', required: false });
-  const receiverName = cutStr(String(b.receiverName ?? '').trim(), 64) || null;
-  // 计划提车日期由 CRM 随发运申请直接下发，必填（既有需求：承运商接单后仅可调整）
-  if (!b.planPickupDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.planPickupDate).trim())) {
-    throw errParam('计划提车日期 planPickupDate 必填，格式 YYYY-MM-DD');
-  }
-  // 生产工厂/存放地点/发运地点由 CRM 随发运申请下发，必填（PRD 基础信息 + 车辆明细字段）
+  const receiverName = cutStr(String(b.receiverName ?? b.receiver ?? '').trim(), 64) || null;
   const factory = String(b.factory ?? '').trim();
   if (!factory) throw errParam('生产工厂 factory 必填');
   const storageLocation = String(b.storageLocation ?? '').trim();
   if (!storageLocation) throw errParam('存放地点 storageLocation 必填');
   const headShipLocation = String(b.shipLocation ?? '').trim();
-  b.vehicles.forEach((v, i) => {
-    if (!String(v?.shipLocation ?? '').trim() && !headShipLocation) {
-      throw errParam(`第 ${i + 1} 台车的发运地点 shipLocation 必填（或顶层 shipLocation 统一提供）`);
+  vehicles.forEach((vehicle, index) => {
+    if (!String(vehicle.shipLocation ?? '').trim() && !headShipLocation) {
+      throw errParam(`第 ${index + 1} 台车的发运地点 shipLocation 必填（或顶层 shipLocation 统一提供）`);
     }
   });
+  // CRM 仍可随申请下发计划提车日期；未下发时由承运商接单补齐
+  const planPickupDate = b.planPickupDate ? parseDateOnly(b.planPickupDate, '计划提车日期 planPickupDate') : null;
 
-  // ---- orderNo 全局唯一校验（一车一单，跨申请也不可重复）----
-  const orderNos = b.vehicles.map((v) => String(v.orderNo).trim());
-  const dupOrders = await query(
-    `SELECT order_no, task_no FROM shipping_task WHERE order_no IN (${orderNos.map(() => '?').join(',')}) AND deleted = 0`,
-    orderNos
-  );
-  if (dupOrders.length) {
-    throw errDup(`订单号 ${dupOrders[0].order_no} 已下发过，任务单号 ${dupOrders[0].task_no}，请勿重复下发`);
-  }
-
-  // 里程：CRM 发运申请下发（线路里程），到达回传可覆盖
+  const startLongitude = optionalCoordinate(b.startLongitude, '起点经度 startLongitude', -180, 180);
+  const startLatitude = optionalCoordinate(b.startLatitude, '起点纬度 startLatitude', -90, 90);
+  const endLongitude = optionalCoordinate(b.endLongitude, '终点经度 endLongitude', -180, 180);
+  const endLatitude = optionalCoordinate(b.endLatitude, '终点纬度 endLatitude', -90, 90);
+  const vehicleFreights = vehicles.map((vehicle) => (vehicle.planFreight === undefined || vehicle.planFreight === null || vehicle.planFreight === ''
+    ? null : assertAmount(vehicle.planFreight, { label: '车辆计划运费 planFreight' })));
+  const topLevelFreight = b.planFreight === undefined || b.planFreight === null || b.planFreight === ''
+    ? null : assertAmount(b.planFreight, { label: '计划运费 planFreight' });
   const mileage = assertAmount(b.mileage, { label: '里程 mileage', required: false });
+  const vehicleMileages = vehicles.map((vehicle) => (vehicle.mileage === undefined || vehicle.mileage === null || vehicle.mileage === ''
+    ? mileage : assertAmount(vehicle.mileage, { label: '车辆预计里程 mileage', min: 0 })));
 
-  // ---- 按 VIN 拆任务：一台车一条任务，applyNo 共享，orderNo 各自唯一 ----
-  const results = [];
-  for (let i = 0; i < b.vehicles.length; i++) {
-    const v = b.vehicles[i];
-    const vin = String(v.vin).trim().toUpperCase();
-    const orderNo = String(v.orderNo).trim();
-    const vehicleFreight = (v.planFreight === undefined || v.planFreight === null || v.planFreight === '')
-      ? (b.planFreight === undefined || b.planFreight === null || b.planFreight === '' ? null : assertAmount(b.planFreight, { label: '计划运费 planFreight' }))
-      : assertAmount(v.planFreight, { label: `第 ${i + 1} 台车计划运费 planFreight` });
-
-    const taskNo = await withTransaction(async (conn) => {
-      const no = await nextSeq('FY', conn); // 任务单号 FY+yyyyMMdd+4 位（系统自动生成）
-      const [r] = await conn.query(
-        `INSERT INTO shipping_task
-          (task_no, apply_no, order_no, customer_name, region, sales_person, sales_phone, delivery_area, delivery_address,
-           receiver_name, receiver_phone, factory, storage_location, ship_method, ship_location, plan_pickup_date,
-           plan_freight, mileage, status, remark, create_name, update_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'WAIT_DISPATCH', ?, 'CRM 系统', 'CRM 系统')`,
-        [no, applyNo, cutStr(orderNo, 64), cutStr(customerName, 128),
-         cutStr(String(b.region ?? '').trim(), 64) || null,
-         cutStr(String(b.salesPerson ?? '').trim(), 64) || null,
-         salesPhone,
-         cutStr(String(b.deliveryArea ?? '').trim(), 128) || null,
-         cutStr(deliveryAddress, 255),
-         receiverName,
-         receiverPhone,
-         cutStr(factory, 128),
-         cutStr(storageLocation, 128),
-         cutStr(String(b.shipMethod ?? '送车').trim(), 16) || '送车',
-         cutStr(headShipLocation || String(v?.shipLocation ?? '').trim(), 128),
-         b.planPickupDate ? String(b.planPickupDate).trim() : null,
-         vehicleFreight,
-         mileage,
-         cutStr(String(b.remark ?? '').trim(), 500) || null]
+  let result;
+  try {
+    result = await withTransaction(async (conn) => {
+      const placeholders = vehicles.map(() => '?').join(', ');
+      const [existingRows] = await conn.query(
+        `SELECT t.id, t.task_no, t.apply_no, t.order_no, t.status,
+                (SELECT v.vin FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0 ORDER BY v.id LIMIT 1) AS vin
+           FROM shipping_task t
+          WHERE t.order_no IN (${placeholders}) AND t.deleted = 0
+          FOR UPDATE`,
+        vehicles.map((vehicle) => vehicle.orderNo)
       );
-      const taskId = r.insertId;
-
-      // 车辆明细：一车一单，仅 1 台车
-      await conn.query(
-        `INSERT INTO shipping_task_vehicle
-          (task_id, task_no, vin, order_no, report_no, plan_freight, actual_freight, ship_location,
-           vehicle_model, engine_config, cabin_type, create_name, update_name)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'CRM 系统', 'CRM 系统')`,
-        [taskId, no, vin, cutStr(orderNo, 64),
-         v.reportNo ? cutStr(String(v.reportNo).trim(), 64) : null,
-         vehicleFreight,
-         v.shipLocation ? cutStr(String(v.shipLocation).trim(), 128) : (headShipLocation ? cutStr(headShipLocation, 128) : null),
-         v.vehicleModel ? cutStr(String(v.vehicleModel).trim(), 64) : null,
-         v.engineConfig ? cutStr(String(v.engineConfig).trim(), 64) : null,
-         v.cabinType ? cutStr(String(v.cabinType).trim(), 32) : null]
+      const existingByOrder = new Map(existingRows.map((row) => [row.order_no, row]));
+      const orderByVin = new Map(vehicles.map((vehicle) => [vehicle.vin, vehicle.orderNo]));
+      const [vinRows] = await conn.query(
+        `SELECT t.order_no, v.vin
+           FROM shipping_task t
+           JOIN shipping_task_vehicle v ON v.task_id = t.id AND v.deleted = 0
+          WHERE t.apply_no = ? AND t.deleted = 0 AND v.vin IN (${placeholders})
+          FOR UPDATE`,
+        [applyNo, ...vehicles.map((vehicle) => vehicle.vin)]
       );
+      for (const row of vinRows) {
+        if (row.order_no !== orderByVin.get(String(row.vin).toUpperCase())) {
+          throw errDup(`VIN ${row.vin} 已绑定发运申请 ${applyNo} 的订单 ${row.order_no}，不可重复分配`);
+        }
+      }
+      const tasks = [];
 
-      await writeStatusLog(conn, {
-        taskId, taskNo: no, fromStatus: null, toStatus: 'WAIT_DISPATCH',
-        source: 'CRM', operator,
-        remark: `接收CRM发运申请，生成待派单任务（VIN ${vin}，订单号 ${orderNo}）`,
-      });
-      return no;
+      for (let index = 0; index < vehicles.length; index += 1) {
+        const vehicle = vehicles[index];
+        const existing = existingByOrder.get(vehicle.orderNo);
+        if (existing) {
+          if (existing.apply_no !== applyNo) throw errDup(`订单号 ${vehicle.orderNo} 已属于发运申请 ${existing.apply_no}`);
+          if (String(existing.vin ?? '').toUpperCase() !== vehicle.vin) throw errDup(`订单号 ${vehicle.orderNo} 已绑定其他 VIN`);
+          tasks.push({ orderNo: vehicle.orderNo, taskNo: existing.task_no, vin: vehicle.vin, status: existing.status, created: false });
+          continue;
+        }
+
+        const taskNo = await nextSeq('FY', conn);
+        const shipLocation = cutStr(String(vehicle.shipLocation ?? '').trim() || headShipLocation, 128);
+        const planFreight = vehicleFreights[index] ?? (vehicles.length === 1 ? topLevelFreight : null);
+        const [inserted] = await conn.query(
+          `INSERT INTO shipping_task
+            (task_no, apply_no, order_no, customer_name, region, sales_person, sales_phone, delivery_area, delivery_address,
+             receiver_name, receiver_phone, factory, storage_location, ship_method, ship_location,
+             start_longitude, start_latitude, end_longitude, end_latitude, plan_pickup_date,
+             plan_freight, mileage, status, remark, create_name, update_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'WAIT_DISPATCH', ?, 'CRM 系统', 'CRM 系统')`,
+          [taskNo, applyNo, vehicle.orderNo, cutStr(customerName, 128),
+            cutStr(String(b.region ?? '').trim(), 64) || null,
+            cutStr(String(b.salesPerson ?? '').trim(), 64) || null,
+            salesPhone,
+            cutStr(String(b.deliveryArea ?? '').trim(), 128) || null,
+            cutStr(deliveryAddress, 255), receiverName, receiverPhone,
+            cutStr(factory, 128), cutStr(storageLocation, 128),
+            cutStr(String(b.shipMethod ?? '送车').trim(), 16) || '送车', shipLocation,
+            startLongitude, startLatitude, endLongitude, endLatitude, planPickupDate,
+            planFreight, vehicleMileages[index], cutStr(String(b.remark ?? '').trim(), 500) || null]
+        );
+        const taskId = inserted.insertId;
+        await conn.query(
+          `INSERT INTO shipping_task_vehicle
+            (task_id, task_no, vin, order_no, report_no, plan_freight, actual_freight, ship_location,
+             vehicle_model, engine_config, cabin_type, create_name, update_name)
+           VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'CRM 系统', 'CRM 系统')`,
+          [taskId, taskNo, vehicle.vin, vehicle.orderNo,
+            vehicle.reportNo ? cutStr(String(vehicle.reportNo).trim(), 64) : null,
+            planFreight, shipLocation,
+            vehicle.vehicleModel ? cutStr(String(vehicle.vehicleModel).trim(), 64) : null,
+            vehicle.engineConfig ? cutStr(String(vehicle.engineConfig).trim(), 64) : null,
+            vehicle.cabinType ? cutStr(String(vehicle.cabinType).trim(), 32) : null]
+        );
+        await writeStatusLog(conn, {
+          taskId, taskNo, fromStatus: null, toStatus: 'WAIT_DISPATCH', source: 'CRM', operator,
+          remark: `接收CRM发运申请，订单 ${vehicle.orderNo} 生成待派单任务（VIN ${vehicle.vin}）`,
+        });
+        tasks.push({ orderNo: vehicle.orderNo, taskNo, vin: vehicle.vin, status: 'WAIT_DISPATCH', created: true });
+      }
+      return { applyNo, mileage, total: tasks.length, tasks };
     });
-    results.push({ taskNo, orderNo, vin });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') throw errDup('订单号或任务单号已存在，请核对后重试');
+    throw error;
   }
 
-  const first = results[0];
+  const created = result.tasks.filter((task) => task.created).length;
+  const first = result.tasks[0];
   ok(res, {
-    applyNo,
-    total: results.length,
-    taskNo: first.taskNo,
-    orderNo: first.orderNo,
-    mileage,
-    tasks: results,
-  }, `发运申请接收成功，已生成 ${results.length} 条待派单任务`);
+    ...result,
+    taskNo: first?.taskNo ?? null,
+    orderNo: first?.orderNo ?? null,
+  }, `发运申请接收成功：新建 ${created} 个订单任务，已存在 ${result.tasks.length - created} 个`);
 }));
+
 
 /* ======================= ② CRM：物流电子签同步 ======================= */
 // POST /api/external/esign/sync  （esignId 幂等；VIN+applyNo 匹配任务，vin 查车辆明细表）
-router.post('/esign/sync', wrap(async (req, res) => {
+router.post(['/esign/sync', '/crm/esign/sync'], wrap(async (req, res) => {
   const b = req.body || {};
   const esignId = String(b.esignId ?? '').trim();
   if (!esignId) throw errParam('电子签 ID esignId 必填');
   const vin = String(b.vin ?? '').trim().toUpperCase();
   const applyNo = String(b.applyNo ?? '').trim();
-  if (!vin || !applyNo) throw errParam('VIN 与发运申请号 applyNo 必填（用于匹配任务）');
+  const orderNo = String(b.orderNo ?? '').trim();
+  if (!vin || (!applyNo && !orderNo)) throw errParam('VIN 必填，并提供订单号 orderNo 或发运申请号 applyNo');
 
   const dup = await query('SELECT id FROM esign_record WHERE esign_id = ? AND deleted = 0', [esignId]);
   if (dup.length) throw errDup(`电子签 ID ${esignId} 已同步过，请勿重复推送`);
@@ -277,20 +307,22 @@ router.post('/esign/sync', wrap(async (req, res) => {
   await withTransaction(async (conn) => {
     // 按 VIN + 发运申请号匹配任务：vin 查 shipping_task_vehicle 明细表（既有需求 8）
     const [vrows] = await conn.query(
-      `SELECT v.task_id, v.task_no FROM shipping_task_vehicle v
+      `SELECT v.task_id, v.task_no, t.apply_no FROM shipping_task_vehicle v
         JOIN shipping_task t ON t.id = v.task_id AND t.deleted = 0
-       WHERE v.vin = ? AND t.apply_no = ? AND v.deleted = 0
-       LIMIT 1`,
-      [vin, applyNo]
+       WHERE v.vin = ? AND v.deleted = 0
+         AND (? = '' OR t.order_no = ?)
+         AND (? = '' OR t.apply_no = ?)`,
+      [vin, orderNo, orderNo, applyNo, applyNo]
     );
-    if (!vrows.length) throw errNotFound('未匹配到对应任务，请核对 VIN 与发运申请号');
-    const { task_id: taskId, task_no: taskNo } = vrows[0];
+    if (!vrows.length) throw errNotFound('未匹配到对应任务，请核对 VIN、订单号和发运申请号');
+    if (vrows.length > 1) throw errParam('该 VIN 对应多个订单任务，请提供订单号 orderNo');
+    const { task_id: taskId, task_no: taskNo, apply_no: matchedApplyNo } = vrows[0];
 
     await conn.query(
       `INSERT INTO esign_record
         (esign_id, task_id, task_no, vin, apply_no, sign_type, trigger_node, sign_party, initiate_time, sign_status, create_name, update_name)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'WAIT_SIGN', 'CRM 系统', 'CRM 系统')`,
-      [esignId, taskId, taskNo, vin, applyNo,
+      [esignId, taskId, taskNo, vin, applyNo || matchedApplyNo,
        cutStr(String(b.signType ?? '物流电子签').trim(), 32) || '物流电子签',
        cutStr(String(b.triggerNode ?? '').trim(), 64) || null,
        cutStr(String(b.signParty ?? '').trim(), 128) || null]
@@ -302,7 +334,7 @@ router.post('/esign/sync', wrap(async (req, res) => {
 
 /* ======================= ③ CRM：取消前状态查询 ======================= */
 // GET /api/external/shipping-tasks/cancel-check?applyNo=
-router.get('/shipping-tasks/cancel-check', wrap(async (req, res) => {
+router.get(['/shipping-tasks/cancel-check', '/crm/shipping-tasks/cancel-check'], wrap(async (req, res) => {
   const task = await resolveTask({ orderNo: req.query.orderNo, applyNo: req.query.applyNo, taskNo: req.query.taskNo });
   const rule = cancelRule(task.status);
   ok(res, { taskNo: task.task_no, status: task.status, cancellable: rule.cancellable, message: rule.message });
@@ -310,18 +342,38 @@ router.get('/shipping-tasks/cancel-check', wrap(async (req, res) => {
 
 /* ======================= ④ 狮桥：电子签签收回执确认（幂等） ======================= */
 // POST /api/external/esign/receipt-sync
-router.post('/esign/receipt-sync', wrap(async (req, res) => {
-  const esignId = String((req.body || {}).esignId ?? '').trim();
+router.post(['/esign/receipt-sync', '/sq/esign/receipt-sync'], wrap(async (req, res) => {
+  const b = req.body || {};
+  const esignId = String(b.esignId ?? '').trim();
   if (!esignId) throw errParam('电子签 ID esignId 必填');
-  const [rec] = await query('SELECT * FROM esign_record WHERE esign_id = ? AND deleted = 0', [esignId]);
-  if (!rec) throw errNotFound(`电子签 ${esignId} 不存在`);
-  // 回执确认：不改变签署状态，重复回执返回当前状态（幂等）
-  ok(res, { esignId: rec.esign_id, signStatus: rec.sign_status }, '电子签回执确认成功');
+  const receiptTime = parseDateTime(b.receiptTime, '签收时间 receiptTime');
+  assertNotFuture(receiptTime, '签收时间 receiptTime');
+  const operator = cutStr(String(b.operator ?? '').trim(), 64) || '狮桥物流';
+
+  const result = await withTransaction(async (conn) => {
+    const [rows] = await conn.query('SELECT * FROM esign_record WHERE esign_id = ? AND deleted = 0 FOR UPDATE', [esignId]);
+    if (!rows.length) throw errNotFound(`电子签 ${esignId} 不存在`);
+    const rec = rows[0];
+    const effectiveReceiptTime = rec.receipt_time || receiptTime || nowStr();
+    if (!rec.receipt_time) {
+      await conn.query(
+        'UPDATE esign_record SET receipt_time = ?, update_name = ? WHERE id = ?',
+        [effectiveReceiptTime, operator, rec.id]
+      );
+    }
+    return {
+      esignId: rec.esign_id,
+      signStatus: rec.sign_status,
+      receiptTime: effectiveReceiptTime,
+      idempotent: Boolean(rec.receipt_time),
+    };
+  });
+  ok(res, result, result.idempotent ? '电子签回执已确认，幂等处理直接返回' : '电子签回执确认成功');
 }));
 
 /* ======================= ⑥ CRM：送车发运申请取消 ======================= */
 // POST /api/external/shipping-tasks/cancel （按取消规则；关联待签署电子签置 CANCELLED）
-router.post('/shipping-tasks/cancel', wrap(async (req, res) => {
+router.post(['/shipping-tasks/cancel', '/crm/shipping-tasks/cancel'], wrap(async (req, res) => {
   const b = req.body || {};
   // CRM 操作人账号：随取消推送，状态日志「操作人」展示用；缺省记「CRM 系统」
   const operator = cutStr(String(b.operator ?? '').trim(), 64) || 'CRM 系统';
@@ -551,7 +603,7 @@ const DRIVER_SYNC_BATCH_MAX = 200;
 // POST /api/external/drivers/sync
 //   单条：body 为司机对象（兼容原结构）
 //   批量：body 为数组，或 { drivers: [...] }；逐条独立事务，单条失败不影响其余
-router.post('/drivers/sync', wrap(async (req, res) => {
+router.post(['/drivers/sync', '/sq/drivers/sync', '/sq/drivers/batch-sync'], wrap(async (req, res) => {
   const b = req.body || {};
   const batch = Array.isArray(b) ? b : (Array.isArray(b.drivers) ? b.drivers : null);
 
@@ -622,7 +674,7 @@ router.post('/drivers/sync', wrap(async (req, res) => {
 // 狮桥按固定频率回传车辆位置：写 transport_track，不推进任务状态（出库完成即进入在途）。
 // 仅已提车/已出库/在途任务可上报；上报时间不得晚于当前时间、不得早于上次上报。
 // 同一上报时间与坐标重复推送按幂等返回，不重复写轨迹。
-router.post('/tracking/report', wrap(async (req, res) => {
+router.post(['/tracking/report', '/sq/tracking/report'], wrap(async (req, res) => {
   const b = req.body || {};
 
   const longitude = Number(b.longitude);
@@ -682,7 +734,8 @@ router.post('/tracking/report', wrap(async (req, res) => {
 //   可选 carrierName 标识回传承运商（须与任务当前承运商一致，防串单）；
 //   不传按狮桥物流留痕（兼容既有对接）。
 //   POST /shipping-tasks/accept  承运商接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id；
-//                                计划提车日期由 CRM 在 ① receive 下发，本接口不接收
+//                                可提供承运单号、计划提车日期和预计到达时间；任务尚无计划提车日期时接单必填
+//   POST /shipping-tasks/cancel-accept  取消接单：CARRIER_ACCEPTED→DISPATCHED，清除司机与接单回填信息
 //   POST /shipping-tasks/pickup  司机确认提车（=发运，含车辆照片 photos）：
 //                                CARRIER_ACCEPTED→PICKED 回填 ship_time（发运时间），待仓库出库；
 //                                可选 actualPickupDate 实际提车日期（允许早于计划提车日期，不得晚于今天）；
@@ -700,13 +753,14 @@ async function runStatusAction(req, action) {
     const task = await lockTaskByRef(conn, { orderNo: b.orderNo, applyNo: b.applyNo, taskNo: b.taskNo });
 
     // ---- 回传方身份（通用接口：任意承运商/三方物流可调）----
-    // 优先 carrierId（STP 内部ID）→ externalCarrierId（第三方ID）→ carrierName（旧字段，仅兼容保留）
+    // 优先 carrierId → externalCarrierId → carrierCode → carrierName，并校验与任务承运商一致。
     let operatorName = '狮桥物流'; // 未传身份按狮桥留痕（兼容既有对接）
     let logSource = 'SQ';
     const carrierIdParam = b.carrierId === undefined || b.carrierId === null || b.carrierId === '' ? null : Number(b.carrierId);
     const externalCarrierIdParam = b.externalCarrierId ? String(b.externalCarrierId).trim() : null;
+    const carrierCodeParam = String(b.carrierCode ?? '').trim();
     const carrierNameParam = String(b.carrierName ?? '').trim();
-    if (carrierIdParam !== null || externalCarrierIdParam || carrierNameParam) {
+    if (carrierIdParam !== null || externalCarrierIdParam || carrierCodeParam || carrierNameParam) {
       let crows = [];
       if (carrierIdParam !== null) {
         [crows] = await conn.query('SELECT * FROM carrier WHERE id = ? AND deleted = 0', [carrierIdParam]);
@@ -714,73 +768,148 @@ async function runStatusAction(req, action) {
       } else if (externalCarrierIdParam) {
         [crows] = await conn.query('SELECT * FROM carrier WHERE external_carrier_id = ? AND deleted = 0', [externalCarrierIdParam]);
         if (!crows.length) throw errNotFound(`第三方承运商ID ${externalCarrierIdParam} 对应的承运商不存在`);
+      } else if (carrierCodeParam) {
+        [crows] = await conn.query('SELECT * FROM carrier WHERE carrier_code = ? AND deleted = 0', [carrierCodeParam]);
+        if (!crows.length) throw errNotFound(`承运商编码 ${carrierCodeParam} 对应的承运商不存在`);
       } else {
         [crows] = await conn.query('SELECT * FROM carrier WHERE carrier_name = ? AND deleted = 0', [carrierNameParam]);
         if (!crows.length) throw errNotFound(`承运商不存在：${carrierNameParam}`);
       }
       const carrierRow = crows[0];
-      if (Number(carrierRow.status) !== 1) throw errBiz(`该承运商已停用，不可回传：${carrierRow.carrier_name}`);
+      if (action === 'ACCEPT' && task.status === 'DISPATCHED' && Number(carrierRow.status) !== 1) {
+        throw errBiz(`该承运商已停用，不可接单：${carrierRow.carrier_name}`);
+      }
       if (task.carrier_id && Number(task.carrier_id) !== Number(carrierRow.id)) {
         throw errBiz(`回传方（${carrierRow.carrier_name}）与任务当前承运商不一致，不可回传`);
       }
       operatorName = carrierRow.carrier_name;
       logSource = 'CARRIER';
+    } else if (b.operator) {
+      operatorName = cutStr(String(b.operator).trim(), 64) || operatorName;
+    }
+
+    if (action === 'CANCEL_ACCEPT') {
+      if (task.status === 'DISPATCHED') {
+        return { taskNo: task.task_no, status: task.status, message: '任务已处于已派单状态，取消接单幂等返回' };
+      }
+      if (task.status !== 'CARRIER_ACCEPTED') throw errState('仅「承运商已接单」状态可以取消接单');
+      const cancelReason = cutStr(String(b.cancelReason ?? b.remark ?? '').trim(), 255) || '承运商取消接单';
+      await conn.query(
+        `UPDATE shipping_task
+            SET status = 'DISPATCHED', driver_id = NULL, transport_no = NULL,
+                plan_pickup_date = NULL, estimated_arrive_time = NULL,
+                version = version + 1, update_name = ?
+          WHERE id = ? AND version = ?`,
+        [operatorName, task.id, task.version]
+      );
+      await writeStatusLog(conn, {
+        taskId: task.id, taskNo: task.task_no, fromStatus: 'CARRIER_ACCEPTED', toStatus: 'DISPATCHED',
+        source: logSource, operator: operatorName, remark: `承运商取消接单，退回已派单：${cancelReason}`,
+      });
+      return { taskNo: task.task_no, status: 'DISPATCHED', message: '取消接单成功，任务已退回已派单' };
+    }
+
+    const callbackTransportNo = cutStr(String(b.transportNo ?? '').trim(), 64) || null;
+    if (callbackTransportNo && ['PICKUP', 'ARRIVE', 'FINISH'].includes(action) && !task.transport_no) {
+      await conn.query('UPDATE shipping_task SET transport_no = ?, update_name = ? WHERE id = ?', [callbackTransportNo, operatorName, task.id]);
+      task.transport_no = callbackTransportNo;
     }
 
     /* ---- 承运商接单并分配司机 ---- */
     if (action === 'ACCEPT') {
-      // 司机定位：driverId（STP 内部ID）或 externalDriverId（第三方司机ID），二选一
       const driverIdParam = b.driverId === undefined || b.driverId === null || b.driverId === '' ? null : Number(b.driverId);
       const externalDriverIdParam = b.externalDriverId ? String(b.externalDriverId).trim() : null;
-      if (!driverIdParam && !externalDriverIdParam) throw errParam('接单必须分配司机 driverId 或 externalDriverId');
-      // 计划提车日期由 CRM 在发运申请（#1 receive）下发，接单接口不接收、不修改
-      // 司机校验：存在、启用（停用拦截新分派，既有需求 10）、档案归属任务承运商
-      const [drows] = driverIdParam
-        ? await conn.query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [driverIdParam])
-        : await conn.query(
+      const phoneParam = b.phone ? assertPhone(b.phone, { label: '司机手机号 phone', mobileOnly: true }) : null;
+      if (!driverIdParam && !externalDriverIdParam && !phoneParam) {
+        throw errParam('接单必须提供 driverId、externalDriverId 或司机手机号 phone');
+      }
+      if (!task.carrier_id) throw errBiz('任务尚未分配承运商，不可接单');
+
+      let drows;
+      if (driverIdParam) {
+        [drows] = await conn.query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [driverIdParam]);
+      } else if (externalDriverIdParam) {
+        [drows] = await conn.query(
           'SELECT * FROM driver WHERE external_driver_id = ? AND carrier_id = ? AND deleted = 0',
           [externalDriverIdParam, task.carrier_id]
         );
-      if (!drows.length) {
-        throw errNotFound(driverIdParam ? `司机不存在（ID: ${driverIdParam}）` : `第三方司机ID ${externalDriverIdParam} 在该承运商下不存在`);
+      } else {
+        [drows] = await conn.query(
+          'SELECT * FROM driver WHERE phone = ? AND carrier_id = ? AND deleted = 0',
+          [phoneParam, task.carrier_id]
+        );
       }
+      if (drows.length > 1) throw errBiz('该手机号在当前承运商下对应多个司机，请提供 externalDriverId');
+      if (!drows.length && !driverIdParam && b.driverName && phoneParam) {
+        const synced = await syncOneDriver(conn, { ...b, phone: phoneParam, carrierId: task.carrier_id });
+        [drows] = await conn.query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [synced.driverId]);
+      }
+      if (!drows.length) {
+        throw errNotFound('未找到任务承运商下的司机；新司机建档需提供 driverName、phone、idCard 及驾驶证有效期');
+      }
+
       const driver = drows[0];
       const driverId = Number(driver.id);
       if (Number(driver.status) !== 1) throw errBiz('该司机已停用，不可分派任务');
-      if (task.carrier_id && Number(driver.carrier_id) !== Number(task.carrier_id)) {
-        throw errBiz('该司机不属于任务当前承运商，不可接单');
+      if (Number(driver.carrier_id) !== Number(task.carrier_id)) throw errBiz('该司机不属于任务当前承运商，不可接单');
+
+      const planPickupDate = parseDateOnly(b.planPickupDate, '计划提车日期 planPickupDate');
+      const estimatedArriveTime = parseDateTime(b.estimatedArriveTime, '预计到达时间 estimatedArriveTime');
+      if (task.status === 'DISPATCHED' && !planPickupDate && !task.plan_pickup_date) {
+        throw errParam('承运商接单必须提供计划提车日期 planPickupDate');
       }
+      const transportNo = cutStr(String(b.transportNo ?? '').trim(), 64) || null;
+      const acceptedFields = {
+        transportNo: transportNo ?? task.transport_no ?? null,
+        planPickupDate: planPickupDate ?? (task.plan_pickup_date ? String(task.plan_pickup_date).slice(0, 10) : null),
+        estimatedArriveTime: estimatedArriveTime ?? task.estimated_arrive_time ?? null,
+      };
 
       if (task.status === 'DISPATCHED') {
         await conn.query(
-          `UPDATE shipping_task SET status = 'CARRIER_ACCEPTED', driver_id = ?, version = version + 1, update_name = ?
+          `UPDATE shipping_task
+              SET status = 'CARRIER_ACCEPTED', driver_id = ?, transport_no = COALESCE(?, transport_no),
+                  plan_pickup_date = COALESCE(?, plan_pickup_date),
+                  estimated_arrive_time = COALESCE(?, estimated_arrive_time),
+                  version = version + 1, update_name = ?
             WHERE id = ? AND version = ?`,
-          [driverId, operatorName, task.id, task.version]
+          [driverId, transportNo, planPickupDate, estimatedArriveTime, operatorName, task.id, task.version]
         );
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: 'DISPATCHED', toStatus: 'CARRIER_ACCEPTED',
           source: logSource, operator: operatorName,
-          remark: `承运商确认接单，分配司机：${driver.driver_name}`,
+          remark: cutStr(`承运商确认接单，分配司机：${driver.driver_name}${planPickupDate ? `，计划提车 ${planPickupDate}` : ''}${transportNo ? `，承运单号 ${transportNo}` : ''}`, 255),
         });
-        return { taskNo: task.task_no, status: 'CARRIER_ACCEPTED', message: `接单成功，已分配司机：${driver.driver_name}` };
+        return { taskNo: task.task_no, status: 'CARRIER_ACCEPTED', ...acceptedFields, message: `接单成功，已分配司机：${driver.driver_name}` };
       }
-      // 幂等：已接单及之后重复回传，仅补记日志（可补填司机）
       if (['CARRIER_ACCEPTED', 'PICKED', 'OUTBOUND', 'IN_TRANSIT', 'ARRIVED', 'FINISHED'].includes(task.status)) {
-        if (!task.driver_id) {
-          await conn.query('UPDATE shipping_task SET driver_id = ?, update_name = ? WHERE id = ?', [driverId, operatorName, task.id]);
-        }
+        await conn.query(
+          `UPDATE shipping_task
+              SET driver_id = COALESCE(driver_id, ?), transport_no = COALESCE(transport_no, ?),
+                  plan_pickup_date = COALESCE(plan_pickup_date, ?),
+                  estimated_arrive_time = COALESCE(estimated_arrive_time, ?), update_name = ?
+            WHERE id = ?`,
+          [driverId, transportNo, planPickupDate, estimatedArriveTime, operatorName, task.id]
+        );
         await writeStatusLog(conn, {
           taskId: task.id, taskNo: task.task_no, fromStatus: task.status, toStatus: task.status,
           source: logSource, operator: operatorName, remark: `接单状态重复回传，幂等处理仅补记日志（司机：${driver.driver_name}）`,
         });
-        return { taskNo: task.task_no, status: task.status, message: '接单状态重复回传，幂等处理仅补记日志' };
+        return {
+          taskNo: task.task_no,
+          status: task.status,
+          transportNo: task.transport_no ?? transportNo ?? null,
+          planPickupDate: task.plan_pickup_date ?? planPickupDate ?? null,
+          estimatedArriveTime: task.estimated_arrive_time ?? estimatedArriveTime ?? null,
+          message: '接单状态重复回传，幂等处理仅补记日志',
+        };
       }
       throw errState(`当前任务状态不允许接单（${task.status}），仅「已派单」可接单`);
     }
 
     /* ---- 司机确认提车（=发运，回填 ship_time 发运时间；photos 结构化存 status_log.photos） ---- */
     if (action === 'PICKUP') {
-      const photos = normalizePhotos(b.photos);
+      const photos = normalizePhotos(b.photos ?? b.pickupPhotos);
       // 实际提车时间 = 发运时间：选填 YYYY-MM-DD HH:mm:ss（兼容仅日期），允许早于计划提车日期（提前提车），缺省取当前时间
       let shipTime = null;
       if (b.actualPickupDate) {
@@ -949,29 +1078,34 @@ async function runStatusAction(req, action) {
 }
 
 /* 按状态拆分的四个回传接口（共用状态机、幂等与时间校验） */
-router.post('/shipping-tasks/accept', wrap(async (req, res) => {
+router.post(['/shipping-tasks/accept', '/sq/shipping-tasks/accept'], wrap(async (req, res) => {
   const result = await runStatusAction(req, 'ACCEPT');
   ok(res, result, result.message);
 }));
 
-router.post('/shipping-tasks/pickup', wrap(async (req, res) => {
+router.post(['/shipping-tasks/cancel-accept', '/sq/shipping-tasks/cancel-accept'], wrap(async (req, res) => {
+  const result = await runStatusAction(req, 'CANCEL_ACCEPT');
+  ok(res, result, result.message);
+}));
+
+router.post(['/shipping-tasks/pickup', '/sq/shipping-tasks/pickup'], wrap(async (req, res) => {
   const result = await runStatusAction(req, 'PICKUP');
   ok(res, result, result.message);
 }));
 
-router.post('/shipping-tasks/arrive', wrap(async (req, res) => {
+router.post(['/shipping-tasks/arrive', '/sq/shipping-tasks/arrive'], wrap(async (req, res) => {
   const result = await runStatusAction(req, 'ARRIVE');
   ok(res, result, result.message);
 }));
 
-router.post('/shipping-tasks/finish', wrap(async (req, res) => {
+router.post(['/shipping-tasks/finish', '/sq/shipping-tasks/finish'], wrap(async (req, res) => {
   const result = await runStatusAction(req, 'FINISH');
   ok(res, result, result.message);
 }));
 
 /* ======================= ⑭ 狮桥：电子签签署状态同步 ======================= */
 // POST /api/external/esign/sign-status  （WAIT_SIGN→SIGNED 回填 sign_time / CANCELLED）
-router.post('/esign/sign-status', wrap(async (req, res) => {
+router.post(['/esign/sign-status', '/sq/esign/sign-status'], wrap(async (req, res) => {
   const b = req.body || {};
   const esignId = String(b.esignId ?? '').trim();
   const signStatus = String(b.signStatus ?? '').trim().toUpperCase();
