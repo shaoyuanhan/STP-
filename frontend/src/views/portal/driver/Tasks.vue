@@ -217,11 +217,11 @@ onMounted(() => load(true))
   border-radius: 4px;
   padding: 8px 0;
   font-size: 12px;
-  color: #595959;
+  color: #666666;
   cursor: pointer;
 }
 .dtasks__tab--active {
-  background: #1a1a1a;
+  background: #2d3033;
   color: #fff;
   font-weight: 600;
 }
@@ -245,7 +245,7 @@ onMounted(() => load(true))
   text-align: center;
   font-size: 12px;
   line-height: 1.9;
-  color: #8c8c8c;
+  color: #666666;
 }
 .dtasks__more {
   display: flex;
@@ -256,7 +256,7 @@ onMounted(() => load(true))
   padding: 12px 0 4px;
   text-align: center;
   font-size: 12px;
-  color: #bfbfbf;
+  color: #999999;
 }
 .tcard {
   display: block;
@@ -274,12 +274,12 @@ onMounted(() => load(true))
   align-items: center;
   justify-content: space-between;
   padding-bottom: 9px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
 }
 .tcard__no {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
 }
 .tcard__route {
   display: flex;
@@ -300,21 +300,21 @@ onMounted(() => load(true))
   margin-top: 1px;
 }
 .tcard__point--from {
-  background: #1677ff;
+  background: #1890ff;
 }
 .tcard__point--to {
-  background: #389e0d;
+  background: #18a058;
 }
 .tcard__text {
   font-size: 12px;
   line-height: 1.5;
-  color: #595959;
+  color: #666666;
   word-break: break-all;
 }
 .tcard__vin {
   margin-top: 8px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
   word-break: break-all;
 }
 .tcard__foot {
@@ -323,12 +323,12 @@ onMounted(() => load(true))
   justify-content: space-between;
   margin-top: 10px;
   padding-top: 9px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #eeeeee;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .tcard__freight b {
-  color: #fa8c16;
+  color: #f0a020;
   font-size: 13px;
 }
 </style>

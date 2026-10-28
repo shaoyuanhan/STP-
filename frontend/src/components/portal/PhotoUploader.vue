@@ -109,7 +109,7 @@ function preview(url: string) {
   border-radius: 4px;
   overflow: hidden;
   background: #fafafa;
-  border: 1px solid #f0f0f0;
+  border: 1px solid #eeeeee;
   cursor: zoom-in;
 }
 .uploader__item img {
@@ -134,10 +134,10 @@ function preview(url: string) {
 }
 .uploader__add {
   aspect-ratio: 1;
-  border: 1px dashed #d9d9d9;
+  border: 1px dashed #eeeeee;
   border-radius: 4px;
   background: #fafafa;
-  color: #8c8c8c;
+  color: #666666;
   font-size: 12px;
   display: flex;
   flex-direction: column;
@@ -147,8 +147,8 @@ function preview(url: string) {
   cursor: pointer;
 }
 .uploader__add:hover {
-  border-color: #1677ff;
-  color: #1677ff;
+  border-color: #1890ff;
+  color: #1890ff;
 }
 .uploader__add:disabled {
   cursor: wait;
@@ -162,7 +162,7 @@ function preview(url: string) {
 .uploader__hint {
   margin-top: 6px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .uploader__input {
   display: none;

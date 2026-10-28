@@ -197,6 +197,10 @@ npm run preview    # 本地预览构建产物
 | POST | `/esign/receipt-sync` | 狮桥 | 电子签回执同步 |
 | POST | `/esign/sign-status` | 狮桥 | 签署状态回传 |
 
+### 后续对接提醒
+
+- **工厂主数据管理（2026-10-28 记录）**：狮桥运单同步新增的出发地字段目前仅完成接口文档与测试 JSON 调整，本地代码和数据库暂不修改。后续开发工厂主数据管理时，先提醒本次约定，再评估在工厂/提车地点主数据中补齐联系人、联系电话、省市区、城市编码和详细地址，用于 `startContact`、`startPhone`、`startArea`、`startCityCode`、`startAddress` 的默认值回填；城市编码规则仍需与狮桥确认。
+
 ## 关键设计
 
 - **编号规则引擎**：承运商 `CAR-001`；任务单号 `FY+YYYYMMDD+4位序列`；运费单号 `YF+YYYYMMDD+4位序列`；批量派单批次号 `PD+YYYYMMDD+4位序列`。基于 `UPDATE ... SET seq_val = LAST_INSERT_ID(seq_val + 1)` 的原子机制，多连接并发下不重号，任务/运费序列按日重置。

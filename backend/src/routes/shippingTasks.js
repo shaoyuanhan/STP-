@@ -12,6 +12,7 @@ const {
   pageOf, pageData, queryOf, cutStr,
 } = require('../helpers');
 const { sendXlsx, text, dateOnly, dateTime } = require('../exporter');
+const { withStatusLogNames } = require('../services/taskFlow');
 
 const router = Router();
 
@@ -258,7 +259,7 @@ router.get('/:id', wrap(async (req, res) => {
     task,
     vehicles,
     dispatchRecords,
-    statusLogs,
+    statusLogs: withStatusLogNames(statusLogs),
     tracks,
     esigns,
     allowedActions: allowedActions(task.status),

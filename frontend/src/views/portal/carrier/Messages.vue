@@ -86,7 +86,7 @@ onMounted(load)
 }
 .page-toolbar__hint {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .card {
   background: #ffffff;
@@ -95,19 +95,19 @@ onMounted(load)
 }
 .panel-head {
   padding: 13px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
 }
 .empty-row {
   padding: 40px 0;
   text-align: center;
   font-size: 12px;
-  color: #bfbfbf;
+  color: #999999;
 }
 .msg-item {
   padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -118,10 +118,10 @@ onMounted(load)
   background: #f7fafd;
 }
 .msg-item.is-unread {
-  background: #f7fbff;
+  background: rgba(24, 144, 255, 0.06);
 }
 .msg-item.is-unread:hover {
-  background: #f0f7ff;
+  background: rgba(24, 144, 255, 0.08);
 }
 .msg-item__head {
   display: flex;
@@ -132,31 +132,31 @@ onMounted(load)
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #d9d9d9;
+  background: #eeeeee;
   flex: none;
 }
 .msg-item.is-unread .msg-dot {
-  background: #1677ff;
+  background: #1890ff;
 }
 .msg-item__title {
   font-size: 13px;
   font-weight: 500;
-  color: #262626;
+  color: #2d3033;
 }
 .msg-item__time {
   margin-left: auto;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .msg-item__content {
   margin: 6px 0 0 14px;
   font-size: 12px;
   line-height: 1.7;
-  color: #595959;
+  color: #666666;
 }
 .msg-item__meta {
   margin: 6px 0 0 14px;
   font-size: 11px;
-  color: #8c8c8c;
+  color: #666666;
 }
 </style>

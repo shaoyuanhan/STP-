@@ -15,6 +15,7 @@ import AssignDriverModal from '@/components/portal/AssignDriverModal.vue'
 import TaskDetailDrawer from './TaskDetailDrawer.vue'
 import { fetchCarrierTasks } from '@/services/portal'
 import type { PortalTask } from '@/services/portal'
+import { dateOnly } from '@/utils/format'
 import { useSessionStore } from '@/stores/session'
 
 const route = useRoute()
@@ -119,6 +120,14 @@ function openDetail(row: PortalTask) {
 
 const baseColumns: DataTableColumns<PortalTask> = [
   {
+    title: '序号',
+    key: '__index',
+    width: 60,
+    align: 'center',
+    fixed: 'left',
+    render: (_row, index) => (query.page - 1) * query.size + index + 1,
+  },
+  {
     title: '任务单号',
     key: 'task_no',
     width: 150,
@@ -175,7 +184,13 @@ const baseColumns: DataTableColumns<PortalTask> = [
     resizable: true,
     render: (row) => (row.driver_name ? `${row.driver_name}` : '待指派'),
   },
-  { title: '计划提车', key: 'plan_pickup_date', width: 120, resizable: true, render: (row) => row.plan_pickup_date || '-' },
+  {
+    title: '计划提车日期',
+    key: 'plan_pickup_date',
+    width: 120,
+    resizable: true,
+    render: (row) => dateOnly(row.plan_pickup_date),
+  },
   {
     title: '操作',
     key: 'actions',
@@ -185,13 +200,13 @@ const baseColumns: DataTableColumns<PortalTask> = [
       h('div', { class: 'actions' }, [
         h(
           NButton,
-          { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
+          { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '详情' }
         ),
         row.status === 'DISPATCHED'
           ? h(
               NButton,
-              { size: 'tiny', type: 'primary', onClick: () => openAssign(row) },
+              { size: 'small', quaternary: true, type: 'primary', onClick: () => openAssign(row) },
               { default: () => '接单指派' }
             )
           : null,
@@ -218,12 +233,12 @@ onMounted(load)
 <template>
   <div class="stp-page">
     <!-- 筛选栏 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="query-card" :bordered="false">
       <QueryBar>
         <QueryField label="任务号">
           <n-input
             v-model:value="query.task_no"
-            placeholder="请输入"
+            placeholder="请输入任务单号"
             clearable
             @keydown.enter="search"
           />
@@ -232,7 +247,8 @@ onMounted(load)
           <n-select
             v-model:value="query.status"
             :options="statusOptions"
-            placeholder="全部状态"
+            placeholder="请选择状态"
+            clearable
           />
         </QueryField>
         <QueryField label="VIN">
@@ -246,7 +262,7 @@ onMounted(load)
         <QueryField label="客户名称">
           <n-input
             v-model:value="query.customer_name"
-            placeholder="请输入"
+            placeholder="请输入客户名称"
             clearable
             @keydown.enter="search"
           />
@@ -254,7 +270,7 @@ onMounted(load)
         <QueryField v-show="filterExpanded" label="订单号">
           <n-input
             v-model:value="query.order_no"
-            placeholder="请输入"
+            placeholder="请输入订单号"
             clearable
             @keydown.enter="search"
           />
@@ -262,31 +278,29 @@ onMounted(load)
         <QueryField v-show="filterExpanded" label="发运申请号">
           <n-input
             v-model:value="query.apply_no"
-            placeholder="请输入"
+            placeholder="请输入发运申请号"
             clearable
             @keydown.enter="search"
           />
         </QueryField>
         <template #actions>
-          <n-button @click="reset">重置</n-button>
-          <n-button type="primary" @click="search">查询</n-button>
           <n-button quaternary class="page-card__toggle" @click="filterExpanded = !filterExpanded">
             {{ filterExpanded ? '收起' : '展开' }}
             <span class="page-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
           </n-button>
+          <n-button @click="reset">重置</n-button>
+          <n-button type="primary" @click="search">查询</n-button>
         </template>
       </QueryBar>
     </n-card>
 
-    <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <span class="page-toolbar__hint">
-        共 {{ total }} 条任务，{{ showCarrier ? '展示权限范围内的全部承运商' : '仅展示本承运商数据' }}
-      </span>
-    </div>
-
     <!-- 列表 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <span class="table-toolbar__hint">
+          共 {{ total }} 条任务，{{ showCarrier ? '展示权限范围内的全部承运商' : '仅展示本承运商数据' }}
+        </span>
+      </div>
       <n-data-table
         remote
         :columns="columns"
@@ -294,8 +308,7 @@ onMounted(load)
         :loading="loading"
         :row-key="(row: PortalTask) => row.id"
         :bordered="false"
-        :single-line="false"
-        :scroll-x="1460"
+        :scroll-x="1820"
         size="small"
       />
       <div class="page-pager">
@@ -303,8 +316,10 @@ onMounted(load)
           v-model:page="query.page"
           v-model:page-size="query.size"
           :item-count="total"
-          :page-sizes="[10, 20, 50]"
+          :page-sizes="[10, 20, 50, 100]"
           show-size-picker
+          show-quick-jumper
+          :suffix="() => `总数 ${total}`"
           @update:page="load"
           @update:page-size="() => { query.page = 1; load() }"
         />
@@ -325,9 +340,6 @@ onMounted(load)
 </template>
 
 <style scoped>
-.page-card {
-  margin-bottom: 12px;
-}
 .page-card__caret {
   display: inline-block;
   margin-left: 2px;
@@ -337,23 +349,14 @@ onMounted(load)
 .page-card__caret.is-open {
   transform: rotate(180deg);
 }
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.page-toolbar__hint {
-  font-size: 12px;
-  color: #8c8c8c;
-}
 .page-pager {
   display: flex;
   justify-content: flex-end;
-  margin-top: 14px;
+  margin-top: 10px;
+  padding: 0 15px;
 }
 :deep(.link) {
-  color: #1677ff;
+  color: #1890ff;
   cursor: pointer;
   text-decoration: none;
 }
@@ -361,10 +364,10 @@ onMounted(load)
   text-decoration: underline;
 }
 :deep(.route) {
-  color: #595959;
+  color: #666666;
 }
 :deep(.actions) {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 </style>

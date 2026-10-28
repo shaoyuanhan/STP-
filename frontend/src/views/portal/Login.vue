@@ -105,7 +105,7 @@ async function onSubmit() {
   position: relative;
   height: 100vh;
   overflow: hidden;
-  background: #d5e4f0;
+  background: #f5f6fb;
 }
 .login__photo {
   position: absolute;
@@ -121,7 +121,7 @@ async function onSubmit() {
   right: -6%;
   width: 50%;
   height: 116%;
-  background: #f4f6f8;
+  background: #fafafa;
   transform: skewX(-10deg);
   transform-origin: center right;
 }
@@ -142,12 +142,12 @@ async function onSubmit() {
   justify-content: center;
   gap: 10px;
   margin-bottom: 28px;
-  color: #1a1a1a;
+  color: #2d3033;
 }
 .login__brand svg {
   width: 36px;
   height: 36px;
-  fill: #1a1a1a;
+  fill: #2d3033;
 }
 .login__brand span {
   font-size: 32px;
@@ -165,14 +165,14 @@ async function onSubmit() {
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: #8c8c8c;
+  color: #666666;
   font-size: 14px;
   cursor: pointer;
 }
 .login__tabs button.is-on {
-  color: #1a1a1a;
+  color: #2d3033;
   font-weight: 600;
-  border-bottom-color: #1a1a1a;
+  border-bottom-color: #2d3033;
 }
 .login__field {
   position: relative;
@@ -186,22 +186,22 @@ async function onSubmit() {
   width: 18px;
   height: 18px;
   fill: none;
-  stroke: #8c8c8c;
+  stroke: #666666;
   stroke-width: 1.6;
 }
 .login__field input {
   width: 100%;
   height: 44px;
   padding: 0 64px 0 40px;
-  border: 1px solid #e6e6e6;
+  border: 1px solid #eeeeee;
   border-radius: 2px;
   background: #fff;
-  color: #1a1a1a;
+  color: #2d3033;
   font-size: 14px;
   outline: none;
   box-sizing: border-box;
 }
-.login__field input:focus { border-color: #bfbfbf; }
+.login__field input:focus { border-color: #999999; }
 .login__eye {
   position: absolute;
   right: 8px;
@@ -210,7 +210,7 @@ async function onSubmit() {
   padding: 0 6px;
   border: 0;
   background: transparent;
-  color: #8c8c8c;
+  color: #666666;
   font-size: 12px;
   cursor: pointer;
 }
@@ -219,7 +219,7 @@ async function onSubmit() {
   margin-top: 8px;
   border: 0;
   border-radius: 2px;
-  background: #1a2332;
+  background: #001529;
   color: #fff;
   font-size: 16px;
   letter-spacing: 6px;
@@ -232,7 +232,7 @@ async function onSubmit() {
   align-items: center;
   gap: 10px;
   margin-top: 36px;
-  color: #bfbfbf;
+  color: #999999;
   font-size: 12px;
 }
 .login__other span {
@@ -246,15 +246,15 @@ async function onSubmit() {
   content: '';
   flex: 1;
   height: 1px;
-  background: #e8e8e8;
+  background: #eeeeee;
 }
 .login__mini {
   height: 32px;
   padding: 0 14px;
-  border: 1px solid #d9d9d9;
+  border: 1px solid #eeeeee;
   border-radius: 16px;
   background: #fff;
-  color: #1a1a1a;
+  color: #2d3033;
   font-size: 13px;
   cursor: pointer;
 }
@@ -264,7 +264,7 @@ async function onSubmit() {
   right: 0;
   bottom: 22px;
   margin: 0;
-  color: #bfbfbf;
+  color: #999999;
   font-size: 12px;
   text-align: center;
 }

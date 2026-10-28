@@ -32,11 +32,14 @@ import type {
 } from '@/types/api'
 import { money, datetime } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
+import QueryBar from '@/components/QueryBar.vue'
+import QueryField from '@/components/QueryField.vue'
 import DetailSection from '@/components/DetailSection.vue'
 import ConfirmAction from '@/components/ConfirmAction.vue'
 import MoneyText from '@/components/MoneyText.vue'
 
 const message = useMessage()
+const filterExpanded = ref(false)
 
 // ---- 筛选 ----
 const filters = reactive({
@@ -185,10 +188,10 @@ const pagination = computed<PaginationProps>(() => ({
   page: page.value,
   pageSize: pageSize.value,
   itemCount: total.value,
-  pageSizes: [10, 20, 50],
+  pageSizes: [10, 20, 50, 100],
   showSizePicker: true,
   showQuickJumper: true,
-  prefix: () => `共 ${total.value} 笔`,
+  suffix: () => `总数 ${total.value}`,
   onChange: handlePageChange,
   onUpdatePageSize: handlePageSizeChange,
 }))
@@ -224,6 +227,14 @@ function askReconcile(bill: FreightBillRow) {
 }
 
 const columns = computed<DataTableColumns<FreightBillRow>>(() => [
+  {
+    title: '序号',
+    key: '__index',
+    width: 60,
+    align: 'center',
+    fixed: 'left',
+    render: (_row, index) => (page.value - 1) * pageSize.value + index + 1,
+  },
   {
     title: '运费单号',
     key: 'freight_no',
@@ -311,14 +322,14 @@ const columns = computed<DataTableColumns<FreightBillRow>>(() => [
   {
     title: '到达时间',
     key: 'create_time',
-    width: 145,
+    width: 180,
     resizable: true,
     render: (row) => datetime(row.create_time),
   },
   {
     title: '完结时间',
     key: 'finish_time',
-    width: 145,
+    width: 180,
     resizable: true,
     render: (row) => datetime(row.finish_time),
   },
@@ -545,69 +556,65 @@ onActivated(() => {
   <div class="stp-page freight">
     <!-- 筛选 -->
     <n-card class="query-card" :bordered="false">
-      <div class="query-bar">
-        <div class="query-fields">
-          <div class="query-item">
-            <span>运费单号</span>
-            <n-input
-              v-model:value="filters.freight_no"
-              clearable
-              placeholder="请输入运费单号（YF 开头）"
-              @keyup.enter="handleSearch"
-            />
-          </div>
-          <div class="query-item">
-            <span>任务单号</span>
-            <n-input
-              v-model:value="filters.task_no"
-              clearable
-              placeholder="请输入任务单号"
-              @keyup.enter="handleSearch"
-            />
-          </div>
-          <div class="query-item">
-            <span>订单号</span>
-            <n-input
-              v-model:value="filters.order_no"
-              clearable
-              placeholder="请输入订单号"
-              @keyup.enter="handleSearch"
-            />
-          </div>
-          <div class="query-item">
-            <span>承运商</span>
-            <n-select
-              v-model:value="filters.carrier_id"
-              clearable
-              filterable
-              placeholder="请选择承运商"
-              :options="carrierOptions"
-            />
-          </div>
-          <div class="query-item">
-            <span>创建时间</span>
-            <n-date-picker
-              v-model:formatted-value="filters.create_range"
-              type="daterange"
-              value-format="yyyy-MM-dd"
-              clearable
-            />
-          </div>
-          <div class="query-item">
-            <span>对账状态</span>
-            <n-select
-              v-model:value="filters.reconcile_status"
-              clearable
-              placeholder="请选择对账状态"
-              :options="reconcileOptions"
-            />
-          </div>
-        </div>
-        <div class="query-buttons">
-          <n-button type="primary" quaternary @click="handleReset">重置</n-button>
+      <QueryBar>
+        <QueryField label="运费单号">
+          <n-input
+            v-model:value="filters.freight_no"
+            clearable
+            placeholder="请输入运费单号（YF 开头）"
+            @keyup.enter="handleSearch"
+          />
+        </QueryField>
+        <QueryField label="任务单号">
+          <n-input
+            v-model:value="filters.task_no"
+            clearable
+            placeholder="请输入任务单号"
+            @keyup.enter="handleSearch"
+          />
+        </QueryField>
+        <QueryField v-show="filterExpanded" label="订单号">
+          <n-input
+            v-model:value="filters.order_no"
+            clearable
+            placeholder="请输入订单号"
+            @keyup.enter="handleSearch"
+          />
+        </QueryField>
+        <QueryField label="承运商">
+          <n-select
+            v-model:value="filters.carrier_id"
+            clearable
+            filterable
+            placeholder="请选择承运商"
+            :options="carrierOptions"
+          />
+        </QueryField>
+        <QueryField v-show="filterExpanded" label="创建时间">
+          <n-date-picker
+            v-model:formatted-value="filters.create_range"
+            type="daterange"
+            value-format="yyyy-MM-dd"
+            clearable
+          />
+        </QueryField>
+        <QueryField label="对账状态">
+          <n-select
+            v-model:value="filters.reconcile_status"
+            clearable
+            placeholder="请选择对账状态"
+            :options="reconcileOptions"
+          />
+        </QueryField>
+        <template #actions>
+          <n-button quaternary class="query-card__toggle" @click="filterExpanded = !filterExpanded">
+            {{ filterExpanded ? '收起' : '展开' }}
+            <span class="query-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
+          </n-button>
+          <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" :loading="loading" @click="handleSearch">查询</n-button>
-        </div>
-      </div>
+        </template>
+      </QueryBar>
     </n-card>
 
     <!-- 列表 -->
@@ -631,7 +638,7 @@ onActivated(() => {
         :loading="loading"
         :pagination="pagination"
         :row-key="rowKey"
-        :scroll-x="1846"
+        :scroll-x="1976"
         :bordered="false"
       >
         <template #empty>
@@ -645,7 +652,7 @@ onActivated(() => {
     </n-card>
 
     <!-- 详情抽屉 -->
-    <n-drawer v-model:show="showDrawer" :width="680" placement="right">
+    <n-drawer v-model:show="showDrawer" :width="'min(860px, 94vw)'" placement="right">
       <n-drawer-content :title="`费用明细 · ${drawerBill?.freight_no ?? ''}`" closable>
         <n-spin :show="drawerLoading">
           <div v-if="drawerError" class="freight-error freight-error--drawer">

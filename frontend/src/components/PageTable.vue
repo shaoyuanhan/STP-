@@ -37,6 +37,8 @@ const props = withDefaults(
     immediate?: boolean
     /** 表格尺寸 */
     tableSize?: 'small' | 'medium' | 'large'
+    /** 是否自动在首列插入「序号」（宽 60） */
+    showIndex?: boolean
   }>(),
   {
     query: () => ({}),
@@ -44,6 +46,7 @@ const props = withDefaults(
     initPageSize: 10,
     immediate: true,
     tableSize: 'small',
+    showIndex: true,
   },
 )
 
@@ -53,14 +56,32 @@ const data = ref<T[]>([])
 const tableData = computed(() => data.value as unknown as DataTableRowData[])
 
 // 列宽拖动统一在封装层开启；选择/展开列与 __ 开头的辅助列不参与（无实际内容宽度可调）
-const tableColumns = computed<DataTableColumns<T>>(() =>
-  props.columns.map((column) => {
+const tableColumns = computed<DataTableColumns<T>>(() => {
+  const columns = [...props.columns]
+  if (props.showIndex) {
+    let insertAt = 0
+    while (insertAt < columns.length) {
+      const column = columns[insertAt]
+      const key = 'key' in column ? String(column.key) : ''
+      if (column.type === 'selection' || column.type === 'expand' || key.startsWith('__')) insertAt++
+      else break
+    }
+    columns.splice(insertAt, 0, {
+      title: '序号',
+      key: '__index',
+      width: 60,
+      align: 'center',
+      fixed: 'left',
+      render: (_row: T, index: number) => (page.value - 1) * pageSize.value + index + 1,
+    } as DataTableColumns<T>[number])
+  }
+  return columns.map((column) => {
     const key = 'key' in column ? String(column.key) : ''
     const isAuxiliary =
       column.type === 'selection' || column.type === 'expand' || key.startsWith('__')
     return isAuxiliary ? column : { ...column, resizable: true }
-  }),
-)
+  })
+})
 
 const total = ref(0)
 const page = ref(1)
@@ -112,7 +133,7 @@ const pagination = computed<PaginationProps>(() => ({
   pageSizes: [10, 20, 50, 100],
   showSizePicker: true,
   showQuickJumper: true,
-  prefix: () => `共 ${total.value} 条`,
+  suffix: () => `总数 ${total.value}`,
   onChange: handlePageChange,
   onUpdatePageSize: handlePageSizeChange,
 }))

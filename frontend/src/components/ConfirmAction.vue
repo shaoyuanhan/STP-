@@ -81,20 +81,27 @@ function handleClose(): boolean {
 <template>
   <n-modal
     :show="show"
-    preset="dialog"
-    :type="type === 'error' ? 'error' : 'info'"
+    preset="card"
     :title="title"
-    :content="content || undefined"
-    :positive-text="confirmText"
-    :negative-text="cancelText"
-    :loading="loading"
+    style="width: 600px"
     :mask-closable="false"
     :closable="!loading"
-    @positive-click="handlePositiveClick"
-    @negative-click="handleNegativeClick"
     @close="handleClose"
     @update:show="(value: boolean) => emit('update:show', value)"
   >
+    <div v-if="content">{{ content }}</div>
     <slot />
+    <template #footer>
+      <div class="modal-footer">
+        <n-button
+          :type="type === 'error' ? 'error' : 'primary'"
+          :loading="loading"
+          @click="handlePositiveClick"
+        >
+          {{ confirmText }}
+        </n-button>
+        <n-button :disabled="loading" @click="handleNegativeClick">{{ cancelText }}</n-button>
+      </div>
+    </template>
   </n-modal>
 </template>

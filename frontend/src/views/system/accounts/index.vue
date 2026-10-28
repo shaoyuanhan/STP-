@@ -9,13 +9,16 @@ import { NButton, useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
 import QueryBar from '@/components/QueryBar.vue'
 import QueryField from '@/components/QueryField.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import ConfirmAction from '@/components/ConfirmAction.vue'
+import DetailSection from '@/components/DetailSection.vue'
 import { listCarriers } from '@/services/carriers'
 import { listDrivers } from '@/services/drivers'
 import {
   createAccount, listAccounts, listRoles, updateAccount,
 } from '@/services/portal'
 import type { AccountRow, RoleRow } from '@/services/portal'
-import { datetimeFull, formatPhone } from '@/utils/format'
+import { datetime, formatPhone } from '@/utils/format'
 
 interface PageTableHandle {
   reload: () => Promise<void>
@@ -43,6 +46,11 @@ const editingId = ref<number | null>(null)
 const carrierOptions = ref<SelectOption[]>([])
 const driverOptions = ref<SelectOption[]>([])
 const roles = ref<RoleRow[]>([])
+const detailOpen = ref(false)
+const detailRow = ref<AccountRow | null>(null)
+const statusOpen = ref(false)
+const statusTarget = ref<AccountRow | null>(null)
+const statusSaving = ref(false)
 
 const form = reactive({
   username: '',
@@ -177,6 +185,53 @@ async function save() {
   }
 }
 
+function openDetail(row: AccountRow) {
+  detailRow.value = row
+  detailOpen.value = true
+}
+
+function openStatusConfirm(row: AccountRow) {
+  statusTarget.value = row
+  statusOpen.value = true
+}
+
+const statusConfirmTitle = computed(() =>
+  Number(statusTarget.value?.status) === 1 ? '确认停用该账号？' : '确认启用该账号？',
+)
+
+const statusConfirmContent = computed(() => {
+  const row = statusTarget.value
+  if (!row) return ''
+  return Number(row.status) === 1
+    ? `停用后「${row.display_name}」将无法登录系统，确定停用吗？`
+    : `启用后「${row.display_name}」可恢复登录系统，确定启用吗？`
+})
+
+async function confirmStatusChange() {
+  const row = statusTarget.value
+  if (!row) return
+  const next = Number(row.status) === 1 ? 0 : 1
+  statusSaving.value = true
+  try {
+    await updateAccount(row.id, {
+      username: row.username || '',
+      display_name: row.display_name,
+      phone: row.phone,
+      role_id: row.role_id,
+      carrier_id: row.carrier_id,
+      driver_id: row.driver_id,
+      status: next,
+    })
+    message.success(next === 1 ? '账号已启用' : '账号已停用')
+    statusOpen.value = false
+    await tableRef.value?.refresh()
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '状态更新失败')
+  } finally {
+    statusSaving.value = false
+  }
+}
+
 const columns: DataTableColumns<AccountRow> = [
   { title: '登录账号', key: 'username', width: 120, render: (row) => row.username || '-' },
   { title: '姓名', key: 'display_name', width: 120 },
@@ -191,20 +246,40 @@ const columns: DataTableColumns<AccountRow> = [
   {
     title: '状态',
     key: 'status',
-    width: 80,
-    render: (row) => (Number(row.status) === 1 ? '启用' : '停用'),
+    width: 100,
+    render: (row) => h(StatusTag, { type: 'enable', value: row.status }),
   },
   {
     title: '最近登录',
     key: 'last_login_time',
-    width: 160,
-    render: (row) => (row.last_login_time ? datetimeFull(row.last_login_time) : '-'),
+    width: 180,
+    render: (row) => (row.last_login_time ? datetime(row.last_login_time) : '-'),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 80,
-    render: (row) => h(NButton, { text: true, type: 'primary', onClick: () => openEdit(row) }, { default: () => '编辑' }),
+    width: 210,
+    align: 'center',
+    fixed: 'right',
+    render: (row) =>
+      h('div', { class: 'action-buttons' }, [
+        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) }, { default: () => '详情' }),
+        ...(row.role_kind === 'DRIVER'
+          ? []
+          : [
+              h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, { default: () => '编辑' }),
+              h(
+                NButton,
+                {
+                  size: 'small',
+                  quaternary: true,
+                  type: Number(row.status) === 1 ? 'error' : 'primary',
+                  onClick: () => openStatusConfirm(row),
+                },
+                { default: () => (Number(row.status) === 1 ? '停用' : '启用') },
+              ),
+            ]),
+      ]),
   },
 ]
 
@@ -222,7 +297,7 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
 <template>
   <div class="stp-page">
     <!-- 筛选栏 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="query-card" :bordered="false">
       <QueryBar>
         <QueryField label="登录账号">
           <n-input v-model:value="filters.username" clearable placeholder="请输入登录账号" @keydown.enter="search" />
@@ -240,21 +315,45 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
       </QueryBar>
     </n-card>
 
-    <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <span class="page-toolbar__hint">
-        账号只绑定一个角色；可见模块、按钮与承运商运单范围在角色管理里配置
-      </span>
-      <n-button type="primary" @click="openCreate">新增账号</n-button>
-    </div>
-
     <!-- 列表 -->
-    <n-card class="page-card" :bordered="false">
-      <PageTable ref="tableRef" :columns="columns" :remote="remote" :query="applied" :scroll-x="980" />
+    <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <span class="table-toolbar__hint">
+          账号只绑定一个角色；可见模块、按钮与承运商运单范围在角色管理里配置
+        </span>
+        <n-button type="primary" @click="openCreate">新增账号</n-button>
+      </div>
+      <PageTable ref="tableRef" :columns="columns" :remote="remote" :query="applied" :scroll-x="1060" />
     </n-card>
 
-    <n-modal v-model:show="show" preset="card" :title="editingId ? '编辑账号' : '新增账号'" style="width: 520px">
-      <n-form ref="formRef" :model="form" :rules="rules" label-placement="left" label-width="88">
+    <n-drawer v-model:show="detailOpen" :width="'min(720px, 94vw)'" placement="right">
+      <n-drawer-content title="账号详情" closable :native-scrollbar="false">
+        <template v-if="detailRow">
+          <DetailSection title="账号信息" :column="2">
+            <n-descriptions-item label="登录账号">{{ detailRow.username || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="姓名">{{ detailRow.display_name }}</n-descriptions-item>
+            <n-descriptions-item label="手机号">{{ formatPhone(detailRow.phone) }}</n-descriptions-item>
+            <n-descriptions-item label="状态">
+              <StatusTag type="enable" :value="detailRow.status" />
+            </n-descriptions-item>
+            <n-descriptions-item label="最近登录">
+              {{ detailRow.last_login_time ? datetime(detailRow.last_login_time) : '-' }}
+            </n-descriptions-item>
+          </DetailSection>
+          <DetailSection title="角色与归属" :column="2">
+            <n-descriptions-item label="角色">{{ detailRow.role_name || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="角色类型">
+              {{ KIND_TEXT[detailRow.role_kind || ''] || '-' }}
+            </n-descriptions-item>
+            <n-descriptions-item label="所属承运商">{{ detailRow.carrier_name || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="关联司机">{{ detailRow.driver_name || '-' }}</n-descriptions-item>
+          </DetailSection>
+        </template>
+      </n-drawer-content>
+    </n-drawer>
+
+    <n-modal v-model:show="show" preset="card" :title="editingId ? '编辑账号' : '新增账号'" style="width: 600px">
+      <n-form ref="formRef" :model="form" :rules="rules" label-placement="left" label-width="100" require-mark-placement="left">
         <n-form-item label="角色" path="role_id">
           <n-select v-model:value="form.role_id" :options="roleOptions" filterable placeholder="选择角色" />
         </n-form-item>
@@ -276,35 +375,26 @@ function remote({ page, pageSize }: { page: number; pageSize: number }) {
         <n-form-item :label="editingId ? '重置密码' : '密码'">
           <n-input v-model:value="form.password" type="password" show-password-on="click" :placeholder="editingId ? '不修改请留空' : '至少 6 位'" />
         </n-form-item>
-        <n-form-item label="状态">
-          <n-radio-group v-model:value="form.status">
-            <n-radio :value="1">启用</n-radio>
-            <n-radio :value="0">停用</n-radio>
-          </n-radio-group>
-        </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <n-button @click="show = false">取消</n-button>
           <n-button type="primary" :loading="saving" @click="save">保存</n-button>
+          <n-button @click="show = false">取消</n-button>
         </n-space>
       </template>
     </n-modal>
+
+    <ConfirmAction
+      v-model:show="statusOpen"
+      :type="Number(statusTarget?.status) === 1 ? 'error' : 'default'"
+      :title="statusConfirmTitle"
+      :content="statusConfirmContent"
+      :confirm-text="Number(statusTarget?.status) === 1 ? '确认停用' : '确认启用'"
+      :loading="statusSaving"
+      :auto-close="false"
+      @confirm="confirmStatusChange"
+    />
   </div>
 </template>
 
-<style scoped>
-.page-card {
-  margin-bottom: 12px;
-}
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.page-toolbar__hint {
-  font-size: 12px;
-  color: #8c8c8c;
-}
-</style>
+<style scoped></style>

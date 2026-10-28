@@ -35,7 +35,7 @@ function profileOf(account, carrierName, driverName) {
     role_id: account.role_id ?? null,
     role_name: account.role_name ?? null,
     permissions: account.permissions ?? [],
-    data_scope: account.data_scope ?? { carriers: [], materials: [] },
+    data_scope: account.data_scope ?? { carriers: [] },
     carrier_id: account.carrier_id,
     carrier_name: carrierName ?? null,
     driver_id: account.driver_id,
@@ -61,7 +61,7 @@ async function loadProfile(account) {
     role_id: access.roleId,
     role_name: access.roleName,
     permissions: access.permissions,
-    data_scope: { carriers: access.carriers, materials: access.materials },
+    data_scope: { carriers: access.carriers },
   }, carrierName, driverName);
 }
 

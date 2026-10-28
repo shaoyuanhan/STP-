@@ -214,8 +214,8 @@ async function handleSubmit() {
         :model="form"
         :rules="rules"
         label-placement="left"
-        label-width="90px"
-        :show-require-mark="true"
+        label-width="100"
+        require-mark-placement="left"
       >
         <n-form-item label="取消原因" path="reason">
           <n-select
@@ -268,7 +268,7 @@ async function handleSubmit() {
   flex-direction: column;
   gap: 10px;
   padding: 12px 14px;
-  background: #f7f8fa;
+  background: #fafafa;
   border-radius: 4px;
 }
 

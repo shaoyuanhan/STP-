@@ -15,9 +15,12 @@ import type { EsignRow } from '@/services/esigns'
 import type { EsignQuery, EsignStatus } from '@/types/api'
 import { datetime } from '@/utils/format'
 import StatusTag from '@/components/StatusTag.vue'
+import QueryBar from '@/components/QueryBar.vue'
+import QueryField from '@/components/QueryField.vue'
 import DetailSection from '@/components/DetailSection.vue'
 
 const message = useMessage()
+const filterExpanded = ref(false)
 
 // ---- 筛选 ----
 const filters = reactive({
@@ -134,10 +137,10 @@ const pagination = computed<PaginationProps>(() => ({
   page: page.value,
   pageSize: pageSize.value,
   itemCount: total.value,
-  pageSizes: [10, 20, 50],
+  pageSizes: [10, 20, 50, 100],
   showSizePicker: true,
   showQuickJumper: true,
-  prefix: () => `共 ${total.value} 条`,
+  suffix: () => `总数 ${total.value}`,
   onChange: handlePageChange,
   onUpdatePageSize: handlePageSizeChange,
 }))
@@ -154,6 +157,14 @@ function openDetail(row: EsignRow) {
 }
 
 const columns = computed<DataTableColumns<EsignRow>>(() => [
+  {
+    title: '序号',
+    key: '__index',
+    width: 60,
+    align: 'center',
+    fixed: 'left',
+    render: (_row, index) => (page.value - 1) * pageSize.value + index + 1,
+  },
   { title: '电子签 ID', key: 'esign_id', width: 165, resizable: true, fixed: 'left', ellipsis: { tooltip: true } },
   {
     title: '任务单号',
@@ -213,7 +224,7 @@ const columns = computed<DataTableColumns<EsignRow>>(() => [
   {
     title: '发起时间',
     key: 'initiate_time',
-    width: 150,
+    width: 180,
     resizable: true,
     render: (row) => datetime(row.initiate_time),
   },
@@ -227,7 +238,7 @@ const columns = computed<DataTableColumns<EsignRow>>(() => [
   {
     title: '签署时间',
     key: 'sign_time',
-    width: 150,
+    width: 180,
     resizable: true,
     render: (row) => datetime(row.sign_time),
   },
@@ -272,68 +283,64 @@ onActivated(loadPage)
   <div class="stp-page esign">
     <!-- 筛选 -->
     <n-card class="query-card" :bordered="false">
-      <div class="query-bar">
-        <div class="query-fields">
-          <div class="query-item">
-            <span>电子签 ID</span>
-            <n-input
-              v-model:value="filters.esign_id"
-              clearable
-              placeholder="请输入电子签 ID"
-              @keyup.enter="handleSearch"
-            />
-          </div>
-          <div class="query-item">
-            <span>任务单号</span>
-            <n-input
-              v-model:value="filters.task_no"
-              clearable
-              placeholder="请输入任务单号（FY 开头）"
-              @keyup.enter="handleSearch"
-            />
-          </div>
-          <div class="query-item">
-            <span>VIN</span>
-            <n-input
-              v-model:value="filters.vin"
-              clearable
-              placeholder="请输入 17 位车架号"
-              @keyup.enter="handleSearch"
-            />
-          </div>
-          <div class="query-item">
-            <span>订单号</span>
-            <n-input
-              v-model:value="filters.order_no"
-              clearable
-              placeholder="请输入订单号"
-              @keyup.enter="handleSearch"
-            />
-          </div>
-          <div class="query-item">
-            <span>发运申请号</span>
-            <n-input
-              v-model:value="filters.apply_no"
-              clearable
-              placeholder="请输入发运申请号"
-              @keyup.enter="handleSearch"
-            />
-          </div>
-          <div class="query-item">
-            <span>签署状态</span>
-            <n-select
-              v-model:value="filters.sign_status"
-              clearable
-              placeholder="请选择签署状态"
-              :options="signStatusOptions"
-            />
-          </div>
-        </div>
-        <div class="query-buttons">
-          <n-button type="primary" quaternary @click="handleReset">重置</n-button>
+      <QueryBar>
+        <QueryField label="电子签 ID">
+          <n-input
+            v-model:value="filters.esign_id"
+            clearable
+            placeholder="请输入电子签 ID"
+            @keyup.enter="handleSearch"
+          />
+        </QueryField>
+        <QueryField label="任务单号">
+          <n-input
+            v-model:value="filters.task_no"
+            clearable
+            placeholder="请输入任务单号（FY 开头）"
+            @keyup.enter="handleSearch"
+          />
+        </QueryField>
+        <QueryField label="VIN">
+          <n-input
+            v-model:value="filters.vin"
+            clearable
+            placeholder="请输入 17 位车架号"
+            @keyup.enter="handleSearch"
+          />
+        </QueryField>
+        <QueryField v-show="filterExpanded" label="订单号">
+          <n-input
+            v-model:value="filters.order_no"
+            clearable
+            placeholder="请输入订单号"
+            @keyup.enter="handleSearch"
+          />
+        </QueryField>
+        <QueryField v-show="filterExpanded" label="发运申请号">
+          <n-input
+            v-model:value="filters.apply_no"
+            clearable
+            placeholder="请输入发运申请号"
+            @keyup.enter="handleSearch"
+          />
+        </QueryField>
+        <QueryField label="签署状态">
+          <n-select
+            v-model:value="filters.sign_status"
+            clearable
+            placeholder="请选择签署状态"
+            :options="signStatusOptions"
+          />
+        </QueryField>
+        <template #actions>
+          <n-button quaternary class="query-card__toggle" @click="filterExpanded = !filterExpanded">
+            {{ filterExpanded ? '收起' : '展开' }}
+            <span class="query-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
+          </n-button>
+          <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" :loading="loading" @click="handleSearch">查询</n-button>
-        </div>
-      </div>
+        </template>
+      </QueryBar>
     </n-card>
 
     <!-- 列表 -->
@@ -358,7 +365,7 @@ onActivated(loadPage)
         :loading="loading"
         :pagination="pagination"
         :row-key="rowKey"
-        :scroll-x="1907"
+        :scroll-x="2027"
         :bordered="false"
       >
         <template #empty>
@@ -372,7 +379,7 @@ onActivated(loadPage)
     </n-card>
 
     <!-- 详情抽屉 -->
-    <n-drawer v-model:show="showDrawer" :width="540" placement="right">
+    <n-drawer v-model:show="showDrawer" :width="'min(860px, 94vw)'" placement="right">
       <n-drawer-content :title="`电子签详情 · ${selectedRow?.esign_id ?? ''}`" closable>
         <template v-if="selectedRow">
           <DetailSection title="签署信息" :column="2">

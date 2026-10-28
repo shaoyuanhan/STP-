@@ -6,7 +6,7 @@ const { Router } = require('express');
 const { query } = require('../db');
 const { wrap, ok, pageOf, pageData, errNotFound, errBiz } = require('../helpers');
 const { requireAuth } = require('../services/security');
-const { pickupTask, arriveTask, finishTask, PICKUP_PHOTO_MIN } = require('../services/taskFlow');
+const { pickupTask, arriveTask, finishTask, withStatusLogNames, PICKUP_PHOTO_MIN } = require('../services/taskFlow');
 
 const router = Router();
 router.use(requireAuth(['DRIVER']));
@@ -110,7 +110,7 @@ router.get('/tasks/:id', wrap(async (req, res) => {
   ok(res, {
     task,
     vehicles,
-    status_logs: logs,
+    status_logs: withStatusLogNames(logs),
     files,
     allowed_actions: actionsOf(task.status),
     pickup_photo_min: PICKUP_PHOTO_MIN,

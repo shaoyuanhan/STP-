@@ -40,7 +40,7 @@ const themeOverrides: GlobalThemeOverrides = {
   },
   Card: {
     borderRadius: '4px',
-    boxShadow: '0 1px 2px rgba(31, 45, 61, 0.04)',
+    boxShadow: 'none',
   },
   Modal: {
     borderRadius: '4px',
@@ -145,13 +145,31 @@ body {
   border-color: #eeeeee !important;
 }
 
+/* 查询区按真实系统为带边框白卡片，列表卡片保持无边框白底 */
 .query-card {
   margin-bottom: 10px;
+  border: 1px solid #eae5e5 !important;
 }
 
 .query-card > .n-card-content,
-.table-card > .n-card-content {
+.page-card > .n-card-content {
   padding: 15px !important;
+}
+
+.query-card__caret {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 12px;
+  transition: transform 0.2s;
+}
+
+.query-card__caret.is-open {
+  transform: rotate(180deg);
+}
+
+/* 列表卡片：工具栏 10/15 内边距，表格与卡片同宽（对齐真实 table-cont） */
+.table-card > .n-card-content {
+  padding: 0 0 10px !important;
 }
 
 .query-bar {
@@ -159,7 +177,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 16px 20px;
+  gap: 15px 20px;
 }
 
 .query-fields {
@@ -167,7 +185,7 @@ body {
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 16px 20px;
+  gap: 15px 20px;
 }
 
 .query-item {
@@ -204,9 +222,11 @@ body {
   margin-left: auto;
 }
 
+/* 列表工具栏：位于列表卡片内右上角（opt-bar），左侧为统计/说明文字 */
 .table-toolbar {
   min-height: 32px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  padding: 10px 15px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -219,12 +239,20 @@ body {
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 20px;
+  /* 说明文字换行时，操作按钮仍固定在卡片右上角 */
+  margin-left: auto;
+  flex: none;
+}
+
+/* 工具栏末尾直接放按钮的页面同样右贴（说明文字过长换行时按钮不跑到左侧） */
+.table-toolbar > :last-child:not(.table-toolbar__hint):not(.table-summary) {
+  margin-left: auto;
 }
 
 .table-toolbar__hint {
   color: #999999;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .table-summary {
@@ -236,7 +264,7 @@ body {
 }
 
 .table-summary strong {
-  color: #d03050;
+  color: #2d3033;
   font-weight: 600;
 }
 
@@ -249,11 +277,12 @@ body {
   white-space: nowrap;
 }
 
+/* 弹窗底部按钮：右对齐「确认（主色）+ 取消」 */
 .modal-footer {
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 20px;
 }

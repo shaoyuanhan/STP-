@@ -8,9 +8,9 @@ import { useMessage } from 'naive-ui'
 import StatusBadge from '@/components/portal/StatusBadge.vue'
 import AssignDriverModal from '@/components/portal/AssignDriverModal.vue'
 import DetailSection from '@/components/DetailSection.vue'
-import { fetchCarrierTask, statusLabel } from '@/services/portal'
+import { fetchCarrierTask } from '@/services/portal'
 import type { PortalTaskDetail } from '@/services/portal'
-import { datetime, datetimeFull } from '@/utils/format'
+import {datetime} from '@/utils/format'
 
 const props = defineProps<{
   show: boolean
@@ -48,7 +48,7 @@ const timeline = computed(() =>
   (detail.value?.status_logs ?? []).map((log) => ({
     key: log.id,
     time: log.create_time,
-    title: statusLabel(log.to_status),
+    title: log.to_status_name || log.to_status,
     source: log.source,
     operator: log.operator,
     remark: log.remark,
@@ -89,7 +89,7 @@ function money(value: string | number | null | undefined, fallback: string) {
 <template>
   <n-drawer
     :show="show"
-    :width="'min(900px, 94vw)'"
+    :width="'min(860px, 94vw)'"
     placement="right"
     @update:show="(value: boolean) => emit('update:show', value)"
   >
@@ -128,7 +128,7 @@ function money(value: string | number | null | undefined, fallback: string) {
             <n-descriptions-item label="司机电话">{{ detail.task.driver_phone || '-' }}</n-descriptions-item>
             <n-descriptions-item label="计划提车日期">{{ detail.task.plan_pickup_date || '-' }}</n-descriptions-item>
             <n-descriptions-item label="创建时间">
-              {{ detail.task.create_time ? datetimeFull(detail.task.create_time) : '-' }}
+              {{ detail.task.create_time ? datetime(detail.task.create_time) : '-' }}
             </n-descriptions-item>
             <n-descriptions-item label="发运时间">
               <span v-if="detail.task.ship_time">{{ datetime(detail.task.ship_time) }}</span>
@@ -212,7 +212,7 @@ function money(value: string | number | null | undefined, fallback: string) {
                 v-for="item in timeline"
                 :key="item.key"
                 :title="item.title"
-                :time="item.time ? datetimeFull(item.time) : undefined"
+                :time="item.time ? datetime(item.time) : undefined"
                 type="success"
               >
                 <div class="log-line">
@@ -257,7 +257,7 @@ function money(value: string | number | null | undefined, fallback: string) {
 
 <style scoped>
 .muted {
-  color: #bfbfbf;
+  color: #999999;
 }
 .drawer-head {
   display: flex;
@@ -266,7 +266,7 @@ function money(value: string | number | null | undefined, fallback: string) {
   gap: 12px;
 }
 .drawer-head__title {
-  color: #262626;
+  color: #2d3033;
   font-size: 15px;
   font-weight: 600;
 }
@@ -284,17 +284,17 @@ function money(value: string | number | null | undefined, fallback: string) {
   width: 3px;
   height: 14px;
   border-radius: 2px;
-  background: #1677ff;
+  background: #1890ff;
 }
 .drawer-section__title {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
   line-height: 1.4;
 }
 .drawer-section__extra {
-  color: #8c8c8c;
+  color: #666666;
   font-size: 12px;
 }
 .drawer-section__toggle {
@@ -306,11 +306,11 @@ function money(value: string | number | null | undefined, fallback: string) {
   border: none;
   background: none;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
   cursor: pointer;
 }
 .drawer-section__toggle:hover {
-  color: #1677ff;
+  color: #1890ff;
 }
 .drawer-section__arrow {
   display: inline-block;
@@ -335,26 +335,26 @@ function money(value: string | number | null | undefined, fallback: string) {
   padding: 24px 0;
   text-align: center;
   font-size: 12px;
-  color: #bfbfbf;
+  color: #999999;
 }
 .log-line {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #595959;
+  color: #666666;
 }
 .log-tag {
   padding: 1px 6px;
   border-radius: 3px;
-  background: #f0f7ff;
-  color: #1677ff;
+  background: rgba(24, 144, 255, 0.08);
+  color: #1890ff;
   font-size: 11px;
 }
 .log-remark {
   margin-top: 2px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
   line-height: 1.6;
 }
 .log-photos {
@@ -366,7 +366,7 @@ function money(value: string | number | null | undefined, fallback: string) {
 .log-photo {
   border-radius: 4px;
   overflow: hidden;
-  border: 1px solid #f0f0f0;
+  border: 1px solid #eeeeee;
   background: #fafafa;
 }
 </style>

@@ -18,7 +18,7 @@ export interface PortalProfile {
   role_id?: number | null
   role_name?: string | null
   permissions?: string[]
-  data_scope?: { carriers: 'ALL' | number[]; materials: 'ALL' | string[] }
+  data_scope?: { carriers: 'ALL' | number[] }
   carrier_id: number | null
   carrier_name: string | null
   driver_id: number | null
@@ -72,7 +72,9 @@ export interface PortalVehicle {
 export interface PortalStatusLog {
   id: number
   from_status: string | null
+  from_status_name?: string | null
   to_status: string
+  to_status_name?: string
   source: string
   operator?: string | null
   remark?: string | null
@@ -516,7 +518,6 @@ export interface RoleRow {
   permissions?: string[]
   carrier_ids?: number[]
   carrier_all?: boolean
-  materials?: string[]
 }
 
 export interface PermModule {
@@ -544,7 +545,6 @@ export function getRole(id: number): Promise<RoleRow> {
 
 export function roleCatalog(): Promise<{
   modules: PermModule[]
-  materials: Array<{ value: string; label: string }>
   carriers: Array<{ id: number; carrier_name: string }>
 }> {
   return get('/portal/roles/catalog')
@@ -560,6 +560,10 @@ export function updateRole(id: number, payload: Record<string, unknown>): Promis
 
 export function saveRolePermissions(id: number, payload: Record<string, unknown>): Promise<{ id: number }> {
   return http.put(`/portal/roles/${id}/permissions`, payload) as Promise<{ id: number }>
+}
+
+export function saveRoleDataScope(id: number, payload: Record<string, unknown>): Promise<{ id: number }> {
+  return http.put(`/portal/roles/${id}/data-scope`, payload) as Promise<{ id: number }>
 }
 
 export function maskIdCard(value?: string | null): string {

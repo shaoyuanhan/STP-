@@ -122,8 +122,8 @@ async function onPickCarrier(carrierId: number) {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  background: #f5f6f8;
-  box-shadow: 0 0 0 1px #eceff3;
+  background: #f5f6fb;
+  box-shadow: 0 0 0 1px #eeeeee;
 }
 .driver__header {
   flex: none;
@@ -131,7 +131,7 @@ async function onPickCarrier(carrierId: number) {
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  background: #1a1a1a;
+  background: #2d3033;
   color: #fff;
 }
 .driver__brand {
@@ -174,7 +174,7 @@ async function onPickCarrier(carrierId: number) {
   flex: none;
   display: flex;
   background: #fff;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #eeeeee;
   padding-bottom: env(safe-area-inset-bottom);
 }
 .driver__tab {
@@ -185,11 +185,11 @@ async function onPickCarrier(carrierId: number) {
   gap: 2px;
   padding: 8px 0 7px;
   font-size: 11px;
-  color: #8c8c8c;
+  color: #666666;
   text-decoration: none;
 }
 .driver__tab--active {
-  color: #1a1a1a;
+  color: #1890ff;
   font-weight: 600;
 }
 .driver__tab-icon {

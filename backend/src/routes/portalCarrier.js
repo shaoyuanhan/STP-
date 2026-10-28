@@ -10,7 +10,7 @@ const {
 } = require('../helpers');
 const { requireAuth } = require('../services/security');
 const { loadAccess, applyTaskScope } = require('../services/access');
-const { assignDriver } = require('../services/taskFlow');
+const { assignDriver, withStatusLogNames } = require('../services/taskFlow');
 const { ensureDriverAccount, assertAccountReady } = require('../services/driverAccount');
 
 const router = Router();
@@ -165,7 +165,7 @@ router.get('/tasks/:id', wrap(async (req, res) => {
   ok(res, {
     task,
     vehicles,
-    status_logs: logs,
+    status_logs: withStatusLogNames(logs),
     files,
     dispatch_records: dispatchRecords,
     allowed_actions: task.status === 'DISPATCHED' ? ['ASSIGN'] : [],
@@ -321,6 +321,7 @@ router.put('/drivers/:id', wrap(async (req, res) => {
   const [driver] = await query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [id]);
   if (!driver) throw errNotFound('司机不存在');
   if (!inScope(scope, driver.carrier_id)) throw errNotFound('该司机不属于当前承运商');
+  if (Number(driver.source) === 2) throw errBiz('狮桥同步司机不可在平台编辑');
   if (req.body.name !== undefined && String(req.body.name).trim() !== driver.driver_name) {
     throw errBiz('司机姓名不可修改');
   }

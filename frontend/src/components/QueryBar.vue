@@ -14,8 +14,8 @@
   --qb-label-width: 110px;
   --qb-control-width: 220px;
   --qb-field-width: calc(var(--qb-label-width) + 8px + var(--qb-control-width));
-  --qb-column-gap: 20px;
-  --qb-row-gap: 16px;
+  --qb-column-gap: 10px;
+  --qb-row-gap: 15px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -30,6 +30,6 @@
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 20px;
 }
 </style>

@@ -3,7 +3,7 @@
  * 承运商 - 司机管理
  * 新增司机（身份证已存在时仅建立本承运商关联）、编辑、启停用
  */
-import { h, onMounted, reactive, ref } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 import { NButton, NTag, useDialog, useMessage } from 'naive-ui'
 import {
@@ -13,6 +13,7 @@ import {
 import type { DriverPayload, PortalDriver } from '@/services/portal'
 import QueryBar from '@/components/QueryBar.vue'
 import QueryField from '@/components/QueryField.vue'
+import StatusTag from '@/components/StatusTag.vue'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -25,6 +26,8 @@ const filters = reactive({
   status: null as number | null,
 })
 const list = ref<PortalDriver[]>([])
+const page = ref(1)
+const pageSize = ref(10)
 
 const modal = reactive({
   show: false,
@@ -68,12 +71,18 @@ async function load() {
       license_no: filters.license_no.trim() || undefined,
       status: filters.status,
     })
+    page.value = 1
   } catch (e) {
     message.error(e instanceof Error ? e.message : '司机列表加载失败')
   } finally {
     loading.value = false
   }
 }
+
+const pagedList = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return list.value.slice(start, start + pageSize.value)
+})
 
 function resetFilters() {
   filters.driver_name = ''
@@ -161,6 +170,14 @@ function toggleStatus(row: PortalDriver) {
 }
 
 const columns: DataTableColumns<PortalDriver> = [
+  {
+    title: '序号',
+    key: '__index',
+    width: 60,
+    align: 'center',
+    fixed: 'left',
+    render: (_row, index) => (page.value - 1) * pageSize.value + index + 1,
+  },
   { title: '司机姓名', key: 'driver_name', width: 110 },
   { title: '手机号', key: 'phone', width: 140 },
   { title: '身份证号', key: 'id_card', width: 170, render: (row) => maskIdCard(row.id_card) },
@@ -192,26 +209,24 @@ const columns: DataTableColumns<PortalDriver> = [
   {
     title: '状态',
     key: 'status',
-    width: 80,
-    render: (row) =>
-      h(
-        NTag,
-        { size: 'small', bordered: false, type: Number(row.status) === 1 ? 'success' : 'default' },
-        { default: () => (Number(row.status) === 1 ? '启用' : '停用') }
-      ),
+    width: 90,
+    render: (row) => h(StatusTag, { type: 'driver', value: row.status }),
   },
   {
     title: '操作',
     key: 'actions',
     width: 130,
+    align: 'center',
     fixed: 'right',
     render: (row) =>
       h('div', { class: 'actions' }, [
-        h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, { default: () => '编辑' }),
+        ...(Number(row.source) === 1
+          ? [h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, { default: () => '编辑' })]
+          : []),
         h(
           NButton,
           {
-            size: 'tiny',
+            size: 'small',
             quaternary: true,
             type: Number(row.status) === 1 ? 'error' : 'success',
             onClick: () => toggleStatus(row),
@@ -228,12 +243,12 @@ onMounted(load)
 <template>
   <div class="stp-page">
     <!-- 筛选栏 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="query-card" :bordered="false">
       <QueryBar>
         <QueryField label="司机姓名">
           <n-input
             v-model:value="filters.driver_name"
-            placeholder="请输入"
+            placeholder="请输入司机姓名"
             clearable
             @keydown.enter="load"
             @clear="load"
@@ -242,7 +257,7 @@ onMounted(load)
         <QueryField label="手机号">
           <n-input
             v-model:value="filters.phone"
-            placeholder="请输入"
+            placeholder="请输入手机号"
             clearable
             @keydown.enter="load"
             @clear="load"
@@ -251,7 +266,7 @@ onMounted(load)
         <QueryField label="驾驶证号">
           <n-input
             v-model:value="filters.license_no"
-            placeholder="请输入"
+            placeholder="请输入驾驶证号"
             clearable
             @keydown.enter="load"
             @clear="load"
@@ -260,49 +275,64 @@ onMounted(load)
         <QueryField label="状态">
           <n-select
             v-model:value="filters.status"
-            placeholder="全部状态"
+            placeholder="请选择状态"
             clearable
             :options="[{ label: '启用', value: 1 }, { label: '停用', value: 0 }]"
             @update:value="load"
           />
         </QueryField>
         <template #actions>
-          <n-button @click="load">查询</n-button>
           <n-button @click="resetFilters">重置</n-button>
-          <n-button type="primary" @click="openCreate">+ 新增司机</n-button>
+          <n-button type="primary" @click="load">查询</n-button>
         </template>
       </QueryBar>
     </n-card>
 
-    <!-- 工具栏 -->
-    <div class="page-toolbar">
-      <span class="page-toolbar__hint">
-        司机使用手机号 + 短信验证码登录司机端，无需设置密码
-      </span>
-    </div>
-
     <!-- 列表 -->
-    <n-card class="page-card" :bordered="false">
+    <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <span class="table-toolbar__hint">
+          司机使用手机号 + 短信验证码登录司机端，无需设置密码
+        </span>
+        <n-button type="primary" @click="openCreate">新增司机</n-button>
+      </div>
       <n-data-table
         :columns="columns"
-        :data="list"
+        :data="pagedList"
         :loading="loading"
         :row-key="(row: PortalDriver) => row.id"
         :bordered="false"
-        :single-line="false"
-        :scroll-x="1000"
+        :scroll-x="1160"
         size="small"
       />
+      <div class="page-pager">
+        <n-pagination
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :item-count="list.length"
+          :page-sizes="[10, 20, 50, 100]"
+          show-size-picker
+          show-quick-jumper
+          :suffix="() => `总数 ${list.length}`"
+        />
+      </div>
     </n-card>
 
     <n-modal
       v-model:show="modal.show"
       preset="card"
-      style="width: 560px"
+      style="width: 600px"
       :title="modal.mode === 'create' ? '新增司机' : '编辑司机'"
       :bordered="false"
     >
-      <n-form ref="formRef" :model="form" :rules="rules" label-placement="left" label-width="110">
+      <n-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-placement="left"
+        label-width="100"
+        require-mark-placement="left"
+      >
         <n-form-item label="司机姓名" path="name">
           <n-input v-model:value="form.name" :disabled="modal.mode === 'edit'" placeholder="请输入姓名" />
         </n-form-item>
@@ -343,8 +373,8 @@ onMounted(load)
       </div>
       <template #footer>
         <div class="modal-footer">
-          <n-button @click="modal.show = false">取消</n-button>
           <n-button type="primary" :loading="modal.submitting" @click="submit">保存</n-button>
+          <n-button @click="modal.show = false">取消</n-button>
         </div>
       </template>
     </n-modal>
@@ -352,29 +382,22 @@ onMounted(load)
 </template>
 
 <style scoped>
-.page-card {
-  margin-bottom: 12px;
-}
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.page-toolbar__hint {
-  font-size: 12px;
-  color: #8c8c8c;
-}
 .modal-hint {
   margin-top: 10px;
   font-size: 12px;
   line-height: 1.6;
-  color: #8c8c8c;
+  color: #666666;
 }
 .modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 20px;
+}
+.page-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding: 0 15px;
 }
 :deep(.actions) {
   display: flex;

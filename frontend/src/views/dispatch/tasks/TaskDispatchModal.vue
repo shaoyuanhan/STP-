@@ -221,8 +221,8 @@ async function handleSubmit() {
         :model="form"
         :rules="rules"
         label-placement="left"
-        label-width="110px"
-        :show-require-mark="false"
+        label-width="100"
+        require-mark-placement="left"
       >
         <n-form-item v-if="isReassign" label="当前承运商">
           <span>{{ task.carrier_name || '-' }}</span>
@@ -287,7 +287,7 @@ async function handleSubmit() {
 .dispatch-modal__tip {
   margin-bottom: 16px;
   padding: 8px 12px;
-  background: #f7f8fa;
+  background: #fafafa;
   border-radius: 4px;
   font-size: 12px;
   line-height: 1.6;

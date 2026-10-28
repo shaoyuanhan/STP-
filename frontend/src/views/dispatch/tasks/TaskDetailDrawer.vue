@@ -17,14 +17,14 @@ import DetailSection from '@/components/DetailSection.vue'
 import MoneyText from '@/components/MoneyText.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { getShippingTask } from '@/services/tasks'
-import { dateOnly, datetime, datetimeFull, formatPhone } from '@/utils/format'
+import {dateOnly, datetime, formatPhone} from '@/utils/format'
 import type {
   ShippingTask,
   ShippingTaskDetail,
   ShippingTaskVehicle,
   TaskStatusLog,
 } from '@/types/api'
-import { describeApiError, TASK_STATUS_LABELS } from './shared'
+import { describeApiError } from './shared'
 
 /**
  * 详情 head 扩展：后端详情 SQL 返回 c.carrier_code，
@@ -155,7 +155,7 @@ const vehicleColumns: DataTableColumns<ShippingTaskVehicle> = [
     render: (row) =>
       row.actual_freight !== null && row.actual_freight !== undefined && row.actual_freight !== ''
         ? h(MoneyText, { value: row.actual_freight, prefix: '¥' })
-        : h('span', { style: 'color:#bfbfbf' }, '到达后回填'),
+        : h('span', { style: 'color:#999999' }, '到达后回填'),
   },
 ]
 
@@ -180,21 +180,6 @@ function logPhotos(log: TaskStatusLog): string[] {
   }
   if (!log.remark) return []
   return (log.remark.match(PHOTO_URL_RE) ?? []).filter((url) => IMG_EXT_RE.test(url))
-}
-
-function timelineNodeName(log: TaskStatusLog): string {
-  if (log.to_status === 'WAIT_DISPATCH') {
-    return log.from_status ? '取消派单，回退待派单' : 'CRM 下发发运申请'
-  }
-  if (log.to_status === 'DISPATCHED') return log.from_status === 'CARRIER_ACCEPTED' ? '承运商取消接单' : '调度派单'
-  if (log.to_status === 'CARRIER_ACCEPTED') return '承运商接单 / 分配司机'
-  if (log.to_status === 'PICKED') return '司机提车发运'
-  if (log.to_status === 'OUTBOUND') return 'WMS 出库'
-  if (log.to_status === 'IN_TRANSIT') return '在途运输'
-  if (log.to_status === 'ARRIVED') return '司机到达'
-  if (log.to_status === 'FINISHED') return '任务完成'
-  if (log.to_status === 'CANCELLED') return 'CRM 取消'
-  return TASK_STATUS_LABELS[log.to_status] ?? log.to_status
 }
 
 function timelineContent(log: TaskStatusLog): string {
@@ -377,8 +362,8 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
                   v-for="(log, index) in statusLogs"
                   :key="log.id ?? index"
                   :type="timelineType(log)"
-                  :title="timelineNodeName(log)"
-                  :time="log.create_time ? datetimeFull(log.create_time) : undefined"
+                  :title="log.to_status_name || log.to_status"
+                  :time="log.create_time ? datetime(log.create_time) : undefined"
                 >
                   <div class="tl-body">
                     <div class="tl-text">{{ timelineContent(log) }}</div>

@@ -24,7 +24,7 @@ import { can } from '@/services/portal'
 import { listCarriers } from '@/services/carriers'
 import { exportShippingTasks, listShippingTasks } from '@/services/tasks'
 import { useDictionaryStore } from '@/stores/dictionary'
-import { dateOnly, dateShort, datetime } from '@/utils/format'
+import { dateOnly, datetime } from '@/utils/format'
 import type { ShippingTaskListItem, ShippingTaskQuery, TaskStatus } from '@/types/api'
 
 /** PageTable 实例句柄 */
@@ -321,25 +321,25 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
   {
     title: '计划提车日期',
     key: 'plan_pickup_date',
-    width: 108,
+    width: 120,
     render: (row) => (row.plan_pickup_date ? dateOnly(row.plan_pickup_date) : '-'),
   },
   {
     title: '发运时间',
     key: 'ship_time',
-    width: 130,
+    width: 180,
     render: (row) => (row.ship_time ? datetime(row.ship_time) : '-'),
   },
   {
     title: '出库日期',
     key: 'outbound_date',
-    width: 130,
+    width: 180,
     render: (row) => (row.outbound_date ? datetime(row.outbound_date) : '-'),
   },
   {
     title: '到达日期',
     key: 'arrive_time',
-    width: 130,
+    width: 180,
     render: (row) => (row.arrive_time ? datetime(row.arrive_time) : '-'),
   },
   {
@@ -374,8 +374,8 @@ const columns = computed<DataTableColumns<ShippingTaskListItem>>(() => [
   {
     title: '创建时间',
     key: 'create_time',
-    width: 92,
-    render: (row) => dateShort(row.create_time),
+    width: 180,
+    render: (row) => datetime(row.create_time),
   },
   {
     title: '操作',
@@ -443,26 +443,26 @@ function refreshList() {
     <n-card class="query-card" :bordered="false">
       <QueryBar>
         <QueryField label="任务单号">
-          <n-input v-model:value="filter.task_no" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+          <n-input v-model:value="filter.task_no" clearable placeholder="请输入任务单号" @keydown.enter="handleSearch" />
         </QueryField>
         <QueryField label="订单号">
-          <n-input v-model:value="filter.order_no" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+          <n-input v-model:value="filter.order_no" clearable placeholder="请输入订单号" @keydown.enter="handleSearch" />
         </QueryField>
-        <QueryField label="发运申请号">
-          <n-input v-model:value="filter.apply_no" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+        <QueryField v-show="filterExpanded" label="发运申请号">
+          <n-input v-model:value="filter.apply_no" clearable placeholder="请输入发运申请号" @keydown.enter="handleSearch" />
         </QueryField>
         <QueryField label="VIN">
-          <n-input v-model:value="filter.vin" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+          <n-input v-model:value="filter.vin" clearable placeholder="请输入 VIN" @keydown.enter="handleSearch" />
         </QueryField>
         <QueryField label="客户名称">
-          <n-input v-model:value="filter.customer_name" clearable placeholder="请输入" @keydown.enter="handleSearch" />
+          <n-input v-model:value="filter.customer_name" clearable placeholder="请输入客户名称" @keydown.enter="handleSearch" />
         </QueryField>
-        <QueryField v-show="filterExpanded" label="状态">
+        <QueryField label="状态">
           <n-select
             v-model:value="filter.status"
             clearable
             :options="statusOptions"
-            placeholder="全部状态"
+            placeholder="请选择状态"
           />
         </QueryField>
         <QueryField v-show="filterExpanded" label="承运商">
@@ -471,7 +471,7 @@ function refreshList() {
             clearable
             filterable
             :options="carrierOptions"
-            placeholder="全部承运商"
+            placeholder="请选择承运商"
           />
         </QueryField>
         <QueryField v-show="filterExpanded" label="计划提车日期" wide>
@@ -491,41 +491,37 @@ function refreshList() {
           />
         </QueryField>
         <template #actions>
-          <n-button v-if="can('tasks:export')" :loading="exporting" @click="handleExport">导出</n-button>
-          <n-button @click="handleReset">重置</n-button>
-          <n-button type="primary" @click="handleSearch">查询</n-button>
           <n-button quaternary class="query-card__toggle" @click="filterExpanded = !filterExpanded">
             {{ filterExpanded ? '收起' : '展开' }}
             <span class="query-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
           </n-button>
+          <n-button @click="handleReset">重置</n-button>
+          <n-button type="primary" @click="handleSearch">查询</n-button>
         </template>
       </QueryBar>
     </n-card>
 
-    <!-- 工具栏 -->
-    <div class="table-toolbar">
-      <span class="table-toolbar__hint">
-        仅「待派单」状态可勾选批量派单；「已派单」可改派或取消派单（需司机未接单）
-      </span>
-      <n-button
-        v-if="can('tasks:dispatch')"
-        type="primary"
-        :disabled="checkedSelectable.length === 0"
-        @click="openBatchDispatch"
-      >
-        {{ checkedSelectable.length ? `批量派单（${checkedSelectable.length}）` : '批量派单' }}
-      </n-button>
-    </div>
-
     <!-- 列表 -->
     <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <span class="table-toolbar__hint">
+          仅「待派单」状态可勾选批量派单；「已派单」可改派或取消派单（需司机未接单）
+        </span>
+        <n-button
+          v-if="can('tasks:dispatch')"
+          type="primary"
+          :disabled="checkedSelectable.length === 0"
+          @click="openBatchDispatch"
+        >
+          {{ checkedSelectable.length ? `批量派单（${checkedSelectable.length}）` : '批量派单' }}
+        </n-button>
+      </div>
       <PageTable
         ref="tableRef"
         :columns="columns"
         :remote="fetchTasks"
         :query="applied"
-        :scroll-x="2116"
-        :init-page-size="20"
+        :scroll-x="2672"
       />
     </n-card>
 

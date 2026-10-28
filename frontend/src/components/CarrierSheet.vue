@@ -85,19 +85,19 @@ const sorted = computed(() =>
 .sheet__title {
   font-size: 15px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #2d3033;
 }
 .sheet__close {
   border: 0;
   background: transparent;
-  color: #8c8c8c;
+  color: #666666;
   font-size: 13px;
   cursor: pointer;
 }
 .sheet__tip {
   margin: 6px 0 12px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .sheet__item {
   display: flex;
@@ -106,14 +106,14 @@ const sorted = computed(() =>
   width: 100%;
   margin-bottom: 8px;
   padding: 12px;
-  border: 1px solid #eceff3;
+  border: 1px solid #eeeeee;
   border-radius: 8px;
   background: #fff;
   text-align: left;
   cursor: pointer;
 }
 .sheet__item.is-on {
-  border-color: #1a1a1a;
+  border-color: #2d3033;
   background: #fafafa;
 }
 .sheet__item:disabled {
@@ -128,26 +128,26 @@ const sorted = computed(() =>
   flex: 1;
   font-size: 14px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #2d3033;
 }
 .sheet__badge {
   padding: 1px 8px;
   border-radius: 10px;
-  background: #1a1a1a;
+  background: #2d3033;
   color: #fff;
   font-size: 11px;
 }
 .sheet__badge--muted {
-  background: #eef0f3;
-  color: #595959;
+  background: #eeeeee;
+  color: #666666;
 }
 .sheet__meta {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .sheet__empty {
   margin: 8px 0;
-  color: #8c8c8c;
+  color: #666666;
   font-size: 13px;
   text-align: center;
 }

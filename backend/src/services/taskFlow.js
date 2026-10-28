@@ -350,7 +350,53 @@ async function devWmsOutbound({ taskId }) {
   });
 }
 
+function statusLogName(log) {
+  if (log.to_status === 'WAIT_DISPATCH') {
+    return log.from_status ? '取消派单，回退待派单' : 'CRM 下发发运申请';
+  }
+  const names = {
+    PENDING: 'CRM 下发发运申请',
+    DISPATCHED: log.from_status === 'CARRIER_ACCEPTED' ? '承运商取消接单' : '调度派单',
+    CARRIER_ACCEPTED: '承运商接单 / 分配司机',
+    PICKED: '司机提车发运',
+    OUTBOUND: 'WMS 出库',
+    IN_TRANSIT: '在途运输',
+    ARRIVED: '司机到达',
+    FINISHED: '任务完成',
+    CANCELLED: 'CRM 取消',
+    FINISH_BY_CARRIER: '承运商结单',
+    FINISH_AFTER_NO_ESIGN: 'WMS 手动结单（无电子签）',
+  };
+  return names[log.to_status] || log.to_status;
+}
+
+function statusFromName(status) {
+  if (!status) return null;
+  const names = {
+    WAIT_DISPATCH: '待派单',
+    PENDING: '待提交',
+    DISPATCHED: '待接单',
+    CARRIER_ACCEPTED: '待提车',
+    PICKED: '已提车',
+    OUTBOUND: '已出库',
+    IN_TRANSIT: '在途',
+    ARRIVED: '待结单',
+    FINISHED: '任务完成',
+    CANCELLED: '已取消',
+  };
+  return names[status] || status;
+}
+
+function withStatusLogNames(logs) {
+  return logs.map((log) => ({
+    ...log,
+    from_status_name: statusFromName(log.from_status),
+    to_status_name: statusLogName(log),
+  }));
+}
+
 module.exports = {
+  withStatusLogNames,
   PICKUP_PHOTO_MIN,
   assignDriver,
   pickupTask,

@@ -10,7 +10,7 @@ import StatusBadge from '@/components/portal/StatusBadge.vue'
 import PhotoUploader from '@/components/portal/PhotoUploader.vue'
 import {
   devWmsOutbound, driverArrive, driverFinish, driverPickup,
-  fetchDriverTask, statusLabel,
+  fetchDriverTask,
 } from '@/services/portal'
 import type { PortalTaskDetail } from '@/services/portal'
 
@@ -43,7 +43,7 @@ const timeline = computed(() =>
   (detail.value?.status_logs ?? []).map((log) => ({
     id: log.id,
     time: log.create_time,
-    title: statusLabel(log.to_status),
+    title: log.to_status_name || log.to_status,
     source: log.source,
     operator: log.operator,
     remark: log.remark,
@@ -404,10 +404,10 @@ onMounted(load)
   margin: -12px -12px 12px;
   padding: 8px 12px;
   background: #fff;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   font-size: 14px;
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
   position: sticky;
   top: -12px;
   z-index: 3;
@@ -418,14 +418,14 @@ onMounted(load)
   border: none;
   background: transparent;
   font-size: 17px;
-  color: #595959;
+  color: #666666;
   cursor: pointer;
 }
 .ddetail__bar-right {
   width: 30px;
 }
 .ddetail__hero {
-  background: linear-gradient(135deg, #1677ff 0%, #0b5ed7 100%);
+  background: linear-gradient(135deg, #1890ff 0%, #087ae3 100%);
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(22, 119, 255, 0.16);
   padding: 16px;
@@ -490,13 +490,13 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1677ff;
+  color: #1890ff;
   background: #fff;
   margin-top: 1px;
   font-weight: 600;
 }
 .ddetail__pin--to {
-  color: #389e0d;
+  color: #18a058;
 }
 .ddetail__route-line {
   width: 2px;
@@ -521,17 +521,17 @@ onMounted(load)
   font-size: 13px;
 }
 .ddetail__row span {
-  color: #8c8c8c;
+  color: #666666;
   flex: none;
 }
 .ddetail__row b {
   font-weight: 500;
-  color: #262626;
+  color: #2d3033;
   text-align: right;
   word-break: break-all;
 }
 .ddetail__money {
-  color: #fa8c16 !important;
+  color: #f0a020 !important;
   font-weight: 600 !important;
 }
 .ddetail__action {
@@ -543,7 +543,7 @@ onMounted(load)
 }
 .ddetail__hint {
   font-size: 12px;
-  color: #595959;
+  color: #666666;
   line-height: 1.6;
   margin-bottom: 12px;
 }
@@ -555,15 +555,15 @@ onMounted(load)
   margin-top: 10px;
   padding: 9px 10px;
   background: #fafafa;
-  border: 1px solid #f0f0f0;
+  border: 1px solid #eeeeee;
   border-radius: 4px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .ddetail__tabs {
   display: flex;
   gap: 24px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   margin-bottom: 14px;
 }
 .ddetail__tab {
@@ -573,12 +573,12 @@ onMounted(load)
   background: none;
   font-size: 14px;
   font-weight: 500;
-  color: #8c8c8c;
+  color: #666666;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 .ddetail__tab--active {
-  color: #262626;
+  color: #2d3033;
   font-weight: 600;
 }
 .ddetail__tab--active::after {
@@ -590,7 +590,7 @@ onMounted(load)
   width: 20px;
   height: 3px;
   border-radius: 2px;
-  background: #1677ff;
+  background: #1890ff;
 }
 .ddetail__toggle {
   display: flex;
@@ -601,10 +601,10 @@ onMounted(load)
   margin-top: 12px;
   padding: 8px 0;
   border: none;
-  border-top: 1px solid #f5f5f5;
+  border-top: 1px solid #fafafa;
   background: none;
   font-size: 12px;
-  color: #1677ff;
+  color: #1890ff;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -622,7 +622,7 @@ onMounted(load)
 .dvehicle__block + .dvehicle__block {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid #f5f5f5;
+  border-top: 1px solid #fafafa;
 }
 .dvehicle__row {
   display: flex;
@@ -633,12 +633,12 @@ onMounted(load)
   font-size: 13px;
 }
 .dvehicle__row span {
-  color: #8c8c8c;
+  color: #666666;
   flex: none;
 }
 .dvehicle__row b {
   font-weight: 500;
-  color: #262626;
+  color: #2d3033;
   text-align: right;
   word-break: break-all;
 }
@@ -654,7 +654,7 @@ onMounted(load)
   border-radius: 6px;
   overflow: hidden;
   background: #fafafa;
-  border: 1px solid #f0f0f0;
+  border: 1px solid #eeeeee;
 }
 .dlog__photo img {
   width: 100%;
@@ -665,14 +665,14 @@ onMounted(load)
 .ddetail__title {
   font-size: 14px;
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
   margin-bottom: 12px;
 }
 .ddetail__empty {
   padding: 24px 0;
   text-align: center;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .dlog {
   display: flex;
@@ -691,7 +691,7 @@ onMounted(load)
   bottom: 0;
   width: 2px;
   border-radius: 1px;
-  background: #f0f0f0;
+  background: #eeeeee;
 }
 .dlog:last-child::before {
   display: none;
@@ -704,32 +704,32 @@ onMounted(load)
   border-radius: 50%;
   position: relative;
   z-index: 1;
-  background: #1677ff;
-  box-shadow: 0 0 0 3px #e6f4ff;
+  background: #1890ff;
+  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.1);
 }
 .dlog__dot--CRM {
-  background: #722ed1;
-  box-shadow: 0 0 0 3px #f9f0ff;
+  background: #2080f0;
+  box-shadow: 0 0 0 3px rgba(32, 128, 240, 0.1);
 }
 .dlog__dot--STP {
-  background: #1677ff;
-  box-shadow: 0 0 0 3px #e6f4ff;
+  background: #1890ff;
+  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.1);
 }
 .dlog__dot--CARRIER {
-  background: #fa8c16;
-  box-shadow: 0 0 0 3px #fff7e6;
+  background: #f0a020;
+  box-shadow: 0 0 0 3px rgba(240, 160, 32, 0.12);
 }
 .dlog__dot--DRIVER {
-  background: #389e0d;
-  box-shadow: 0 0 0 3px #f6ffed;
+  background: #18a058;
+  box-shadow: 0 0 0 3px rgba(24, 160, 88, 0.1);
 }
 .dlog__dot--WMS {
-  background: #08979c;
-  box-shadow: 0 0 0 3px #e6fffb;
+  background: #2080f0;
+  box-shadow: 0 0 0 3px rgba(32, 128, 240, 0.1);
 }
 .dlog__dot--SQ {
-  background: #fa541c;
-  box-shadow: 0 0 0 3px #fff2e8;
+  background: #f0a020;
+  box-shadow: 0 0 0 3px rgba(240, 160, 32, 0.12);
 }
 .dlog__body {
   flex: 1;
@@ -744,11 +744,11 @@ onMounted(load)
 .dlog__title {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
 }
 .dlog__time {
   font-size: 11px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .dlog__meta {
   margin-top: 4px;
@@ -756,7 +756,7 @@ onMounted(load)
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .dlog__chip {
   padding: 1px 6px;
@@ -764,41 +764,41 @@ onMounted(load)
   font-size: 10px;
   font-weight: 600;
   line-height: 1.5;
-  background: #e6f4ff;
-  color: #1677ff;
+  background: rgba(24, 144, 255, 0.1);
+  color: #1890ff;
 }
 .dlog__chip--CRM {
-  background: #f9f0ff;
-  color: #722ed1;
+  background: rgba(32, 128, 240, 0.1);
+  color: #2080f0;
 }
 .dlog__chip--STP {
-  background: #e6f4ff;
-  color: #1677ff;
+  background: rgba(24, 144, 255, 0.1);
+  color: #1890ff;
 }
 .dlog__chip--CARRIER {
-  background: #fff7e6;
-  color: #fa8c16;
+  background: rgba(240, 160, 32, 0.12);
+  color: #f0a020;
 }
 .dlog__chip--DRIVER {
-  background: #f6ffed;
-  color: #389e0d;
+  background: rgba(24, 160, 88, 0.1);
+  color: #18a058;
 }
 .dlog__chip--WMS {
-  background: #e6fffb;
-  color: #08979c;
+  background: rgba(32, 128, 240, 0.1);
+  color: #2080f0;
 }
 .dlog__chip--SQ {
-  background: #fff2e8;
-  color: #fa541c;
+  background: rgba(240, 160, 32, 0.12);
+  color: #f0a020;
 }
 .dlog__operator {
-  color: #595959;
+  color: #666666;
 }
 .dlog__remark {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.6;
-  color: #595959;
+  color: #666666;
 }
 .sheet {
   position: fixed;
@@ -846,15 +846,15 @@ onMounted(load)
   padding: 16px;
   font-size: 15px;
   font-weight: 600;
-  color: #262626;
-  border-bottom: 1px solid #f5f5f5;
+  color: #2d3033;
+  border-bottom: 1px solid #fafafa;
 }
 .sheet__close {
   border: none;
   background: transparent;
   font-size: 20px;
   line-height: 1;
-  color: #8c8c8c;
+  color: #666666;
   cursor: pointer;
 }
 .sheet__body {
@@ -864,7 +864,7 @@ onMounted(load)
 }
 .sheet__label {
   font-size: 12px;
-  color: #595959;
+  color: #666666;
   margin: 14px 0 8px;
 }
 .sheet__label:first-child {
@@ -872,26 +872,26 @@ onMounted(load)
 }
 .sheet__label em {
   font-style: normal;
-  color: #f5222d;
+  color: #d03050;
   font-size: 11px;
 }
 .sheet__plan {
   font-size: 12px;
-  color: #595959;
+  color: #666666;
   background: #fafafa;
   border-radius: 4px;
   padding: 9px 11px;
   margin-bottom: 4px;
 }
 .sheet__plan b {
-  color: #fa8c16;
+  color: #f0a020;
 }
 .sheet__footer {
   flex: none;
   display: flex;
   gap: 10px;
   padding: 10px 16px 14px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #eeeeee;
 }
 .sheet__btn {
   flex: 1;

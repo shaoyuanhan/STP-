@@ -246,7 +246,7 @@ function bubbleHtml(bubble: MapBubble): string {
   const dot = `<span style="position:absolute;left:0;top:0;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:${dotColor};box-shadow:0 0 0 2px #fff"></span>`
   if (bubble.hideCount) return markerBox(dot)
   const numColor = alertCount > 0 ? '#d03050' : '#1890ff'
-  const nameColor = bubble.active ? '#f0a020' : '#334155'
+  const nameColor = bubble.active ? '#f0a020' : '#2d3033'
   const label = bubble.name
     ? `<span style="position:absolute;left:8px;top:0;transform:translateY(-50%);white-space:nowrap;font:500 12px/1.2 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:${nameColor};text-shadow:0 0 2px #fff,0 0 3px #fff,1px 0 #fff,-1px 0 #fff,0 1px #fff,0 -1px #fff">${bubble.name}<span style="margin-left:4px;font-weight:600;color:${numColor}">${count}</span></span>`
     : ''
@@ -336,8 +336,8 @@ function districtStyles() {
   const highlighted = new Set(props.provincesHL ?? [])
   const max = showHeat && heat ? Math.max(0, ...Object.values(heat)) : 0
   return {
-    'nation-stroke': '#94a3b8',
-    'coastline-stroke': '#94a3b8',
+    'nation-stroke': '#999999',
+    'coastline-stroke': '#999999',
     'province-stroke': 'rgba(148,163,184,.85)',
     fill: (feature: { NAME_CHN?: string }) => {
       const name = shortProvince(String(feature?.NAME_CHN ?? ''))
@@ -383,7 +383,7 @@ function addLine(
   const alert = Boolean(opts.alert)
   const weight = opts.weight ?? (alert ? 4 : 3)
   const color = opts.color ?? (alert ? '#d03050' : props.mode === 'history' ? '#369cfd' : '#1890ff')
-  const halo = opts.halo ?? (alert ? '#ffccc7' : '#91caff')
+  const halo = opts.halo ?? (alert ? 'rgba(208, 48, 80, 0.25)' : 'rgba(24, 144, 255, 0.4)')
   const dash = opts.dashed ? { strokeStyle: 'dashed' as const, strokeDasharray: [10, 8] } : {}
   if (halo !== 'transparent') {
     map.add(
@@ -570,11 +570,11 @@ function paintDetail(AMap: Awaited<ReturnType<typeof loadAmap>>) {
   if (cur) traveled.push([cur.lng, cur.lat])
   const tail = traveled[traveled.length - 1]
   if (props.arrived && dest) traveled.push([dest.lng, dest.lat])
-  addLine(AMap, traveled, { color: '#1890ff', halo: '#91caff', weight: 4 })
+  addLine(AMap, traveled, { color: '#1890ff', halo: 'rgba(24, 144, 255, 0.4)', weight: 4 })
   if (!props.arrived && dest && tail) {
     const remain: Array<[number, number]> = [tail, [dest.lng, dest.lat]]
     const dist = Math.hypot(dest.lng - tail[0], dest.lat - tail[1])
-    if (dist > 0.02) addLine(AMap, remain, { color: '#94a3b8', halo: 'transparent', dashed: true, weight: 3 })
+    if (dist > 0.02) addLine(AMap, remain, { color: '#999999', halo: 'transparent', dashed: true, weight: 3 })
   }
 
   if (origin) {
@@ -613,7 +613,7 @@ function paintDetail(AMap: Awaited<ReturnType<typeof loadAmap>>) {
 function labeledDot(color: string, label: string, place: 'top' | 'bottom'): string {
   const textTop = place === 'top' ? '-22px' : '12px'
   return markerBox(
-    `${circle(color, 14)}<div style="position:absolute;left:50%;top:${textTop};transform:translateX(-50%);white-space:nowrap;font:600 12px/1 sans-serif;color:#334155;text-shadow:0 0 3px #fff,0 0 3px #fff">${label}</div>`,
+    `${circle(color, 14)}<div style="position:absolute;left:50%;top:${textTop};transform:translateX(-50%);white-space:nowrap;font:600 12px/1 sans-serif;color:#2d3033;text-shadow:0 0 3px #fff,0 0 3px #fff">${label}</div>`,
   )
 }
 
@@ -858,7 +858,7 @@ defineExpose({ render, highlight, locate: () => focusActive(true) })
   position: relative;
   width: 100%;
   min-height: 320px;
-  background: #f4f7fb;
+  background: #f5f6fb;
   border-radius: 6px;
   overflow: hidden;
 }
@@ -948,12 +948,12 @@ defineExpose({ render, highlight, locate: () => focusActive(true) })
   padding: 24px;
   text-align: center;
   background: rgba(244, 247, 251, 0.94);
-  color: #334155;
+  color: #2d3033;
 }
 
 .china-map__mask b {
   font-size: 15px;
-  color: #0f172a;
+  color: #2d3033;
 }
 
 .china-map__mask p {
@@ -966,7 +966,7 @@ defineExpose({ render, highlight, locate: () => focusActive(true) })
 .china-map__mask code {
   padding: 0 4px;
   border-radius: 3px;
-  background: #e6eef8;
+  background: #eeeeee;
   font-size: 12px;
 }
 
@@ -981,9 +981,9 @@ defineExpose({ render, highlight, locate: () => focusActive(true) })
   gap: 16px;
   padding: 8px 12px 8px 10px;
   font-size: 12px;
-  color: #334155;
+  color: #2d3033;
   background: rgba(255, 255, 255, 0.96);
-  border: 1px solid #e6eef5;
+  border: 1px solid #eeeeee;
   border-left: 3px solid #1890ff;
   border-radius: 10px;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);

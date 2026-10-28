@@ -14,7 +14,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getTrackingOverview, getTrackingTask } from '@/services/tracking'
 import type { TrackingOverviewTask, TrackingTask, TrackingTaskDetail, TransportTrack } from '@/types/api'
 import { matchCityGeo, matchProvince } from '@/lib/china-map'
-import { dateOnly, dateShort, datetime, datetimeFull, formatPhone, money } from '@/utils/format'
+import {dateOnly, dateShort, datetime, formatPhone, money} from '@/utils/format'
 import ChinaMap from '@/components/ChinaMap.vue'
 import StatusTag from '@/components/StatusTag.vue'
 
@@ -507,7 +507,7 @@ const mapLegend = computed(() => {
       { color: '#1890ff', text: '已行驶', kind: 'line' },
     ]
     if (!focusArrived.value) {
-      items.push({ color: '#94a3b8', text: '未行驶', kind: 'line' as const, dashed: true })
+      items.push({ color: '#999999', text: '未行驶', kind: 'line' as const, dashed: true })
     }
     items.push({ color: '#1890ff', text: '位置回传点（点击查看）', kind: 'dot' as const })
     if (selectedAbnormal.value) {
@@ -517,7 +517,7 @@ const mapLegend = computed(() => {
   }
   if (isHistory.value) {
     return [
-      { color: 'linear-gradient(90deg,#FFF7E6,#FFD591,#F0A020)', text: '到达热度（越深单量越多）', kind: 'line' as const },
+      { color: 'linear-gradient(90deg,rgba(240, 160, 32, 0.12),rgba(240, 160, 32, 0.35),#F0A020)', text: '到达热度（越深单量越多）', kind: 'line' as const },
       { color: '#1890ff', text: '历史轨迹（点击定位运单）', kind: 'line' as const },
       { color: '#1890ff', text: '圆点为目的地，城市名后的数字为同城单量', kind: 'dot' as const },
     ]
@@ -1214,7 +1214,7 @@ function onMapHover(id: number | null) {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: #94a3b8;
+  background: #999999;
 }
 
 .kpi--blue::before,
@@ -1238,8 +1238,8 @@ function onMapHover(id: number | null) {
 }
 
 .kpi--danger.is-on {
-  background: #fff1f0;
-  box-shadow: inset 0 0 0 1px #ffccc7;
+  background: rgba(208, 48, 80, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(208, 48, 80, 0.25);
 }
 
 .kpi__value--danger {
@@ -1248,7 +1248,7 @@ function onMapHover(id: number | null) {
 
 .kpi__label {
   font-size: 12px;
-  color: #64748b;
+  color: #999999;
 }
 
 .kpi__value {
@@ -1256,20 +1256,20 @@ function onMapHover(id: number | null) {
   font-size: 26px;
   font-weight: 700;
   line-height: 1.15;
-  color: #0f172a;
+  color: #2d3033;
 }
 
 .kpi__value > span {
   margin-left: 4px;
   font-size: 12px;
   font-weight: 400;
-  color: #64748b;
+  color: #999999;
 }
 
 .kpi__sub {
   margin-top: 5px;
   font-size: 12px;
-  color: #64748b;
+  color: #999999;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1315,7 +1315,7 @@ function onMapHover(id: number | null) {
   height: 22px;
   padding: 0 8px;
   border-radius: 11px;
-  background: #e6f4ff;
+  background: rgba(24, 144, 255, 0.1);
   color: #1890ff;
   font-size: 12px;
 }
@@ -1374,7 +1374,7 @@ function onMapHover(id: number | null) {
 }
 
 .ov-row.selected {
-  background: #f0f7ff;
+  background: rgba(24, 144, 255, 0.08);
   border-left: 3px solid #1890ff;
   padding-left: 11px;
 }
@@ -1385,15 +1385,15 @@ function onMapHover(id: number | null) {
 }
 
 .ov-row.is-hot:not(.selected) {
-  background: #f5f9ff;
+  background: rgba(24, 144, 255, 0.06);
 }
 
 .ov-row.is-alert.is-hot:not(.selected) {
-  background: #fff7f6;
+  background: rgba(208, 48, 80, 0.06);
 }
 
 .ov-row.is-alert.selected {
-  background: #fff1f0;
+  background: rgba(208, 48, 80, 0.08);
   border-left-color: #d03050;
 }
 
@@ -1409,7 +1409,7 @@ function onMapHover(id: number | null) {
   height: 18px;
   padding: 0 6px;
   border-radius: 9px;
-  background: #fff1f0;
+  background: rgba(208, 48, 80, 0.08);
   color: #d03050;
   font-size: 11px;
   font-weight: 500;
@@ -1617,8 +1617,8 @@ function onMapHover(id: number | null) {
 }
 
 .ov-block--alert {
-  border-color: #ffccc7;
-  background: #fff8f7;
+  border-color: rgba(208, 48, 80, 0.25);
+  background: rgba(208, 48, 80, 0.06);
 }
 
 .ov-block--alert .ov-block__head em {
@@ -1634,7 +1634,7 @@ function onMapHover(id: number | null) {
   position: relative;
   height: 6px;
   margin: 24px 6px 30px;
-  background: #e5e6eb;
+  background: #eeeeee;
   border-radius: 3px;
 }
 
@@ -1814,7 +1814,7 @@ function onMapHover(id: number | null) {
 }
 
 .ov-table tbody tr.active {
-  background: #e8f3ff;
+  background: rgba(24, 144, 255, 0.12);
   box-shadow: inset 3px 0 0 #1890ff;
 }
 

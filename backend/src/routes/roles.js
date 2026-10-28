@@ -6,7 +6,7 @@ const { Router } = require('express');
 const { query } = require('../db');
 const { wrap, ok, pageOf, pageData, errParam, errBiz, errNotFound } = require('../helpers');
 const { requireAuth } = require('../services/security');
-const { MODULES, MATERIALS, ALL_CODES, accountTypeOf, loadAccess } = require('../services/access');
+const { MODULES, ALL_CODES, accountTypeOf, loadAccess } = require('../services/access');
 
 const router = Router();
 router.use(requireAuth(['ADMIN']));
@@ -22,7 +22,7 @@ router.get('/catalog', wrap(async (req, res) => {
   const carriers = await query(
     'SELECT id, carrier_name FROM carrier WHERE deleted = 0 AND status = 1 ORDER BY id'
   );
-  ok(res, { modules: MODULES, materials: MATERIALS, carriers });
+  ok(res, { modules: MODULES, carriers });
 }));
 
 router.get('/', wrap(async (req, res) => {
@@ -73,7 +73,6 @@ router.get('/:id', wrap(async (req, res) => {
     permissions: perms.map((row) => row.perm_code),
     carrier_ids: data.filter((row) => row.data_type === 'CARRIER' && row.data_value !== '*').map((row) => Number(row.data_value)),
     carrier_all: data.some((row) => row.data_type === 'CARRIER' && row.data_value === '*'),
-    materials: data.filter((row) => row.data_type === 'MATERIAL').map((row) => row.data_value),
   });
 }));
 
@@ -123,6 +122,9 @@ router.put('/:id', wrap(async (req, res) => {
   if (Number(current.builtin) === 1 && role.roleKind !== current.role_kind) {
     throw errBiz('内置角色不能改类型');
   }
+  if (Number(current.builtin) === 1 && current.role_kind === 'SUPER' && role.status === 0) {
+    throw errBiz('内置超级管理员角色不能停用');
+  }
   await query(
     'UPDATE sys_role SET role_name = ?, role_kind = ?, remark = ?, status = ? WHERE id = ?',
     [role.roleName, role.roleKind, role.remark, role.status, id]
@@ -135,23 +137,30 @@ router.put('/:id', wrap(async (req, res) => {
 router.put('/:id/permissions', wrap(async (req, res) => {
   await assertPerm(req, 'roles:perm');
   const id = Number(req.params.id);
-  const rows = await query('SELECT * FROM sys_role WHERE id = ? AND deleted = 0', [id]);
+  const rows = await query('SELECT id FROM sys_role WHERE id = ? AND deleted = 0', [id]);
   if (!rows.length) throw errNotFound('角色不存在');
-  const role = rows[0];
   const permissions = [...new Set((req.body.permissions || []).map((code) => String(code)))].filter((code) => ALL_CODES.includes(code));
-  const carrierAll = Boolean(req.body.carrier_all);
-  const carrierIds = [...new Set((req.body.carrier_ids || []).map((value) => Number(value)).filter((value) => value > 0))];
-  const materials = [...new Set((req.body.materials || []).map((value) => String(value)))].filter((value) => value === 'FINISHED' || value === 'LOOSE');
-  const scopeAll = role.role_kind === 'SUPER' || role.role_kind === 'PLATFORM';
-  if (!carrierAll && scopeAll && !carrierIds.length) {
-    throw errParam('请选择承运商，或勾选全部承运商');
-  }
-  if (!materials.length) throw errParam('请至少选择一种物料类型');
 
   await query('DELETE FROM sys_role_perm WHERE role_id = ?', [id]);
   for (const code of permissions) {
     await query('INSERT INTO sys_role_perm (role_id, perm_code) VALUES (?, ?)', [id, code]);
   }
+  ok(res, { id }, '功能权限已保存');
+}));
+
+router.put('/:id/data-scope', wrap(async (req, res) => {
+  await assertPerm(req, 'roles:perm');
+  const id = Number(req.params.id);
+  const rows = await query('SELECT * FROM sys_role WHERE id = ? AND deleted = 0', [id]);
+  if (!rows.length) throw errNotFound('角色不存在');
+  const role = rows[0];
+  const carrierAll = Boolean(req.body.carrier_all);
+  const carrierIds = [...new Set((req.body.carrier_ids || []).map((value) => Number(value)).filter((value) => value > 0))];
+  const scopeAll = role.role_kind === 'SUPER' || role.role_kind === 'PLATFORM';
+  if (!carrierAll && scopeAll && !carrierIds.length) {
+    throw errParam('请选择承运商，或勾选全部承运商');
+  }
+
   await query('DELETE FROM sys_role_data WHERE role_id = ?', [id]);
   if (carrierAll || !scopeAll) {
     await query('INSERT INTO sys_role_data (role_id, data_type, data_value) VALUES (?, \'CARRIER\', \'*\')', [id]);
@@ -160,10 +169,7 @@ router.put('/:id/permissions', wrap(async (req, res) => {
       await query('INSERT INTO sys_role_data (role_id, data_type, data_value) VALUES (?, \'CARRIER\', ?)', [id, String(carrierId)]);
     }
   }
-  for (const material of materials) {
-    await query('INSERT INTO sys_role_data (role_id, data_type, data_value) VALUES (?, \'MATERIAL\', ?)', [id, material]);
-  }
-  ok(res, { id }, '权限已保存');
+  ok(res, { id }, '数据权限已保存');
 }));
 
 module.exports = router;

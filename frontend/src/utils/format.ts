@@ -11,7 +11,7 @@ export function money(
   value: number | string | null | undefined,
   options: { placeholder?: string } = {},
 ): string {
-  const { placeholder = '--' } = options
+  const { placeholder = '-' } = options
   if (value === null || value === undefined || value === '') return placeholder
   const num = Number(value)
   if (!Number.isFinite(num)) return placeholder
@@ -44,18 +44,11 @@ function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n)
 }
 
-/** 完整日期时间：YYYY-MM-DD HH:mm；空值/非法值返回占位符 */
+/** 日期时间：YYYY-MM-DD HH:mm:ss；空值/非法值返回占位符 */
 export function datetime(value: unknown, placeholder = '-'): string {
   const d = parseDate(value)
   if (!d) return placeholder
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-/** 完整日期时间（含秒）：YYYY-MM-DD HH:mm:ss */
-export function datetimeFull(value: unknown, placeholder = '-'): string {
-  const d = parseDate(value)
-  if (!d) return placeholder
-  return `${datetime(d)}:${pad(d.getSeconds())}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 /** 短日期时间：MM-DD HH:mm（同年内省去年份） */

@@ -29,6 +29,7 @@ interface PageTableHandle {
 }
 
 const message = useMessage()
+const filterExpanded = ref(false)
 
 /**
  * 成功提示文案：优先用后端信封 message（正式环境由后端下发），
@@ -46,18 +47,17 @@ const filter = reactive<{
   contact_person: string
   contact_phone: string
   external_carrier_id: string
-  status: string | number
+  status: number | null
 }>({
   carrier_name: '',
   carrier_code: '',
   contact_person: '',
   contact_phone: '',
   external_carrier_id: '',
-  status: '', // '' 全部 / 1 合作中 / 0 已停用
+  status: null as number | null,
 })
 
 const statusOptions: SelectOption[] = [
-  { label: '全部', value: '' },
   { label: '合作中', value: 1 },
   { label: '已停用', value: 0 },
 ]
@@ -82,7 +82,7 @@ function buildAppliedQuery(): AppliedQuery {
     contact_person: trim(filter.contact_person),
     contact_phone: trim(filter.contact_phone),
     external_carrier_id: trim(filter.external_carrier_id),
-    status: filter.status === '' ? undefined : (Number(filter.status) as CarrierStatus),
+    status: filter.status === null ? undefined : (filter.status as CarrierStatus),
     _t: Date.now(),
   }
 }
@@ -97,7 +97,7 @@ function handleReset() {
   filter.contact_person = ''
   filter.contact_phone = ''
   filter.external_carrier_id = ''
-  filter.status = ''
+  filter.status = null
   applied.value = buildAppliedQuery()
 }
 
@@ -357,7 +357,7 @@ async function confirmStatusChange() {
         <QueryField label="承运商编码">
           <n-input v-model:value="filter.carrier_code" clearable placeholder="如 CAR-001" @keydown.enter="handleSearch" />
         </QueryField>
-        <QueryField label="第三方承运商ID">
+        <QueryField v-show="filterExpanded" label="第三方承运商ID">
           <n-input
             v-model:value="filter.external_carrier_id"
             clearable
@@ -368,43 +368,47 @@ async function confirmStatusChange() {
         <QueryField label="联系人">
           <n-input v-model:value="filter.contact_person" clearable placeholder="请输入联系人" @keydown.enter="handleSearch" />
         </QueryField>
-        <QueryField label="联系电话">
+        <QueryField v-show="filterExpanded" label="联系电话">
           <n-input v-model:value="filter.contact_phone" clearable placeholder="请输入联系电话" @keydown.enter="handleSearch" />
         </QueryField>
         <QueryField label="状态">
-          <n-select v-model:value="filter.status" :options="statusOptions" />
+          <n-select v-model:value="filter.status" clearable placeholder="请选择状态" :options="statusOptions" />
         </QueryField>
         <template #actions>
-          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+          <n-button quaternary class="query-card__toggle" @click="filterExpanded = !filterExpanded">
+            {{ filterExpanded ? '收起' : '展开' }}
+            <span class="query-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
+          </n-button>
           <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
         </template>
       </QueryBar>
     </n-card>
 
-    <!-- 工具栏 -->
-    <div class="table-toolbar">
-      <span class="table-toolbar__hint">
-        承运商编码由系统自动生成（CAR-XXX）；已停用的承运商不可被派单，在途运单不受影响
-      </span>
-      <n-button type="primary" @click="openForm(null)">新增承运商</n-button>
-    </div>
-
     <!-- 列表 -->
     <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <span class="table-toolbar__hint">
+          承运商编码由系统自动生成（CAR-XXX）；已停用的承运商不可被派单，在途运单不受影响
+        </span>
+        <div class="table-toolbar__actions">
+          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+          <n-button type="primary" @click="openForm(null)">新增承运商</n-button>
+        </div>
+      </div>
       <PageTable
         ref="tableRef"
         :columns="columns"
         :remote="fetchCarriers"
         :query="applied"
-        :scroll-x="1470"
+        :scroll-x="1530"
       />
     </n-card>
 
     <!-- 承运商详情 -->
     <n-drawer
       v-model:show="showDetail"
-      :width="'min(760px, 94vw)'"
+      :width="'min(860px, 94vw)'"
       placement="right"
     >
       <n-drawer-content title="承运商详情" closable :native-scrollbar="false">
@@ -452,8 +456,8 @@ async function confirmStatusChange() {
         :model="formModel"
         :rules="formRules"
         label-placement="left"
-        label-width="96"
-        require-mark-placement="right-hanging"
+        label-width="100"
+        require-mark-placement="left"
       >
         <n-form-item label="承运商编码" path="carrier_code">
           <div class="readonly-field">

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 承运商后台布局
- * 复用运营端设计规范：200px 深色侧栏（#1c2433 / 选中 #0e6e64）+ 44px 白色顶栏
+ * 复用运营端设计规范：220px 深色侧栏（#001529 / 选中 #1890ff）+ 60px 白色顶栏
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -190,17 +190,18 @@ function iconSvg(svgBody: string) {
 }
 .side {
   flex: none;
-  width: 200px;
-  background: #1c2433;
+  width: 220px;
+  background: #001529;
   display: flex;
   flex-direction: column;
   user-select: none;
 }
 .side__logo {
-  height: 54px;
+  height: 60px;
   flex: none;
   display: flex;
   align-items: center;
+  gap: 9px;
   padding: 0 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -213,33 +214,31 @@ function iconSvg(svgBody: string) {
 .side__menu {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 0 14px;
+  padding: 8px 0;
 }
 .side__group-title {
-  padding: 12px 14px 4px;
-  font-size: 11px;
-  color: #6b7c93;
+  padding: 12px 20px 4px;
+  font-size: 12px;
+  color: rgb(255 255 255 / 55%);
   letter-spacing: 1px;
 }
 .side__item {
-  height: 38px;
+  height: 44px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 14px;
-  margin: 1px 6px;
-  border-radius: 4px;
-  color: #aab4c2;
-  font-size: 13px;
+  padding: 0 20px;
+  margin: 0;
+  color: rgb(255 255 255 / 65%);
+  font-size: 14px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .side__item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
+  color: rgb(255 255 255 / 95%);
 }
 .side__item.is-active {
-  background: #0e6e64;
+  background: #1890ff;
   color: #fff;
 }
 .side__badge {
@@ -248,7 +247,7 @@ function iconSvg(svgBody: string) {
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: #f5222d;
+  background: #d03050;
   color: #fff;
   font-size: 10px;
   font-style: normal;
@@ -273,26 +272,26 @@ function iconSvg(svgBody: string) {
   flex-direction: column;
 }
 .topbar {
-  height: 44px;
+  height: 60px;
   flex: none;
   background: #fff;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 15px;
   user-select: none;
 }
 .topbar__crumb {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .topbar__crumb-sep {
-  color: #d9d9d9;
+  color: #999999;
 }
 .topbar__crumb-cur {
-  color: #595959;
+  color: #2d3033;
 }
 .topbar__right {
   margin-left: auto;
@@ -302,18 +301,18 @@ function iconSvg(svgBody: string) {
 }
 .topbar__carrier {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .topbar__user {
-  font-size: 13px;
-  color: #595959;
+  font-size: 14px;
+  color: #2d3033;
 }
 .topbar__avatar {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: #1677ff;
-  color: #fff;
+  background: #eae5e5;
+  color: #666666;
   font-size: 13px;
   display: flex;
   align-items: center;
@@ -323,10 +322,13 @@ function iconSvg(svgBody: string) {
 /* ---- 页签栏（同运营端 .tabs） ---- */
 .tabs {
   flex: none;
-  background: #e9edf2;
-  padding: 7px 10px;
+  height: 50px;
+  background: #ffffff;
+  border-bottom: 1px solid #eeeeee;
+  padding: 0 10px;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   overflow-x: auto;
   user-select: none;
 }
@@ -340,47 +342,49 @@ function iconSvg(svgBody: string) {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 30px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0 14px;
   border-radius: 4px;
   border: 1px solid transparent;
-  font-size: 13px;
-  color: #595959;
+  background: #f5f6fb;
+  font-size: 14px;
+  color: #2d3033;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .tabs__item:hover {
-  background: #e0e6ee;
+  background: #eeeeee;
 }
 
 .tabs__item.is-active {
-  background: #fff;
-  border-color: #dfe3e9;
-  color: #1677ff;
+  background: #1890ff;
+  border-color: #1890ff;
+  color: #ffffff;
 }
 
 .tabs__close {
   font-size: 11px;
   line-height: 1;
-  color: #8c8c8c;
+  color: #999999;
   padding: 2px;
   border-radius: 2px;
   transition: background 0.15s, color 0.15s;
 }
 
 .tabs__close:hover {
-  background: #d9d9d9;
-  color: #595959;
+  background: #eeeeee;
+  color: #666666;
 }
 
 .tabs__item.is-active .tabs__close {
-  color: #1677ff;
+  color: rgb(255 255 255 / 80%);
 }
 
 .tabs__item.is-active .tabs__close:hover {
-  background: rgba(22, 119, 255, 0.12);
+  background: rgb(255 255 255 / 22%);
+  color: #ffffff;
 }
 .content {
   flex: 1;
@@ -391,7 +395,7 @@ function iconSvg(svgBody: string) {
   width: 8px;
 }
 .content::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
+  background: #eeeeee;
   border-radius: 4px;
 }
 </style>

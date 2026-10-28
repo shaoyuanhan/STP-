@@ -69,7 +69,7 @@ function openDetail(task: PortalTask) {
       <div class="stat-grid">
         <div v-for="card in CARDS" :key="card.key" class="stat" @click="goTasks(card.key)">
           <div class="stat__label">{{ card.label }}</div>
-          <div class="stat__num" :style="card.warn ? { color: '#fa8c16' } : undefined">
+          <div class="stat__num" :style="card.warn ? { color: '#f0a020' } : undefined">
             {{ counts[card.key] ?? 0 }}
           </div>
           <div class="stat__sub">{{ card.hint }}</div>
@@ -157,14 +157,14 @@ function openDetail(task: PortalTask) {
 }
 
 .stat__label {
-  color: #8c8c8c;
+  color: #666666;
   font-size: 12px;
 }
 
 .stat__num {
   font-size: 24px;
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
   line-height: 1.25;
   margin: 5px 0 2px;
   font-variant-numeric: tabular-nums;
@@ -172,7 +172,7 @@ function openDetail(task: PortalTask) {
 
 .stat__sub {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 
 /* ---- 卡片 ---- */
@@ -194,19 +194,19 @@ function openDetail(task: PortalTask) {
   justify-content: space-between;
   align-items: center;
   padding: 13px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   font-weight: 600;
-  color: #262626;
+  color: #2d3033;
 }
 
 .link {
-  color: #1677ff;
+  color: #1890ff;
   cursor: pointer;
   font-weight: 400;
 }
 
 .link:hover {
-  color: #4096ff;
+  color: #369cfd;
 }
 
 /* ---- 最新任务表（同运营端） ---- */
@@ -222,18 +222,18 @@ table {
 
 th {
   background: #fafafa;
-  color: #595959;
+  color: #666666;
   font-weight: 500;
   text-align: left;
   padding: 11px 12px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eeeeee;
   white-space: nowrap;
 }
 
 td {
   padding: 10px 12px;
-  color: #262626;
-  border-bottom: 1px solid #f0f0f0;
+  color: #2d3033;
+  border-bottom: 1px solid #eeeeee;
   white-space: nowrap;
 }
 
@@ -260,7 +260,7 @@ tbody tr:last-child td {
 
 .empty-row {
   text-align: center;
-  color: #bfbfbf;
+  color: #999999;
   padding: 26px 0;
 }
 

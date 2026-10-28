@@ -97,7 +97,7 @@ async function submit() {
   <n-modal
     :show="show"
     preset="card"
-    style="width: 480px"
+    style="width: 600px"
     :title="`接单并指派司机${taskNo ? ` · ${taskNo}` : ''}`"
     :bordered="false"
     @update:show="emit('update:show', $event)"
@@ -118,8 +118,8 @@ async function submit() {
     </n-spin>
     <template #footer>
       <div class="assign__footer">
-        <n-button @click="close">取消</n-button>
         <n-button type="primary" :loading="submitting" @click="submit">确认接单</n-button>
+        <n-button @click="close">取消</n-button>
       </div>
     </template>
   </n-modal>
@@ -133,11 +133,11 @@ async function submit() {
 }
 .assign__empty {
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .assign__footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 20px;
 }
 </style>

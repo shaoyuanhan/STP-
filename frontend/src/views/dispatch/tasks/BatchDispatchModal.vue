@@ -123,7 +123,7 @@ const taskColumns: DataTableColumns<ShippingTaskListItem> = [
 
 const skippedColumns: DataTableColumns<BatchDispatchSkipped> = [
   { title: '任务单号', key: 'task_no', width: 150, render: (row) => row.task_no || '-' },
-  { title: '跳过原因', key: 'reason' },
+  { title: '跳过原因', key: 'reason', minWidth: 240, ellipsis: { tooltip: true } },
 ]
 
 // ---------------- 打开 / 提交 ----------------
@@ -200,7 +200,8 @@ async function handleSubmit() {
           :columns="taskColumns"
           :data="snapshot"
           :row-key="(row: ShippingTaskListItem) => row.id"
-          :bordered="true"
+          :bordered="false"
+          :single-line="false"
           size="small"
           :scroll-x="620"
         />
@@ -215,8 +216,8 @@ async function handleSubmit() {
           :model="form"
           :rules="rules"
           label-placement="left"
-          label-width="110px"
-          :show-require-mark="false"
+          label-width="100"
+          require-mark-placement="left"
         >
           <n-form-item label="承运商" path="carrier_id">
             <div class="batch-modal__field">
@@ -272,7 +273,8 @@ async function handleSubmit() {
           :data="result.skipped"
           :row-key="(row: BatchDispatchSkipped) => row.task_id"
           size="small"
-          :bordered="true"
+          :bordered="false"
+          :single-line="false"
         />
       </template>
     </div>
@@ -313,7 +315,7 @@ async function handleSubmit() {
   align-items: baseline;
   gap: 10px;
   padding: 8px 12px;
-  background: #f7f8fa;
+  background: #fafafa;
   border-radius: 4px;
   font-size: 14px;
   color: #666666;

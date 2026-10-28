@@ -1,13 +1,8 @@
 /**
  * 账号与角色分开。
- * 角色配置功能权限（模块 + 按钮）和数据权限（承运商运单范围、物料类型 成品/散件）。
+ * 角色配置功能权限（模块 + 按钮）和承运商运单数据权限。
  */
 const { query } = require('../db');
-
-const MATERIALS = [
-  { value: 'FINISHED', label: '成品' },
-  { value: 'LOOSE', label: '散件' },
-];
 
 /** 功能权限目录。kind 决定这组权限属于哪类登录端。 */
 const MODULES = [
@@ -169,8 +164,8 @@ async function ensureAccess() {
   await query(`CREATE TABLE IF NOT EXISTS sys_role_data (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     role_id BIGINT UNSIGNED NOT NULL,
-    data_type VARCHAR(16) NOT NULL COMMENT 'CARRIER/MATERIAL',
-    data_value VARCHAR(32) NOT NULL COMMENT '承运商ID、*、FINISHED、LOOSE',
+    data_type VARCHAR(16) NOT NULL COMMENT 'CARRIER',
+    data_value VARCHAR(32) NOT NULL COMMENT '承运商ID、*',
     PRIMARY KEY (id),
     UNIQUE KEY uk_role_data (role_id, data_type, data_value)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色数据权限'`);
@@ -218,6 +213,7 @@ async function ensureAccess() {
       id = ins.insertId;
     } else if (role.code === 'PLATFORM001') {
       await query('UPDATE sys_role SET role_kind = \'SUPER\' WHERE id = ? AND role_kind <> \'SUPER\'', [id]);
+      await query("UPDATE sys_role SET remark = REPLACE(remark, '超级管理元', '超级管理员') WHERE id = ? AND remark LIKE '%超级管理元%'", [id]);
     }
     const permCount = await query('SELECT COUNT(*) AS n FROM sys_role_perm WHERE role_id = ?', [id]);
     if (!Number(permCount[0].n)) {
@@ -229,11 +225,9 @@ async function ensureAccess() {
         await query('INSERT INTO sys_role_perm (role_id, perm_code) VALUES (?, ?)', [id, code]);
       }
     }
-    const dataCount = await query('SELECT COUNT(*) AS n FROM sys_role_data WHERE role_id = ?', [id]);
+    const dataCount = await query("SELECT COUNT(*) AS n FROM sys_role_data WHERE role_id = ? AND data_type = 'CARRIER'", [id]);
     if (!Number(dataCount[0].n)) {
       await query('INSERT INTO sys_role_data (role_id, data_type, data_value) VALUES (?, \'CARRIER\', \'*\')', [id]);
-      await query('INSERT INTO sys_role_data (role_id, data_type, data_value) VALUES (?, \'MATERIAL\', \'FINISHED\')', [id]);
-      await query('INSERT INTO sys_role_data (role_id, data_type, data_value) VALUES (?, \'MATERIAL\', \'LOOSE\')', [id]);
     }
   }
 
@@ -271,13 +265,11 @@ async function loadAccess(accountId) {
       roleKind: null,
       permissions: [],
       carriers: [],
-      materials: [],
     };
   }
   const perms = await query('SELECT perm_code FROM sys_role_perm WHERE role_id = ?', [account.role_id]);
   const data = await query('SELECT data_type, data_value FROM sys_role_data WHERE role_id = ?', [account.role_id]);
   const carrierValues = data.filter((row) => row.data_type === 'CARRIER').map((row) => row.data_value);
-  const materialValues = data.filter((row) => row.data_type === 'MATERIAL').map((row) => row.data_value);
   let carriers = carrierValues.includes('*') ? 'ALL' : carrierValues.map((value) => Number(value)).filter((id) => id > 0);
   if (account.role_kind === 'CARRIER') {
     const own = Number(account.carrier_id);
@@ -286,9 +278,6 @@ async function loadAccess(accountId) {
     else carriers = carriers.filter((id) => id === own);
   }
   if (account.role_kind === 'DRIVER') carriers = [];
-  const materials = materialValues.includes('*') || (materialValues.includes('FINISHED') && materialValues.includes('LOOSE'))
-    ? 'ALL'
-    : materialValues.filter((value) => value === 'FINISHED' || value === 'LOOSE');
   return {
     roleId: account.role_id,
     roleCode: account.role_code,
@@ -296,11 +285,10 @@ async function loadAccess(accountId) {
     roleKind: account.role_kind,
     permissions: perms.map((row) => row.perm_code),
     carriers,
-    materials,
   };
 }
 
-/** 把角色的承运商、物料范围追加到运单查询。未登录不限制（外部接口）。 */
+/** 把角色的承运商范围追加到运单查询。未登录不限制（外部接口）。 */
 function applyTaskScope(where, params, access) {
   if (!access) return;
   if (access.carriers !== 'ALL') {
@@ -310,17 +298,9 @@ function applyTaskScope(where, params, access) {
       params.push(...access.carriers);
     }
   }
-  if (access.materials !== 'ALL') {
-    if (!access.materials.length) where.push('1 = 0');
-    else {
-      where.push(`(t.material_type IS NULL OR t.material_type IN (${access.materials.map(() => '?').join(',')}))`);
-      params.push(...access.materials);
-    }
-  }
 }
 
 module.exports = {
-  MATERIALS,
   MODULES,
   ALL_CODES,
   codesOf,

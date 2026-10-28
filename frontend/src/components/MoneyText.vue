@@ -4,7 +4,7 @@
  *
  * 用法：<MoneyText :value="bill.actual_freight" />          → 1,234.56
  *      <MoneyText :value="plan_freight" prefix="¥" />       → ¥1,234.56
- *      <MoneyText :value="null" placeholder="--" />
+ *      <MoneyText :value="null" placeholder="-" />
  */
 
 import { computed } from 'vue'
@@ -24,7 +24,7 @@ const props = withDefaults(
   {
     value: null,
     prefix: '',
-    placeholder: '--',
+    placeholder: '-',
     bold: false,
   },
 )

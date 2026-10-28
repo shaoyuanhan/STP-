@@ -396,6 +396,7 @@ router.put('/:id', wrap(async (req, res) => {
   const id = Number(req.params.id);
   const [exist] = await query('SELECT * FROM driver WHERE id = ? AND deleted = 0', [id]);
   if (!exist) throw errNotFound('司机不存在');
+  if (Number(exist.source) === 2) throw errBiz('狮桥同步司机不可在平台编辑');
 
   // 姓名与身份证号不可修改（契约 5.3 / 既有需求 10）
   if (req.body.name !== undefined && String(req.body.name).trim() !== exist.driver_name) {

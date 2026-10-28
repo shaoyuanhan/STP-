@@ -4,12 +4,13 @@
  *
  * 用法：<StatusTag type="task" :value="row.status" />
  *
- * 支持五类状态（契约第 3/4 节）：
+ * 支持六类状态（契约第 3/4 节）：
  *  - task     任务状态（WAIT_DISPATCH…CANCELLED，契约 3.1 状态机）
  *  - carrier  承运商状态（tinyint 1 合作中 / 0 已停用）
  *  - driver   司机状态（tinyint 1 启用 / 0 停用）
  *  - reconcile 对账状态（tinyint 0 待对账 / 1 已对账）
  *  - esign    电子签状态（WAIT_SIGN / SIGNED / CANCELLED）
+ *  - enable   通用启停用（tinyint 1 启用 / 0 停用）
  *
  * 状态使用语义色文字，不叠加标签底色。
  *
@@ -22,7 +23,7 @@ import { useDictionaryStore } from '@/stores/dictionary'
 import type { DictKey } from '@/stores/dictionary'
 import type { EsignStatus, TaskStatus } from '@/types/api'
 
-type StatusKind = 'task' | 'carrier' | 'driver' | 'reconcile' | 'esign'
+type StatusKind = 'task' | 'carrier' | 'driver' | 'reconcile' | 'esign' | 'enable'
 type StatusColor = 'blue' | 'green' | 'orange' | 'red' | 'gray'
 
 interface StatusDisplay {
@@ -70,13 +71,17 @@ const ESIGN_STATUS_MAP: Record<EsignStatus, StatusDisplay> = {
   CANCELLED: { label: '已取消', color: 'red' },
 }
 
-/** 承运商/司机 tinyint 状态映射 */
-const ENABLE_STATUS_MAP: Record<'carrier' | 'driver', Record<'1' | '0', StatusDisplay>> = {
+/** 承运商/司机/账号/角色 tinyint 状态映射 */
+const ENABLE_STATUS_MAP: Record<'carrier' | 'driver' | 'enable', Record<'1' | '0', StatusDisplay>> = {
   carrier: {
     '1': { label: '合作中', color: 'green' },
     '0': { label: '已停用', color: 'red' },
   },
   driver: {
+    '1': { label: '启用', color: 'green' },
+    '0': { label: '停用', color: 'red' },
+  },
+  enable: {
     '1': { label: '启用', color: 'green' },
     '0': { label: '停用', color: 'red' },
   },
@@ -94,6 +99,7 @@ const DICT_KEY_OF: Record<StatusKind, DictKey> = {
   driver: 'driverStatus',
   reconcile: 'reconcileStatus',
   esign: 'esignStatus',
+  enable: 'driverStatus',
 }
 
 const display = computed<StatusDisplay>(() => {
@@ -110,7 +116,7 @@ const display = computed<StatusDisplay>(() => {
   } else if (props.type === 'esign') {
     const hit = ESIGN_STATUS_MAP[text as EsignStatus]
     if (hit) return hit
-  } else if (props.type === 'carrier' || props.type === 'driver') {
+  } else if (props.type === 'carrier' || props.type === 'driver' || props.type === 'enable') {
     const num = Number(value)
     if (Number.isFinite(num) && (num === 0 || num === 1)) {
       return ENABLE_STATUS_MAP[props.type][num === 1 ? '1' : '0']

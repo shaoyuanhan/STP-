@@ -231,7 +231,7 @@ async function onPasswordSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #e8eaed;
+  background: #eeeeee;
 }
 .mini__phone {
   width: min(390px, 100%);
@@ -251,7 +251,7 @@ async function onPasswordSubmit() {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #1a1a1a;
+  color: #2d3033;
   font-size: 26px;
   font-weight: 700;
   letter-spacing: 2px;
@@ -259,11 +259,11 @@ async function onPasswordSubmit() {
 .mini__brand svg {
   width: 30px;
   height: 30px;
-  fill: #1a1a1a;
+  fill: #2d3033;
 }
 .mini__title {
   margin: 8px 0 22px;
-  color: #8c8c8c;
+  color: #666666;
   font-size: 13px;
   text-align: center;
 }
@@ -276,14 +276,14 @@ input {
   width: 100%;
   height: 42px;
   padding: 0 12px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid #eeeeee;
   border-radius: 4px;
   font-size: 14px;
   outline: none;
   box-sizing: border-box;
 }
 input:focus {
-  border-color: #1a1a1a;
+  border-color: #2d3033;
 }
 .mini__code {
   position: relative;
@@ -298,15 +298,15 @@ input:focus {
   right: 6px;
   height: 30px;
   min-width: 96px;
-  border: 1px solid #d9d9d9;
+  border: 1px solid #eeeeee;
   border-radius: 4px;
   background: #fff;
-  color: #1a1a1a;
+  color: #2d3033;
   font-size: 12px;
   cursor: pointer;
 }
 .mini__send:disabled {
-  color: #bfbfbf;
+  color: #999999;
   cursor: default;
 }
 button[type='submit'] {
@@ -314,7 +314,7 @@ button[type='submit'] {
   margin-top: 6px;
   border: 0;
   border-radius: 4px;
-  background: #1a1a1a;
+  background: #2d3033;
   color: #fff;
   font-size: 15px;
   letter-spacing: 6px;
@@ -330,13 +330,13 @@ button[type='submit']:disabled {
 .mini__switch button {
   border: 0;
   background: transparent;
-  color: #595959;
+  color: #666666;
   font-size: 12px;
   cursor: pointer;
 }
 .mini__copy {
   margin: 28px 0 0;
-  color: #c0c4cc;
+  color: #999999;
   font-size: 12px;
   text-align: center;
 }

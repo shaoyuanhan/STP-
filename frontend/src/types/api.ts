@@ -351,7 +351,10 @@ export interface TaskStatusLog {
   task_id: number
   task_no?: string
   from_status?: TaskStatus | null
+  from_status_name?: string | null
   to_status: TaskStatus
+  /** 后端按 from_status / to_status 生成的时间轴节点名称 */
+  to_status_name?: string
   source?: StatusLogSource
   operator?: string | null
   remark?: string | null

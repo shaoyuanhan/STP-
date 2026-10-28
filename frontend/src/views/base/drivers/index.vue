@@ -46,6 +46,7 @@ interface DriverRow extends Omit<Driver, 'name'> {
 }
 
 const message = useMessage()
+const filterExpanded = ref(false)
 
 /**
  * 成功提示文案：优先用后端信封 message（正式环境由后端下发），
@@ -70,20 +71,19 @@ const filter = reactive<{
   id_card: string
   license_no: string
   external_driver_id: string
-  carrier_id: string | number
-  status: string | number
+  carrier_id: number | null
+  status: number | null
 }>({
   driver_name: '',
   phone: '',
   id_card: '',
   license_no: '',
   external_driver_id: '',
-  carrier_id: '', // '' 全部
-  status: '',
+  carrier_id: null,
+  status: null,
 })
 
 const filterStatusOptions: SelectOption[] = [
-  { label: '全部', value: '' },
   { label: '启用', value: 1 },
   { label: '停用', value: 0 },
 ]
@@ -111,8 +111,8 @@ function buildAppliedQuery(): AppliedQuery {
     id_card: trim(filter.id_card),
     license_no: trim(filter.license_no),
     external_driver_id: trim(filter.external_driver_id),
-    carrier_id: filter.carrier_id === '' ? undefined : Number(filter.carrier_id),
-    status: filter.status === '' ? undefined : (Number(filter.status) as DriverStatus),
+    carrier_id: filter.carrier_id === null ? undefined : filter.carrier_id,
+    status: filter.status === null ? undefined : (filter.status as DriverStatus),
     _t: Date.now(),
   }
 }
@@ -127,8 +127,8 @@ function handleReset() {
   filter.id_card = ''
   filter.license_no = ''
   filter.external_driver_id = ''
-  filter.carrier_id = ''
-  filter.status = ''
+  filter.carrier_id = null
+  filter.status = null
   applied.value = buildAppliedQuery()
 }
 
@@ -288,11 +288,15 @@ const columns: DataTableColumns<DriverRow> = [
           { size: 'small', quaternary: true, type: 'primary', onClick: () => openDetail(row) },
           { default: () => '详情' },
         ),
-        h(
-          NButton,
-          { size: 'small', quaternary: true, type: 'primary', onClick: () => openForm(row) },
-          { default: () => '编辑' },
-        ),
+        ...(Number(row.source) === 1
+          ? [
+              h(
+                NButton,
+                { size: 'small', quaternary: true, type: 'primary', onClick: () => openForm(row) },
+                { default: () => '编辑' },
+              ),
+            ]
+          : []),
         h(
           NButton,
           {
@@ -499,13 +503,13 @@ onActivated(loadCarrierOptions)
         <QueryField label="手机号">
           <n-input v-model:value="filter.phone" clearable placeholder="请输入手机号" @keydown.enter="handleSearch" />
         </QueryField>
-        <QueryField label="身份证号">
+        <QueryField v-show="filterExpanded" label="身份证号">
           <n-input v-model:value="filter.id_card" clearable placeholder="请输入身份证号" @keydown.enter="handleSearch" />
         </QueryField>
-        <QueryField label="驾驶证号">
+        <QueryField v-show="filterExpanded" label="驾驶证号">
           <n-input v-model:value="filter.license_no" clearable placeholder="请输入驾驶证号" @keydown.enter="handleSearch" />
         </QueryField>
-        <QueryField label="第三方司机ID">
+        <QueryField v-show="filterExpanded" label="第三方司机ID">
           <n-input
             v-model:value="filter.external_driver_id"
             clearable
@@ -516,39 +520,44 @@ onActivated(loadCarrierOptions)
         <QueryField label="所属承运商">
           <n-select
             v-model:value="filter.carrier_id"
-            :options="[{ label: '全部', value: '' }, ...carrierOptions]"
+            clearable
+            filterable
+            placeholder="请选择承运商"
+            :options="carrierOptions"
           />
         </QueryField>
         <QueryField label="状态">
-          <n-select v-model:value="filter.status" :options="filterStatusOptions" />
+          <n-select v-model:value="filter.status" clearable placeholder="请选择状态" :options="filterStatusOptions" />
         </QueryField>
         <template #actions>
-          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+          <n-button quaternary class="query-card__toggle" @click="filterExpanded = !filterExpanded">
+            {{ filterExpanded ? '收起' : '展开' }}
+            <span class="query-card__caret" :class="{ 'is-open': filterExpanded }">▾</span>
+          </n-button>
           <n-button @click="handleReset">重置</n-button>
           <n-button type="primary" @click="handleSearch">查询</n-button>
         </template>
       </QueryBar>
     </n-card>
 
-    <!-- 工具栏 -->
-    <div class="table-toolbar">
-      <span class="table-toolbar__hint">
-        司机信息支持系统录入与狮桥同步；姓名与身份证号创建后不可修改；停用后不可派新任务，不影响在途运单
-      </span>
-      <div class="table-toolbar__actions">
-        <n-button @click="openImport">Excel 导入</n-button>
-        <n-button type="primary" @click="openForm(null)">新增司机</n-button>
-      </div>
-    </div>
-
     <!-- 列表 -->
     <n-card class="table-card" :bordered="false">
+      <div class="table-toolbar">
+        <span class="table-toolbar__hint">
+          司机信息支持系统录入与狮桥同步；姓名与身份证号创建后不可修改；停用后不可派新任务，不影响在途运单
+        </span>
+        <div class="table-toolbar__actions">
+          <n-button :loading="exporting" @click="handleExport">导出</n-button>
+          <n-button @click="openImport">Excel 导入</n-button>
+          <n-button type="primary" @click="openForm(null)">新增司机</n-button>
+        </div>
+      </div>
       <PageTable
         ref="tableRef"
         :columns="columns"
         :remote="fetchDrivers"
         :query="applied"
-        :scroll-x="1650"
+        :scroll-x="1710"
       />
     </n-card>
 
@@ -558,7 +567,7 @@ onActivated(loadCarrierOptions)
       preset="card"
       title="导入司机"
       :bordered="false"
-      :style="{ width: '640px', maxWidth: '94vw' }"
+      :style="{ width: '600px', maxWidth: '94vw' }"
       :mask-closable="!importing"
       :closable="!importing"
     >
@@ -622,7 +631,7 @@ onActivated(loadCarrierOptions)
     <!-- 司机详情 -->
     <n-drawer
       v-model:show="showDetail"
-      :width="'min(760px, 94vw)'"
+      :width="'min(860px, 94vw)'"
       placement="right"
     >
       <n-drawer-content title="司机详情" closable :native-scrollbar="false">
@@ -678,8 +687,8 @@ onActivated(loadCarrierOptions)
         :model="formModel"
         :rules="formRules"
         label-placement="left"
-        label-width="110"
-        require-mark-placement="right-hanging"
+        label-width="100"
+        require-mark-placement="left"
       >
         <n-form-item label="姓名" path="name">
           <n-input

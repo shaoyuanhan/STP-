@@ -187,7 +187,7 @@ defineExpose({
 }
 
 .phone-input__input:disabled {
-  background: #f7f8fa;
+  background: #fafafa;
   cursor: not-allowed;
   color: #999999;
 }

@@ -68,7 +68,7 @@ onMounted(load)
   padding: 70px 0;
   text-align: center;
   font-size: 12px;
-  color: #8c8c8c;
+  color: #666666;
 }
 .dmsg__item {
   background: #fff;
@@ -79,7 +79,7 @@ onMounted(load)
   cursor: pointer;
 }
 .dmsg__item--unread {
-  box-shadow: inset 2px 0 0 #1677ff, 0 1px 2px rgba(31, 45, 61, 0.04);
+  box-shadow: inset 2px 0 0 #1890ff, 0 1px 2px rgba(31, 45, 61, 0.04);
 }
 .dmsg__head {
   display: flex;
@@ -90,21 +90,21 @@ onMounted(load)
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #d9d9d9;
+  background: #eeeeee;
 }
 .dmsg__item--unread .dmsg__dot {
-  background: #1677ff;
+  background: #1890ff;
 }
 .dmsg__title {
   font-size: 13px;
   font-weight: 500;
-  color: #262626;
+  color: #2d3033;
 }
 .dmsg__channel {
   margin-left: auto;
   font-size: 11px;
-  color: #1677ff;
-  background: #e6f4ff;
+  color: #1890ff;
+  background: rgba(24, 144, 255, 0.1);
   border-radius: 3px;
   padding: 1px 6px;
 }
@@ -112,11 +112,11 @@ onMounted(load)
   margin-top: 6px;
   font-size: 12px;
   line-height: 1.7;
-  color: #595959;
+  color: #666666;
 }
 .dmsg__time {
   margin-top: 6px;
   font-size: 11px;
-  color: #8c8c8c;
+  color: #666666;
 }
 </style>

@@ -22,7 +22,7 @@ defineProps<{
       </template>
       <n-empty size="large" description="页面建设中" class="page-placeholder__empty">
         <template #icon>
-          <n-icon :size="52" color="#c1c8d3">
+          <n-icon :size="52" color="#999999">
             <svg
               viewBox="0 0 24 24"
               fill="none"
