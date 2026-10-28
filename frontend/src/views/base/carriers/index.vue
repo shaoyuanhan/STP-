@@ -16,7 +16,14 @@ import StatusTag from '@/components/StatusTag.vue'
 import ConfirmAction from '@/components/ConfirmAction.vue'
 import PhoneInput from '@/components/PhoneInput.vue'
 import DetailSection from '@/components/DetailSection.vue'
-import { createCarrier, exportCarriers, listCarriers, updateCarrier, updateCarrierStatus } from '@/services/carriers'
+import {
+  createCarrier,
+  exportCarriers,
+  getCarrier,
+  listCarriers,
+  updateCarrier,
+  updateCarrierStatus,
+} from '@/services/carriers'
 import { dateOnly, datetime, formatPhone } from '@/utils/format'
 import type { Carrier, CarrierPayload, CarrierQuery, CarrierStatus } from '@/types/api'
 
@@ -208,11 +215,34 @@ const columns: DataTableColumns<Carrier> = [
 
 // ---------------- 详情抽屉 ----------------
 const showDetail = ref(false)
+const detailId = ref<number | null>(null)
 const detailRow = ref<Carrier | null>(null)
+const detailLoading = ref(false)
+const detailError = ref('')
+let detailReqId = 0
+
+async function loadDetail(id: number) {
+  const reqId = ++detailReqId
+  detailLoading.value = true
+  detailError.value = ''
+  try {
+    const result = await getCarrier(id)
+    if (reqId === detailReqId) detailRow.value = result
+  } catch (error) {
+    if (reqId !== detailReqId) return
+    detailRow.value = null
+    detailError.value = error instanceof Error ? error.message : '承运商详情加载失败'
+    message.error(detailError.value)
+  } finally {
+    if (reqId === detailReqId) detailLoading.value = false
+  }
+}
 
 function openDetail(row: Carrier) {
-  detailRow.value = row
+  detailId.value = row.id
+  detailRow.value = null
   showDetail.value = true
+  void loadDetail(row.id)
 }
 
 // ---------------- 新增 / 编辑弹窗 ----------------
@@ -434,7 +464,14 @@ async function confirmStatusChange() {
       placement="right"
     >
       <n-drawer-content title="承运商详情" closable :native-scrollbar="false">
-        <div v-if="detailRow" class="carrier-detail">
+        <n-spin :show="detailLoading">
+          <div v-if="detailError" class="detail-error">
+            <span>{{ detailError }}</span>
+            <n-button size="small" type="primary" @click="detailId !== null && loadDetail(detailId)">
+              重试
+            </n-button>
+          </div>
+          <div v-else-if="detailRow" class="carrier-detail">
           <DetailSection title="基本信息" :column="2">
             <n-descriptions-item label="承运商编码">{{ detailRow.carrier_code }}</n-descriptions-item>
             <n-descriptions-item label="第三方承运商ID">{{ detailRow.external_carrier_id || '-' }}</n-descriptions-item>
@@ -457,7 +494,8 @@ async function confirmStatusChange() {
             <n-descriptions-item label="更新人">{{ detailRow.update_name || '-' }}</n-descriptions-item>
             <n-descriptions-item label="更新时间">{{ datetime(detailRow.update_time) }}</n-descriptions-item>
           </DetailSection>
-        </div>
+          </div>
+        </n-spin>
       </n-drawer-content>
     </n-drawer>
 
@@ -575,6 +613,14 @@ async function confirmStatusChange() {
 </template>
 
 <style scoped>
+.detail-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  color: #d03050;
+}
+
 .carrier-detail > :last-child {
   margin-bottom: 0;
 }

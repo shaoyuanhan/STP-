@@ -8,7 +8,13 @@
  * - 停用/启用：停用后不可再分派新任务，不影响在途运单
  */
 import { computed, h, onActivated, onMounted, reactive, ref } from 'vue'
-import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
+import type {
+  DataTableColumns,
+  FormInst,
+  FormRules,
+  SelectOption,
+  UploadFileInfo,
+} from 'naive-ui'
 import { NButton } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import PageTable from '@/components/PageTable.vue'
@@ -17,9 +23,26 @@ import ConfirmAction from '@/components/ConfirmAction.vue'
 import PhoneInput from '@/components/PhoneInput.vue'
 import DetailSection from '@/components/DetailSection.vue'
 import { listCarriers } from '@/services/carriers'
-import { createDriver, exportDrivers, listDrivers, updateDriver, updateDriverStatus } from '@/services/drivers'
+import {
+  createDriver,
+  downloadDriverTemplate,
+  exportDrivers,
+  getDriver,
+  importDrivers,
+  listDrivers,
+  updateDriver,
+  updateDriverStatus,
+} from '@/services/drivers'
 import { dateOnly, datetime, formatPhone } from '@/utils/format'
-import type { Driver, DriverPayload, DriverQuery, DriverStatus } from '@/types/api'
+import type {
+  Driver,
+  DriverImportRowResult,
+  DriverImportResult,
+  DriverPayload,
+  DriverQuery,
+  DriverSource,
+  DriverStatus,
+} from '@/types/api'
 
 /** PageTable 实例句柄 */
 interface PageTableHandle {
@@ -63,6 +86,7 @@ const filter = reactive<{
   license_no: string
   external_driver_id: string
   carrier_id: string | number
+  source: string | number
   status: string | number
 }>({
   driver_name: '',
@@ -71,8 +95,15 @@ const filter = reactive<{
   license_no: '',
   external_driver_id: '',
   carrier_id: '', // '' 全部
+  source: '',
   status: '',
 })
+
+const filterSourceOptions: SelectOption[] = [
+  { label: '全部', value: '' },
+  { label: '系统录入', value: 1 },
+  { label: '狮桥同步', value: 2 },
+]
 
 const filterStatusOptions: SelectOption[] = [
   { label: '全部', value: '' },
@@ -88,6 +119,7 @@ type AppliedQuery = {
   license_no?: string
   external_driver_id?: string
   carrier_id?: number
+  source?: DriverSource
   status?: DriverStatus
   _t: number
 }
@@ -104,6 +136,7 @@ function buildAppliedQuery(): AppliedQuery {
     license_no: trim(filter.license_no),
     external_driver_id: trim(filter.external_driver_id),
     carrier_id: filter.carrier_id === '' ? undefined : Number(filter.carrier_id),
+    source: filter.source === '' ? undefined : (Number(filter.source) as DriverSource),
     status: filter.status === '' ? undefined : (Number(filter.status) as DriverStatus),
     _t: Date.now(),
   }
@@ -120,6 +153,7 @@ function handleReset() {
   filter.license_no = ''
   filter.external_driver_id = ''
   filter.carrier_id = ''
+  filter.source = ''
   filter.status = ''
   applied.value = buildAppliedQuery()
 }
@@ -150,6 +184,72 @@ async function fetchDrivers({ page, pageSize }: { page: number; pageSize: number
   const result = await listDrivers({ page, size: pageSize, ...applied.value })
   driverRows.value = result.list as unknown as DriverRow[]
   return { list: driverRows.value, total: result.total ?? 0 }
+}
+
+// ---------------- Excel 导入 ----------------
+const showImport = ref(false)
+const importing = ref(false)
+const templateDownloading = ref(false)
+const importFileList = ref<UploadFileInfo[]>([])
+const importResult = ref<DriverImportResult | null>(null)
+const importFailures = computed(
+  () => importResult.value?.results.filter((item) => !item.success) ?? [],
+)
+
+const importFailureColumns: DataTableColumns<DriverImportRowResult> = [
+  { title: 'Excel 行号', key: 'row', width: 100 },
+  { title: '失败原因', key: 'message', minWidth: 260 },
+]
+
+function openImport() {
+  importFileList.value = []
+  importResult.value = null
+  showImport.value = true
+}
+
+function handleImportFileListChange(files: UploadFileInfo[]) {
+  importResult.value = null
+  if (files.length && !files[0].name.toLowerCase().endsWith('.xlsx')) {
+    importFileList.value = []
+    message.warning('请选择 .xlsx 格式的文件')
+    return
+  }
+  importFileList.value = files
+}
+
+async function handleTemplateDownload() {
+  if (templateDownloading.value) return
+  templateDownloading.value = true
+  try {
+    const filename = await downloadDriverTemplate()
+    message.success(`已下载：${filename}`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '模板下载失败，请稍后重试')
+  } finally {
+    templateDownloading.value = false
+  }
+}
+
+async function submitImport() {
+  const file = importFileList.value[0]?.file
+  if (!file) {
+    message.warning('请先选择要导入的 .xlsx 文件')
+    return
+  }
+  if (importing.value) return
+  importing.value = true
+  try {
+    const data = new FormData()
+    data.append('file', file)
+    const result = await importDrivers(data)
+    importResult.value = result
+    message.success(`导入完成：成功 ${result.success} 条，失败 ${result.failed} 条`)
+    await tableRef.value?.refresh()
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '司机导入失败，请稍后重试')
+  } finally {
+    importing.value = false
+  }
 }
 
 const columns: DataTableColumns<DriverRow> = [
@@ -230,11 +330,34 @@ const columns: DataTableColumns<DriverRow> = [
 
 // ---------------- 详情抽屉 ----------------
 const showDetail = ref(false)
+const detailId = ref<number | null>(null)
 const detailRow = ref<DriverRow | null>(null)
+const detailLoading = ref(false)
+const detailError = ref('')
+let detailReqId = 0
+
+async function loadDetail(id: number) {
+  const reqId = ++detailReqId
+  detailLoading.value = true
+  detailError.value = ''
+  try {
+    const result = await getDriver(id)
+    if (reqId === detailReqId) detailRow.value = result as unknown as DriverRow
+  } catch (error) {
+    if (reqId !== detailReqId) return
+    detailRow.value = null
+    detailError.value = error instanceof Error ? error.message : '司机详情加载失败'
+    message.error(detailError.value)
+  } finally {
+    if (reqId === detailReqId) detailLoading.value = false
+  }
+}
 
 function openDetail(row: DriverRow) {
-  detailRow.value = row
+  detailId.value = row.id
+  detailRow.value = null
   showDetail.value = true
+  void loadDetail(row.id)
 }
 
 // ---------------- 新增 / 编辑弹窗 ----------------
@@ -468,6 +591,10 @@ onActivated(loadCarrierOptions)
             />
           </div>
           <div class="query-item">
+            <span>来源</span>
+            <n-select v-model:value="filter.source" :options="filterSourceOptions" />
+          </div>
+          <div class="query-item">
             <span>状态</span>
             <n-select v-model:value="filter.status" :options="filterStatusOptions" />
           </div>
@@ -486,6 +613,7 @@ onActivated(loadCarrierOptions)
           司机信息支持系统录入与狮桥同步；姓名与身份证号创建后不可修改；停用后不可派新任务，不影响在途运单
         </span>
         <div class="table-toolbar__actions">
+          <n-button @click="openImport">Excel 导入</n-button>
           <n-button :loading="exporting" @click="handleExport">导出</n-button>
           <n-button type="primary" @click="openForm(null)">新增司机</n-button>
         </div>
@@ -499,6 +627,74 @@ onActivated(loadCarrierOptions)
       />
     </n-card>
 
+    <!-- Excel 导入 -->
+    <n-modal
+      v-model:show="showImport"
+      preset="card"
+      size="huge"
+      title="导入司机"
+      :bordered="false"
+      :style="{ width: '640px', maxWidth: '94vw' }"
+      :mask-closable="!importing"
+      :closable="!importing"
+    >
+      <div class="driver-import">
+        <div class="driver-import__template">
+          <span>请按模板填写司机信息，仅支持 .xlsx 文件。</span>
+          <n-button
+            text
+            type="primary"
+            :loading="templateDownloading"
+            @click="handleTemplateDownload"
+          >
+            下载导入模板
+          </n-button>
+        </div>
+        <n-upload
+          :file-list="importFileList"
+          :default-upload="false"
+          :max="1"
+          :disabled="importing"
+          accept=".xlsx"
+          @update:file-list="handleImportFileListChange"
+        >
+          <n-button :disabled="importing">选择 .xlsx 文件</n-button>
+        </n-upload>
+        <n-alert
+          v-if="importResult"
+          :type="importResult.failed > 0 ? 'warning' : 'success'"
+          :show-icon="false"
+        >
+          导入结果：共 {{ importResult.total }} 条，成功 {{ importResult.success }} 条，失败
+          {{ importResult.failed }} 条
+        </n-alert>
+        <n-data-table
+          v-if="importFailures.length"
+          size="small"
+          :columns="importFailureColumns"
+          :data="importFailures"
+          :row-key="(row: DriverImportRowResult) => row.row"
+          :max-height="240"
+          :bordered="false"
+        />
+      </div>
+      <template #footer>
+        <div class="modal-footer">
+          <n-button
+            type="primary"
+            :loading="importing"
+            :disabled="!importFileList.length"
+            @click="submitImport"
+          >
+            开始导入
+          </n-button>
+          <n-button :disabled="importing" @click="showImport = false">
+            {{ importResult ? '关闭' : '取消' }}
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
+
     <!-- 司机详情 -->
     <n-drawer
       v-model:show="showDetail"
@@ -506,7 +702,14 @@ onActivated(loadCarrierOptions)
       placement="right"
     >
       <n-drawer-content title="司机详情" closable :native-scrollbar="false">
-        <div v-if="detailRow" class="driver-detail">
+        <n-spin :show="detailLoading">
+          <div v-if="detailError" class="detail-error">
+            <span>{{ detailError }}</span>
+            <n-button size="small" type="primary" @click="detailId !== null && loadDetail(detailId)">
+              重试
+            </n-button>
+          </div>
+          <div v-else-if="detailRow" class="driver-detail">
           <DetailSection title="基本信息" :column="2">
             <n-descriptions-item label="姓名">{{ detailRow.driver_name }}</n-descriptions-item>
             <n-descriptions-item label="第三方司机ID">{{ detailRow.external_driver_id || '-' }}</n-descriptions-item>
@@ -537,7 +740,8 @@ onActivated(loadCarrierOptions)
             <n-descriptions-item label="更新人">{{ detailRow.update_name || '-' }}</n-descriptions-item>
             <n-descriptions-item label="更新时间">{{ datetime(detailRow.update_time) }}</n-descriptions-item>
           </DetailSection>
-        </div>
+          </div>
+        </n-spin>
       </n-drawer-content>
     </n-drawer>
 
@@ -688,6 +892,29 @@ onActivated(loadCarrierOptions)
 </template>
 
 <style scoped>
+.driver-import {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.driver-import__template {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #666666;
+  font-size: 13px;
+}
+
+.detail-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  color: #d03050;
+}
+
 .page-card__date {
   width: 100%;
 }

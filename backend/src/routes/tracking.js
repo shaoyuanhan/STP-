@@ -6,7 +6,7 @@
  */
 const { Router } = require('express');
 const { query } = require('../db');
-const { wrap, ok, errNotFound, errParam, pageOf, pageData } = require('../helpers');
+const { wrap, ok, errNotFound, errParam, pageOf, pageData, queryOf } = require('../helpers');
 
 const router = Router();
 
@@ -14,6 +14,13 @@ const router = Router();
 const SCOPE_STATUSES = {
   transit: ['IN_TRANSIT'],
   history: ['FINISHED'],
+};
+const TRACKING_QUERY_ALIASES = {
+  taskNo: 'task_no',
+  applyNo: 'apply_no',
+  transportNo: 'transport_no',
+  customerName: 'customer_name',
+  carrierId: 'carrier_id',
 };
 
 /**
@@ -56,10 +63,13 @@ function withLatestTrack(row) {
 }
 
 /** 在途 / 已完结任务列表（scope 区分） */
-router.get('/tasks', wrap(async (req, res) => {
-  const { page, size, offset } = pageOf(req.query);
-  const { task_no = '', transport_no = '', apply_no = '' } = req.query;
-  const scope = String(req.query.scope ?? 'transit').trim() || 'transit';
+const listTrackingTasks = wrap(async (req, res) => {
+  const q = queryOf(req, TRACKING_QUERY_ALIASES);
+  const { page, size, offset } = pageOf(q);
+  const {
+    task_no = '', transport_no = '', apply_no = '', customer_name = '', carrier_id = '', vin = '',
+  } = q;
+  const scope = String(q.scope ?? 'transit').trim() || 'transit';
   const statuses = SCOPE_STATUSES[scope];
   if (!statuses) throw errParam('scope 仅支持 transit（在途）或 history（已完结）');
 
@@ -67,6 +77,12 @@ router.get('/tasks', wrap(async (req, res) => {
   const params = [...statuses];
   if (task_no) where.push('t.task_no LIKE ?'), params.push(`%${task_no}%`);
   if (apply_no) where.push('t.apply_no LIKE ?'), params.push(`%${apply_no}%`);
+  if (customer_name) where.push('t.customer_name LIKE ?'), params.push(`%${customer_name}%`);
+  if (carrier_id) where.push('t.carrier_id = ?'), params.push(Number(carrier_id));
+  if (vin) {
+    where.push('EXISTS (SELECT 1 FROM shipping_task_vehicle v WHERE v.task_id = t.id AND v.deleted = 0 AND v.vin LIKE ?)');
+    params.push(`%${vin}%`);
+  }
   if (transport_no) {
     where.push('EXISTS (SELECT 1 FROM transport_track tr WHERE tr.task_id = t.id AND tr.deleted = 0 AND tr.transport_no LIKE ?)');
     params.push(`%${transport_no}%`);
@@ -89,7 +105,10 @@ router.get('/tasks', wrap(async (req, res) => {
     [...params, size, offset]
   );
   ok(res, pageData(list.map(withLatestTrack), Number(totalRows[0].n), page, size));
-}));
+});
+
+router.get('/tasks', listTrackingTasks);
+router.post('/tasks/queryPage', listTrackingTasks);
 
 /** 总览轨迹降采样上限：全国视图无需每一条回传点 */
 const OVERVIEW_MAX_POINTS = 60;

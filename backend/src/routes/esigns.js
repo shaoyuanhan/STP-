@@ -4,7 +4,7 @@
  */
 const { Router } = require('express');
 const { query } = require('../db');
-const { wrap, ok, pageOf, pageData } = require('../helpers');
+const { wrap, ok, pageOf, pageData, queryOf } = require('../helpers');
 const { sendXlsx, text, dateTime } = require('../exporter');
 
 const router = Router();
@@ -26,6 +26,27 @@ const TASK_STATUS_LABELS = {
   FINISHED: '已完结',
   CANCELLED: '已取消',
 };
+
+const ESIGN_QUERY_ALIASES = {
+  esignId: 'esign_id',
+  taskNo: 'task_no',
+  orderNo: 'order_no',
+  applyNo: 'apply_no',
+  signStatus: 'sign_status',
+};
+const ESIGN_STATUS_BY_CODE = {
+  1: 'WAIT_SIGN',
+  2: 'SIGNED',
+  3: 'CANCELLED',
+};
+
+function esignQuery(req) {
+  const q = queryOf(req, ESIGN_QUERY_ALIASES);
+  if (q.sign_status !== undefined && q.sign_status !== '') {
+    q.sign_status = ESIGN_STATUS_BY_CODE[q.sign_status] || q.sign_status;
+  }
+  return q;
+}
 
 /** 列表与导出共用筛选：esign_id/task_no/vin/order_no/apply_no/sign_status */
 function esignWhere(q) {
@@ -65,9 +86,10 @@ const ESIGN_EXPORT_COLUMNS = [
 ];
 
 /** 台账列表：esign_id/task_no/vin/order_no/apply_no/sign_status 筛选 */
-router.get('/', wrap(async (req, res) => {
-  const { page, size, offset } = pageOf(req.query);
-  const { whereSql, params } = esignWhere(req.query);
+const listEsigns = wrap(async (req, res) => {
+  const q = esignQuery(req);
+  const { page, size, offset } = pageOf(q);
+  const { whereSql, params } = esignWhere(q);
 
   const totalRows = await query(
     `SELECT COUNT(*) AS n FROM esign_record e LEFT JOIN shipping_task t ON t.id = e.task_id ${whereSql}`,
@@ -81,11 +103,11 @@ router.get('/', wrap(async (req, res) => {
     [...params, size, offset]
   );
   ok(res, pageData(list, Number(totalRows[0].n), page, size));
-}));
+});
 
 /** 导出：按当前筛选条件导出全部（不分页） */
-router.get('/export', wrap(async (req, res) => {
-  const { whereSql, params } = esignWhere(req.query);
+const exportEsigns = wrap(async (req, res) => {
+  const { whereSql, params } = esignWhere(esignQuery(req));
   const rows = await query(
     `${ESIGN_SELECT}
      ${whereSql}
@@ -94,6 +116,11 @@ router.get('/export', wrap(async (req, res) => {
     params
   );
   sendXlsx(res, { prefix: '电子签台账', sheetName: '电子签', columns: ESIGN_EXPORT_COLUMNS, rows });
-}));
+});
+
+router.get('/', listEsigns);
+router.post('/queryPage', listEsigns);
+router.get('/export', exportEsigns);
+router.post('/export', exportEsigns);
 
 module.exports = router;

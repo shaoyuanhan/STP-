@@ -45,6 +45,7 @@ const filters = reactive({
   order_no: '',
   carrier_id: null as number | null,
   reconcile_status: null as ReconcileStatus | null,
+  create_range: null as [string, string] | null,
 })
 
 const carrierOptions = ref<SelectOption[]>([])
@@ -95,6 +96,8 @@ async function loadPage() {
       order_no: filters.order_no.trim() || undefined,
       carrier_id: filters.carrier_id ?? undefined,
       reconcile_status: filters.reconcile_status ?? undefined,
+      start_time: filters.create_range?.[0],
+      end_time: filters.create_range?.[1],
     }
     lastQuery.value = { ...query }
     const result = await listFreightBillRows(query)
@@ -141,6 +144,7 @@ function handleReset() {
   filters.order_no = ''
   filters.carrier_id = null
   filters.reconcile_status = null
+  filters.create_range = null
   page.value = 1
   loadPage()
 }
@@ -587,6 +591,15 @@ onActivated(() => {
               clearable
               placeholder="请选择对账状态"
               :options="reconcileOptions"
+            />
+          </div>
+          <div class="query-item">
+            <span>创建时间</span>
+            <n-date-picker
+              v-model:formatted-value="filters.create_range"
+              type="daterange"
+              value-format="yyyy-MM-dd"
+              clearable
             />
           </div>
         </div>

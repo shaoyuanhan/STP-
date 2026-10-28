@@ -5,7 +5,7 @@
  */
 const { Router } = require('express');
 const { query, nextSeq } = require('../db');
-const { wrap, ok, errParam, errBiz, errNotFound, pageOf, pageData, assertPhone } = require('../helpers');
+const { wrap, ok, errParam, errBiz, errNotFound, pageOf, pageData, queryOf, assertPhone } = require('../helpers');
 const { sendXlsx, text, dateTime, phoneText } = require('../exporter');
 
 const router = Router();
@@ -52,10 +52,19 @@ const CARRIER_EXPORT_COLUMNS = [
   { header: '创建时间', value: (r) => dateTime(r.create_time), width: 20 },
 ];
 
+const CARRIER_QUERY_ALIASES = {
+  carrierName: 'carrier_name',
+  carrierCode: 'carrier_code',
+  contactPerson: 'contact_person',
+  contactPhone: 'contact_phone',
+  externalCarrierId: 'external_carrier_id',
+};
+
 /** 列表：按字段分项筛选 + 在册（关联且启用的）司机数 */
-router.get('/', wrap(async (req, res) => {
-  const { page, size, offset } = pageOf(req.query);
-  const { whereSql, params } = carrierWhere(req.query);
+async function listCarriers(req, res) {
+  const q = queryOf(req, CARRIER_QUERY_ALIASES);
+  const { page, size, offset } = pageOf(q);
+  const { whereSql, params } = carrierWhere(q);
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM carrier c ${whereSql}`, params);
   const list = await query(
@@ -66,11 +75,13 @@ router.get('/', wrap(async (req, res) => {
     [...params, size, offset]
   );
   ok(res, pageData(list, Number(totalRows[0].n), page, size));
-}));
+}
+router.get('/', wrap(listCarriers));
+router.post('/queryPage', wrap(listCarriers));
 
 /** 导出：按当前筛选条件导出全部（不分页） */
-router.get('/export', wrap(async (req, res) => {
-  const { whereSql, params } = carrierWhere(req.query);
+async function exportCarriers(req, res) {
+  const { whereSql, params } = carrierWhere(queryOf(req, CARRIER_QUERY_ALIASES));
   const rows = await query(
     `${CARRIER_SELECT}
      ${whereSql}
@@ -79,20 +90,40 @@ router.get('/export', wrap(async (req, res) => {
     params
   );
   sendXlsx(res, { prefix: '承运商管理', sheetName: '承运商', columns: CARRIER_EXPORT_COLUMNS, rows });
+}
+router.get('/export', wrap(exportCarriers));
+router.post('/export', wrap(exportCarriers));
+
+/** 合作中承运商：返回全部，不分页 */
+router.get('/enabled', wrap(async (req, res) => {
+  const list = await query(
+    `${CARRIER_SELECT}
+     WHERE c.deleted = 0 AND c.status = 1
+     ORDER BY c.create_time DESC, c.id DESC`
+  );
+  ok(res, list);
+}));
+
+/** 承运商详情：与列表一致包含在册启用司机数 */
+router.get('/:id', wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const [carrier] = await query(`${CARRIER_SELECT} WHERE c.id = ? AND c.deleted = 0`, [id]);
+  if (!carrier) throw errNotFound('承运商不存在');
+  ok(res, carrier);
 }));
 
 /** 校验并归一化承运商入参（新增/编辑共用） */
 function normalizeCarrierBody(body) {
-  const carrier_name = String(body.carrier_name ?? '').trim();
-  const contact_person = String(body.contact_person ?? '').trim();
+  const carrier_name = String(body.carrier_name ?? body.carrierName ?? '').trim();
+  const contact_person = String(body.contact_person ?? body.contactPerson ?? '').trim();
   if (!carrier_name) throw errParam('承运商名称必填');
   if (carrier_name.length > 128) throw errParam('承运商名称不能超过 128 字');
   if (!contact_person) throw errParam('联系人必填');
-  const contact_phone = assertPhone(body.contact_phone, { label: '联系电话' });
-  const cooperation_routes = body.cooperation_routes?.toString().trim() || null;
+  const contact_phone = assertPhone(body.contact_phone ?? body.contactPhone, { label: '联系电话' });
+  const cooperation_routes = (body.cooperation_routes ?? body.cooperationRoutes)?.toString().trim() || null;
   const remark = body.remark?.toString().trim() || null;
   // 第三方承运商ID：外部系统主键，选填，全局唯一（派单/回传可用其定位）
-  const external_carrier_id = body.external_carrier_id?.toString().trim() || null;
+  const external_carrier_id = (body.external_carrier_id ?? body.externalCarrierId)?.toString().trim() || null;
   if (external_carrier_id && external_carrier_id.length > 64) throw errParam('第三方承运商ID不能超过 64 字');
   if (cooperation_routes && cooperation_routes.length > 512) throw errParam('合作路线不能超过 512 字');
   if (remark && remark.length > 512) throw errParam('备注不能超过 512 字');
@@ -132,7 +163,15 @@ router.put('/:id', wrap(async (req, res) => {
   const [exist] = await query('SELECT * FROM carrier WHERE id = ? AND deleted = 0', [id]);
   if (!exist) throw errNotFound('承运商不存在');
 
-  const v = normalizeCarrierBody(req.body);
+  const v = normalizeCarrierBody({
+    ...req.body,
+    carrier_name: req.body.carrier_name ?? req.body.carrierName ?? exist.carrier_name,
+    contact_person: req.body.contact_person ?? req.body.contactPerson ?? exist.contact_person,
+    contact_phone: req.body.contact_phone ?? req.body.contactPhone ?? exist.contact_phone,
+    cooperation_routes: req.body.cooperation_routes ?? req.body.cooperationRoutes ?? exist.cooperation_routes,
+    external_carrier_id: req.body.external_carrier_id ?? req.body.externalCarrierId ?? exist.external_carrier_id,
+    remark: req.body.remark ?? exist.remark,
+  });
   const dup = await query('SELECT id FROM carrier WHERE carrier_name = ? AND deleted = 0 AND id != ?', [v.carrier_name, id]);
   if (dup.length) throw errBiz('承运商名称已存在，请勿重复添加');
   await assertExternalCarrierIdUnique(v.external_carrier_id, id);

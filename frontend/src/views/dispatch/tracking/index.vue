@@ -4,7 +4,9 @@
  * 左侧运单列表，地图上查看起终点和运单卡片。在途 / 历史用页签切换。
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import type { SelectOption } from 'naive-ui'
 import { useRoute, useRouter } from 'vue-router'
+import { listCarriers } from '@/services/carriers'
 import { getTrackingTask, listTrackingTasks } from '@/services/tracking'
 import type { TrackingTask, TrackingTaskDetail, TransportTrack } from '@/types/api'
 import { matchCityGeo } from '@/lib/china-map'
@@ -41,8 +43,43 @@ const selectedId = ref<number | null>(null)
 const cardOpen = ref(true)
 const detail = ref<TrackingTaskDetail | null>(null)
 
-const draft = reactive({ task_no: '', apply_no: '' })
-const applied = reactive({ task_no: '', apply_no: '' })
+const draft = reactive({
+  task_no: '',
+  apply_no: '',
+  customer_name: '',
+  vin: '',
+  carrier_id: null as number | null,
+})
+const applied = reactive({
+  task_no: '',
+  apply_no: '',
+  customer_name: '',
+  vin: '',
+  carrier_id: null as number | null,
+})
+const carrierOptions = ref<SelectOption[]>([])
+
+async function loadCarrierOptions() {
+  try {
+    const first = await listCarriers({ page: 1, size: 100 })
+    const carriers = [...(first.list ?? [])]
+    const pageCount = Math.ceil(Number(first.total ?? 0) / 100)
+    if (pageCount > 1) {
+      const pages = await Promise.all(
+        Array.from({ length: pageCount - 1 }, (_, index) =>
+          listCarriers({ page: index + 2, size: 100 }),
+        ),
+      )
+      pages.forEach((result) => carriers.push(...(result.list ?? [])))
+    }
+    carrierOptions.value = carriers.map((carrier) => ({
+      label: carrier.carrier_name,
+      value: carrier.id,
+    }))
+  } catch {
+    carrierOptions.value = []
+  }
+}
 
 const isHistory = computed(() => scope.value === 'history')
 const selected = computed(() => rows.value.find((row) => row.id === selectedId.value) ?? null)
@@ -114,6 +151,9 @@ async function loadList() {
       size: PAGE_SIZE,
       task_no: applied.task_no || undefined,
       apply_no: applied.apply_no || undefined,
+      customer_name: applied.customer_name || undefined,
+      vin: applied.vin || undefined,
+      carrier_id: applied.carrier_id ?? undefined,
     })
     if (token !== listToken) return
     rows.value = result?.list ?? []
@@ -152,6 +192,9 @@ async function loadDetail(id: number) {
 function search() {
   applied.task_no = draft.task_no.trim()
   applied.apply_no = draft.apply_no.trim()
+  applied.customer_name = draft.customer_name.trim()
+  applied.vin = draft.vin.trim()
+  applied.carrier_id = draft.carrier_id
   if (page.value !== 1) page.value = 1
   else void loadList()
 }
@@ -159,6 +202,9 @@ function search() {
 function reset() {
   draft.task_no = ''
   draft.apply_no = ''
+  draft.customer_name = ''
+  draft.vin = ''
+  draft.carrier_id = null
   search()
 }
 
@@ -195,6 +241,7 @@ watch(page, () => {
 })
 
 onMounted(() => {
+  void loadCarrierOptions()
   void loadList()
 })
 </script>
@@ -225,6 +272,34 @@ onMounted(() => {
               clearable
               placeholder="请输入发运申请单号"
               @keydown.enter="search"
+            />
+          </div>
+          <div class="query-item">
+            <span>客户名称</span>
+            <n-input
+              v-model:value="draft.customer_name"
+              clearable
+              placeholder="请输入客户名称"
+              @keydown.enter="search"
+            />
+          </div>
+          <div class="query-item">
+            <span>VIN</span>
+            <n-input
+              v-model:value="draft.vin"
+              clearable
+              placeholder="请输入VIN"
+              @keydown.enter="search"
+            />
+          </div>
+          <div class="query-item">
+            <span>承运商</span>
+            <n-select
+              v-model:value="draft.carrier_id"
+              clearable
+              filterable
+              :options="carrierOptions"
+              placeholder="请选择承运商"
             />
           </div>
         </div>

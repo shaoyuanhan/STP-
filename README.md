@@ -183,13 +183,14 @@ npm run preview    # 本地预览构建产物
 
 | 方法 | 路径 | 来源 | 说明 |
 |---|---|---|---|
-| POST | `/shipping-tasks/receive` | CRM | 下发发运申请（生成任务单号） |
+| POST | `/shipping-tasks/receive` | CRM | 一申请多订单下发；每个订单一台车并生成独立任务，orderNo 幂等 |
 | GET | `/shipping-tasks/cancel-check` | CRM | 取消前置校验 |
 | POST | `/shipping-tasks/cancel` | CRM | 取消任务（仅待派单） |
 | POST | `/wms/outbound-status` | WMS | 出库回传（PICKED→IN_TRANSIT） |
 | POST | `/drivers/sync` | 狮桥 | 司机同步（`externalDriverId` 优先，其次身份证号；支持数组批量，≤200 条；camelCase / snake_case 字段均接受） |
 | POST | `/tracking/report` | 狮桥 | 在途点位上报（写轨迹，不改任务状态） |
-| POST | `/shipping-tasks/accept` | 承运商 | 接单并指派司机（`driverId` 或 `externalDriverId`） |
+| POST | `/shipping-tasks/accept` | 承运商 | 接单并指派司机，反馈承运单号、计划提车日期和预计到达时间；支持新司机自动建档 |
+| POST | `/shipping-tasks/cancel-accept` | 承运商 | 取消接单并退回已派单，清除接单计划信息 |
 | POST | `/shipping-tasks/pickup` | 承运商 | 提车发运（含照片） |
 | POST | `/shipping-tasks/arrive` | 承运商 | 到达回传（生成运费单） |
 | POST | `/shipping-tasks/finish` | 承运商 | 完结回传 |
@@ -201,7 +202,7 @@ npm run preview    # 本地预览构建产物
 
 - **编号规则引擎**：承运商 `CAR-001`；任务单号 `FY+YYYYMMDD+4位序列`；运费单号 `YF+YYYYMMDD+4位序列`；批量派单批次号 `PD+YYYYMMDD+4位序列`。基于 `UPDATE ... SET seq_val = LAST_INSERT_ID(seq_val + 1)` 的原子机制，多连接并发下不重号，任务/运费序列按日重置。
 - **统一响应与错误**：统一信封 `{ code, message, data }`，成功 `00000`，参数 `A0001`、业务 `A0002`、重复请求 `C0001`、状态/版本冲突 `D0001`、不存在 `D0002`；列表统一 `page/size` 分页。
-- **幂等与去重**：发运申请号、电子签 ID、司机身份证号、承运商名称、第三方承运商/司机 ID 均做唯一性校验，重复下发会被拒绝或安全更新。
+- **幂等与去重**：订单号、电子签 ID、司机身份证号、承运商名称、第三方承运商/司机 ID 均做唯一性校验；订单重复下发返回原任务。
 - **ID 定位优先**：派单/接单/回传均以 STP 内部 ID 或第三方 ID 定位承运商与司机，名称仅作旧字段兼容。
 - **乐观锁**：派单/取消派单/改派须携带 `version`，不匹配返回 `D0001「任务状态已变化，请刷新后重试」`。
 - **留痕**：任务每次状态流转写入 `task_status_log`，派单/改派/取消派单写入 `dispatch_record`，运费修改写入 `freight_adjust_log`（前后金额 + 原因）。
@@ -211,6 +212,13 @@ npm run preview    # 本地预览构建产物
 已完成全链路测试与浏览器全页面验证：CRM 下发 → 派单 → 接单 → 提车 → 出库 → 在途回传 → 到达 → 完结 → 运费修改/对账，以及取消链路，全部通过；第三方承运商 ID 派单 → 第三方司机 ID 接单链路已验证通过。
 
 ## 更新记录
+
+### V2.8（2026-10-28）Demo 多订单与管理接口补齐
+- **一申请多订单、一订单一车一任务**：CRM 可一次下发多个订单，每个订单按 orderNo 幂等并生成独立 taskNo；外部回调支持 taskNo 或 applyNo+orderNo 定位，多订单仅传 applyNo 会被拦截
+- **承运商计划与取消接单**：计划提车日期改由承运商接单提供；接单支持承运单号、预计到达时间和新司机自动建档；新增 `/api/external/shipping-tasks/cancel-accept`
+- **管理接口兼容**：承运商、司机、任务、运费单、电子签和在途监控支持 POST queryPage；五类台账支持 POST export；请求体兼容 camelCase 与 pageSize
+- **公共支撑**：司机 Excel 导入、文件元数据与同名拦截、操作日志查询、城市字典和 `/api/app/allEnums` 已补齐；原 GET 页面接口全部保留
+- **数据保护**：使用增量迁移，保留 Demo 原有历史任务，不重建业务表
 
 ### V2.7（2026-10-21）司机同步接口兼容 snake_case 入参
 

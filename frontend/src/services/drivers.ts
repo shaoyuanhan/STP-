@@ -5,10 +5,11 @@
  * 页面优先用后端 message 作为成功提示，message 为空或占位（'success'）时才用前端兜底文案。
  */
 
-import { download, get, postEnvelope, request } from './http'
+import { download, get, post, postEnvelope, request } from './http'
 import type {
   ApiEnvelope,
   Driver,
+  DriverImportResult,
   DriverOption,
   DriverPayload,
   DriverQuery,
@@ -18,6 +19,24 @@ import type {
 /** 司机分页列表（每条档案含唯一所属承运商 carrier_name） */
 export function listDrivers(query: DriverQuery = {}): Promise<PageResult<Driver>> {
   return get<PageResult<Driver>>('/drivers', query as Record<string, unknown>)
+}
+
+/** 司机详情 */
+export function getDriver(id: number | string): Promise<Driver> {
+  return get<Driver>(`/drivers/${id}`)
+}
+
+/** Excel 导入（multipart/form-data，返回逐行失败原因） */
+export function importDrivers(data: FormData): Promise<DriverImportResult> {
+  return post<DriverImportResult>('/drivers/import', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  })
+}
+
+/** 下载司机 Excel 导入模板 */
+export function downloadDriverTemplate(): Promise<string> {
+  return download('/drivers/import/template')
 }
 
 /** 新增司机（source=1 自建；carrier_id 指定唯一所属承运商） */

@@ -3,7 +3,7 @@
 -- 依据《STP 智能运输管理平台 后端技术方案》2.4 节 + 《重构统一契约 v2》第 4 节
 -- 执行方式: mysql -u root -p < schema.sql
 -- 说明:
---   1. 库名 tms_vehicle，共 11 张业务表 + 1 张单据序列号表 sys_sequences
+--   1. 库名 tms_vehicle，共 11 张业务表 + 3 张支撑表 + 1 张单据序列号表 sys_sequences
 --   2. 所有业务表统一审计字段: id/create_id/create_name/create_time/
 --      update_id/update_name/update_time/deleted(0 未删除/1 已删除)
 --   3. 契约增补: shipping_task 新增 delivery_address(交付地址) 与 version(乐观锁)
@@ -25,6 +25,9 @@ DROP TABLE IF EXISTS shipping_task_vehicle;
 DROP TABLE IF EXISTS shipping_task;
 DROP TABLE IF EXISTS driver;
 DROP TABLE IF EXISTS carrier;
+DROP TABLE IF EXISTS sys_file_meta;
+DROP TABLE IF EXISTS sys_operation_log;
+DROP TABLE IF EXISTS sys_area;
 DROP TABLE IF EXISTS sys_sequences;
 
 -- ---------------------------------------------------------------------
@@ -93,7 +96,9 @@ CREATE TABLE `driver` (
 CREATE TABLE `shipping_task` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   `task_no` VARCHAR(32) NOT NULL COMMENT '任务单号,规则FY+yyyyMMdd+4位序列,唯一',
-  `apply_no` VARCHAR(64) NOT NULL COMMENT 'CRM发运申请号,唯一,幂等防重',
+  `apply_no` VARCHAR(64) NOT NULL COMMENT 'CRM发运申请号,一个申请可包含多个订单',
+  `order_no` VARCHAR(64) NOT NULL COMMENT '订单号,全局唯一,每个订单一个任务一台车',
+  `transport_no` VARCHAR(64) DEFAULT NULL COMMENT '承运商接单返回的第三方承运单号',
   `customer_name` VARCHAR(128) NOT NULL COMMENT '客户名称',
   `region` VARCHAR(64) DEFAULT NULL COMMENT '大区',
   `sales_person` VARCHAR(64) DEFAULT NULL COMMENT '销售人员姓名',
@@ -106,7 +111,12 @@ CREATE TABLE `shipping_task` (
   `storage_location` VARCHAR(128) DEFAULT NULL COMMENT '存放地点',
   `ship_method` VARCHAR(16) NOT NULL DEFAULT '送车' COMMENT '发运方式:送车',
   `ship_location` VARCHAR(128) DEFAULT NULL COMMENT '发运地点,取自CRM发运申请',
-  `plan_pickup_date` DATE DEFAULT NULL COMMENT '计划提车日期,CRM同步/承运商接单后返回',
+  `start_longitude` DECIMAL(10,6) DEFAULT NULL COMMENT '发运起点经度',
+  `start_latitude` DECIMAL(10,6) DEFAULT NULL COMMENT '发运起点纬度',
+  `end_longitude` DECIMAL(10,6) DEFAULT NULL COMMENT '交付终点经度',
+  `end_latitude` DECIMAL(10,6) DEFAULT NULL COMMENT '交付终点纬度',
+  `plan_pickup_date` DATE DEFAULT NULL COMMENT '计划提车日期,由承运商接单提供',
+  `estimated_arrive_time` DATETIME DEFAULT NULL COMMENT '承运商接单返回的预计到达时间',
   `outbound_date` DATETIME DEFAULT NULL COMMENT '出库日期,WMS出库回传',
   `ship_time` DATETIME DEFAULT NULL COMMENT '发运时间,司机提车发运时间',
   `arrive_time` DATETIME DEFAULT NULL COMMENT '到达时间,司机操作到达',
@@ -130,7 +140,8 @@ CREATE TABLE `shipping_task` (
   `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除:0-未删除,1-已删除',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_task_no` (`task_no`),
-  UNIQUE KEY `uk_apply_no` (`apply_no`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_apply_order` (`apply_no`,`order_no`),
   KEY `idx_status_created` (`status`,`create_time`),
   KEY `idx_carrier_id` (`carrier_id`),
   KEY `idx_create_time` (`create_time`)
@@ -205,6 +216,7 @@ CREATE TABLE `task_status_log` (
   `source` VARCHAR(16) NOT NULL COMMENT '来源:STP/CRM/SQ(狮桥)/CARRIER(承运商通用回传)/WMS',
   `operator` VARCHAR(64) DEFAULT NULL COMMENT '操作人,系统触发记系统名',
   `remark` VARCHAR(255) DEFAULT NULL COMMENT '备注,如提车照片URL等',
+  `photos` TEXT DEFAULT NULL COMMENT '提车照片URL JSON数组',
   `create_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
   `create_name` VARCHAR(64) DEFAULT NULL COMMENT '创建人姓名,系统触发记来源系统',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
@@ -313,6 +325,7 @@ CREATE TABLE `esign_record` (
   `initiate_time` DATETIME DEFAULT NULL COMMENT '发起时间,取接收日期',
   `sign_status` VARCHAR(16) NOT NULL DEFAULT 'WAIT_SIGN' COMMENT '签署状态:WAIT_SIGN-待签署,SIGNED-已签署,CANCELLED-已取消',
   `sign_time` DATETIME DEFAULT NULL COMMENT '签署完成时间,狮桥回传',
+  `receipt_time` DATETIME DEFAULT NULL COMMENT '签收回执确认时间',
   `create_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
   `create_name` VARCHAR(64) DEFAULT NULL COMMENT '创建人姓名,CRM同步记CRM系统',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -327,7 +340,107 @@ CREATE TABLE `esign_record` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='电子签台账表';
 
 -- ---------------------------------------------------------------------
--- 12. sys_sequences 单据序列号表
+-- 12. sys_file_meta 文件元数据表
+-- ---------------------------------------------------------------------
+CREATE TABLE `sys_file_meta` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `file_name` VARCHAR(255) NOT NULL COMMENT '原始文件名',
+  `custom_path` VARCHAR(384) DEFAULT NULL COMMENT '自定义存储目录',
+  `etag` VARCHAR(64) DEFAULT NULL COMMENT '文件ETag',
+  `url` VARCHAR(1024) NOT NULL COMMENT '文件访问URL',
+  `object_key` VARCHAR(512) NOT NULL COMMENT '文件对象键',
+  `size` BIGINT UNSIGNED NOT NULL COMMENT '文件大小，字节',
+  `md5` VARCHAR(32) DEFAULT NULL COMMENT '文件MD5',
+  `content_type` VARCHAR(255) DEFAULT NULL COMMENT '文件MIME类型',
+  `create_name` VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_name` VARCHAR(64) DEFAULT NULL COMMENT '更新人',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_object_key` (`object_key`),
+  KEY `idx_file_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文件元数据表';
+
+-- ---------------------------------------------------------------------
+-- 13. sys_operation_log 操作日志表
+-- ---------------------------------------------------------------------
+CREATE TABLE `sys_operation_log` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `trace_id` VARCHAR(64) DEFAULT NULL COMMENT '链路追踪ID',
+  `operation_type` VARCHAR(64) DEFAULT NULL COMMENT '操作类型：INSERT/UPDATE/DELETE/QUERY/OTHER',
+  `business_type` VARCHAR(64) DEFAULT NULL COMMENT '业务类型',
+  `business_id` VARCHAR(64) DEFAULT NULL COMMENT '业务数据主键ID',
+  `operation_desc` VARCHAR(1000) DEFAULT NULL COMMENT '操作描述',
+  `operator_id` BIGINT DEFAULT NULL COMMENT '操作人ID',
+  `operator_name` VARCHAR(128) DEFAULT NULL COMMENT '操作人姓名',
+  `operator_ip` VARCHAR(64) DEFAULT NULL COMMENT '操作人IP',
+  `operator_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+  `before_data` LONGTEXT DEFAULT NULL COMMENT '操作前数据快照',
+  `after_data` LONGTEXT DEFAULT NULL COMMENT '操作后数据快照',
+  `changed_fields` LONGTEXT DEFAULT NULL COMMENT '变更字段',
+  `request_url` VARCHAR(1024) DEFAULT NULL COMMENT '请求URL',
+  `request_method` VARCHAR(16) DEFAULT NULL COMMENT '请求方法',
+  `request_params` LONGTEXT DEFAULT NULL COMMENT '请求参数',
+  `result_status` VARCHAR(32) DEFAULT 'SUCCESS' COMMENT '操作结果：SUCCESS/FAIL',
+  `error_message` TEXT DEFAULT NULL COMMENT '错误信息',
+  `duration` BIGINT DEFAULT NULL COMMENT '执行耗时，毫秒',
+  `extra` LONGTEXT DEFAULT NULL COMMENT '扩展数据',
+  `remark` VARCHAR(512) DEFAULT NULL COMMENT '备注',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+  PRIMARY KEY (`id`),
+  KEY `idx_operation_trace` (`trace_id`),
+  KEY `idx_operation_business` (`business_type`,`business_id`),
+  KEY `idx_operation_operator` (`operator_id`),
+  KEY `idx_operation_time` (`operator_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志表';
+
+-- ---------------------------------------------------------------------
+-- 14. sys_area 城市地区字典表
+-- ---------------------------------------------------------------------
+CREATE TABLE `sys_area` (
+  `id` VARCHAR(32) NOT NULL COMMENT '地区ID',
+  `pid` VARCHAR(32) DEFAULT '0' COMMENT '父级地区ID',
+  `type` VARCHAR(16) NOT NULL DEFAULT 'CITY' COMMENT '地区类型',
+  `name` VARCHAR(64) NOT NULL COMMENT '地区名称',
+  `region` VARCHAR(64) DEFAULT NULL COMMENT '所属大区',
+  `longitude` DECIMAL(10,6) DEFAULT NULL COMMENT '经度',
+  `latitude` DECIMAL(10,6) DEFAULT NULL COMMENT '纬度',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+  PRIMARY KEY (`id`),
+  KEY `idx_area_parent` (`pid`,`type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='城市地区字典表';
+
+INSERT INTO `sys_area` (`id`, `pid`, `type`, `name`) VALUES
+('CITY0001','0','CITY','北京'),('CITY0002','0','CITY','天津'),('CITY0003','0','CITY','上海'),('CITY0004','0','CITY','重庆'),
+('CITY0005','0','CITY','合肥'),('CITY0006','0','CITY','六安'),('CITY0007','0','CITY','巢湖'),('CITY0008','0','CITY','淮南'),
+('CITY0009','0','CITY','蚌埠'),('CITY0010','0','CITY','宿州'),('CITY0011','0','CITY','芜湖'),('CITY0012','0','CITY','马鞍山'),
+('CITY0013','0','CITY','安庆'),('CITY0014','0','CITY','阜阳'),('CITY0015','0','CITY','滁州'),('CITY0016','0','CITY','淮北'),
+('CITY0017','0','CITY','铜陵'),('CITY0018','0','CITY','宣城'),('CITY0019','0','CITY','池州'),('CITY0020','0','CITY','黄山'),
+('CITY0021','0','CITY','亳州'),('CITY0022','0','CITY','南京'),('CITY0023','0','CITY','常州'),('CITY0024','0','CITY','苏州'),
+('CITY0025','0','CITY','徐州'),('CITY0026','0','CITY','无锡'),('CITY0027','0','CITY','南通'),('CITY0028','0','CITY','镇江'),
+('CITY0029','0','CITY','扬州'),('CITY0030','0','CITY','泰州'),('CITY0031','0','CITY','盐城'),('CITY0032','0','CITY','连云港'),
+('CITY0033','0','CITY','淮安'),('CITY0034','0','CITY','宿迁'),('CITY0035','0','CITY','杭州'),('CITY0036','0','CITY','宁波'),
+('CITY0037','0','CITY','温州'),('CITY0038','0','CITY','嘉兴'),('CITY0039','0','CITY','绍兴'),('CITY0040','0','CITY','金华'),
+('CITY0041','0','CITY','台州'),('CITY0042','0','CITY','郑州'),('CITY0043','0','CITY','洛阳'),('CITY0044','0','CITY','开封'),
+('CITY0045','0','CITY','长沙'),('CITY0046','0','CITY','株洲'),('CITY0047','0','CITY','武汉'),('CITY0048','0','CITY','宜昌'),
+('CITY0049','0','CITY','襄阳'),('CITY0050','0','CITY','济南'),('CITY0051','0','CITY','青岛'),('CITY0052','0','CITY','烟台'),
+('CITY0053','0','CITY','临沂'),('CITY0054','0','CITY','济宁'),('CITY0055','0','CITY','淄博'),('CITY0056','0','CITY','太原'),
+('CITY0057','0','CITY','石家庄'),('CITY0058','0','CITY','唐山'),('CITY0059','0','CITY','保定'),('CITY0060','0','CITY','南昌'),
+('CITY0061','0','CITY','九江'),('CITY0062','0','CITY','广州'),('CITY0063','0','CITY','深圳'),('CITY0064','0','CITY','东莞'),
+('CITY0065','0','CITY','佛山'),('CITY0066','0','CITY','成都'),('CITY0067','0','CITY','西安'),('CITY0068','0','CITY','福州'),
+('CITY0069','0','CITY','厦门'),('CITY0070','0','CITY','昆明'),('CITY0071','0','CITY','贵阳'),('CITY0072','0','CITY','南宁'),
+('CITY0073','0','CITY','兰州'),('CITY0074','0','CITY','西宁'),('CITY0075','0','CITY','银川'),('CITY0076','0','CITY','拉萨'),
+('CITY0077','0','CITY','海口'),('CITY0078','0','CITY','三亚'),('CITY0079','0','CITY','哈尔滨'),('CITY0080','0','CITY','长春'),
+('CITY0081','0','CITY','沈阳'),('CITY0082','0','CITY','大连'),('CITY0083','0','CITY','呼和浩特'),('CITY0084','0','CITY','包头'),
+('CITY0085','0','CITY','乌鲁木齐'),('CITY0086','0','CITY','吐鲁番'),('CITY0087','0','CITY','喀什'),('CITY0088','0','CITY','台北'),
+('CITY0089','0','CITY','香港'),('CITY0090','0','CITY','澳门');
+
+-- ---------------------------------------------------------------------
+-- 15. sys_sequences 单据序列号表
 --     CAR   -> CAR-001            承运商编码,全局递增
 --     FY    -> FY202610190001     任务单号,按日重置
 --     YF    -> YF202610190001     运费单号,按日重置

@@ -32,6 +32,8 @@ import { describeApiError, TASK_STATUS_LABELS } from './shared'
  */
 interface TaskHeadExt extends ShippingTask {
   carrier_code?: string | null
+  transport_no?: string | null
+  estimated_arrive_time?: string | null
 }
 
 const props = defineProps<{
@@ -185,7 +187,7 @@ function timelineNodeName(log: TaskStatusLog): string {
   if (log.to_status === 'WAIT_DISPATCH') {
     return log.from_status ? '取消派单，回退待派单' : 'CRM 下发发运申请'
   }
-  if (log.to_status === 'DISPATCHED') return '调度派单'
+  if (log.to_status === 'DISPATCHED') return log.from_status === 'CARRIER_ACCEPTED' ? '承运商取消接单' : '调度派单'
   if (log.to_status === 'CARRIER_ACCEPTED') return '承运商接单 / 分配司机'
   if (log.to_status === 'PICKED') return '司机提车发运'
   if (log.to_status === 'OUTBOUND') return 'WMS 出库'
@@ -339,6 +341,10 @@ function timelineType(log: TaskStatusLog): 'success' | 'error' {
             </n-descriptions-item>
             <n-descriptions-item label="司机电话">
               {{ task.driver_phone ? formatPhone(task.driver_phone) : '-' }}
+            </n-descriptions-item>
+            <n-descriptions-item label="承运单号">{{ task.transport_no || '-' }}</n-descriptions-item>
+            <n-descriptions-item label="预计到达时间">
+              {{ task.estimated_arrive_time ? datetime(task.estimated_arrive_time) : '-' }}
             </n-descriptions-item>
             <n-descriptions-item label="派单备注" :span="3">
               <span class="pre-wrap">{{ dispatchRemark || '-' }}</span>

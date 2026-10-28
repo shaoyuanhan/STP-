@@ -12,7 +12,7 @@ import { computed, h, reactive, ref, watch } from 'vue'
 import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import MoneyText from '@/components/MoneyText.vue'
-import { listCarriers } from '@/services/carriers'
+import { listEnabledCarriers } from '@/services/carriers'
 import { batchDispatchTasks } from '@/services/tasks'
 import type {
   BatchDispatchResult,
@@ -50,8 +50,7 @@ const carriersLoading = ref(false)
 async function loadCarriers() {
   carriersLoading.value = true
   try {
-    const page = await listCarriers({ page: 1, size: 500 })
-    carriers.value = page.list ?? []
+    carriers.value = await listEnabledCarriers()
     carrierOptions.value = buildCarrierOptions(carriers.value)
   } catch {
     carriers.value = []

@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
-    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：applyNo（发运申请号）优先，taskNo 兼容，都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()\n- 一车一单：CRM 每次发运申请仅允许 1 台车，任务主表即单车任务；里程 mileage 由 CRM 发运申请下发，司机到达回传可覆盖，结算运费单继承",
-    "version": "2.5.0"
+    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）；CARRIER_ACCEPTED → DISPATCHED（承运商取消接单）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：taskNo 可直接定位，或使用 applyNo + orderNo 联合定位；仅传 applyNo 仅在申请下有一个订单任务时兼容，多订单必须补充 orderNo\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()\n- 一申请多订单、一订单一车一任务：CRM 一次申请可下发多个订单，每个订单严格对应一台车/VIN 并生成独立 taskNo，orderNo 全局幂等；计划提车日期由承运商接单提供；里程 mileage 由 CRM 发运申请下发，司机到达回传可覆盖，结算运费单继承",
+    "version": "2.8.0"
   },
   "servers": [
     {
@@ -2052,7 +2052,7 @@
           "08 外部接口·CRM"
         ],
         "summary": "① 发运申请任务接收",
-        "description": "一车一单：每次发运申请仅允许 1 台车（多车由 CRM 拆分逐条下发，vehicles.length>1 → A0001）；applyNo 幂等（重复 → C0001）；任务单号 STP 自动生成（FY+yyyyMMdd+4 位）；计划提车日期 planPickupDate 必填；mileage 为 CRM 下发的线路里程，落 shipping_task.mileage，到达回传可覆盖，运费单继承；计划运费 planFreight 为单车运费；交付地址必填；备注 ≤500 字落任务",
+        "description": "一个 CRM 申请单可包含多个订单，vehicles 中每个订单严格对应一台车/VIN，并生成独立任务单号；orderNo 必填且全局幂等，同一申请重复下发已存在订单时返回原任务，不重复创建；计划提车日期不再由 CRM 下发，由承运商接单提供；mileage 为线路里程，到达回传可覆盖，运费单继承；计划运费 planFreight 为单车运费；交付地址必填；备注 ≤500 字落任务",
         "requestBody": {
           "required": true,
           "content": {
@@ -2062,7 +2062,7 @@
                 "properties": {
                   "applyNo": {
                     "type": "string",
-                    "description": "发运申请号（必填，唯一，重复返回 C0001）",
+                    "description": "发运申请号（必填，同一申请可包含多个订单）",
                     "title": "发运申请号"
                   },
                   "customerName": {
@@ -2125,11 +2125,6 @@
                     "description": "提车地点（顶层统一提供或车辆明细单独提供）",
                     "title": "提车地点"
                   },
-                  "planPickupDate": {
-                    "type": "string",
-                    "description": "计划提车日期（必填，YYYY-MM-DD，主来源）",
-                    "title": "计划提车日期"
-                  },
                   "mileage": {
                     "type": "number",
                     "description": "里程 km（CRM 下发的线路里程，落任务主表；到达回传可覆盖，结算运费单继承）",
@@ -2142,23 +2137,23 @@
                   },
                   "vehicles": {
                     "type": "array",
-                    "description": "车辆明细列表（必填，一车一单仅允许 1 台）",
-                    "maxItems": 1,
+                    "description": "订单车辆明细（必填，至少 1 个；每个订单一台车并生成一个独立任务）",
                     "minItems": 1,
                     "items": {
                       "type": "object",
                       "required": [
-                        "vin"
+                        "vin",
+                        "orderNo"
                       ],
                       "properties": {
                         "vin": {
                           "type": "string",
-                          "description": "车架号（必填，唯一）",
+                          "description": "车架号（必填，17 位；同一申请内不可重复分配）",
                           "title": "车架号"
                         },
                         "orderNo": {
                           "type": "string",
-                          "description": "订单号",
+                          "description": "订单号（必填，全局唯一幂等键）",
                           "title": "订单号"
                         },
                         "reportNo": {
@@ -2202,7 +2197,6 @@
                   "deliveryAddress",
                   "factory",
                   "storageLocation",
-                  "planPickupDate",
                   "vehicles"
                 ]
               },
@@ -2220,7 +2214,6 @@
                 "storageLocation": "合肥整车库",
                 "shipMethod": "送车",
                 "shipLocation": "合肥市包河区上海路88号",
-                "planPickupDate": "2026-10-21",
                 "mileage": 385,
                 "remark": "客户急单，优先安排",
                 "vehicles": [
@@ -2241,25 +2234,34 @@
         },
         "responses": {
           "200": {
-            "description": "接收成功，返回自动生成的任务单号",
+            "description": "接收成功，按订单返回独立任务单号；重复下发返回已存在任务",
             "content": {
               "application/json": {
                 "example": {
                   "code": "00000",
-                  "message": "发运申请接收成功，已生成待派单任务 FY202610200001",
+                  "message": "发运申请接收成功：新建 1 个订单任务，已存在 0 个",
                   "data": {
-                    "taskNo": "FY202610200001",
-                    "mileage": 385
+                    "applyNo": "APPLY-20261020-001",
+                    "mileage": 385,
+                    "tasks": [
+                      {
+                        "orderNo": "SO-2610-0201",
+                        "taskNo": "FY202610200001",
+                        "vin": "LZXBCGH48P1D30001",
+                        "status": "WAIT_DISPATCH",
+                        "created": true
+                      }
+                    ]
                   }
                 }
               }
             }
           },
           "400": {
-            "description": "A0001 参数校验失败（applyNo/customerName/deliveryAddress/vehicles/vin/planPickupDate/factory/storageLocation/shipLocation 缺失或格式错误）"
+            "description": "A0001 参数校验失败（applyNo/customerName/deliveryAddress/vehicles/orderNo/vin/factory/storageLocation/shipLocation 缺失或格式错误）"
           },
           "409": {
-            "description": "C0001 applyNo 已下发过（幂等拦截）"
+            "description": "C0001 订单号已绑定其他申请或 VIN（幂等冲突）"
           }
         }
       }
@@ -2799,36 +2801,8 @@
         "tags": [
           "12 外部接口·承运商通用"
         ],
-        "responses": {
-          "200": {
-            "description": "状态推进结果（ARRIVE 含生成的运费单号）",
-            "content": {
-              "application/json": {
-                "example": {
-                  "code": "00000",
-                  "message": "到达确认成功，已生成运费结算单 YF202610200001（待对账）",
-                  "data": {
-                    "taskNo": "FY202610200001",
-                    "status": "ARRIVED",
-                    "freightNo": "YF202610200001",
-                    "billCreated": true,
-                    "actualFreight": 9500,
-                    "mileage": 412.5
-                  }
-                },
-                "description": "状态推进结果（ARRIVE 含生成的运费单号）"
-              }
-            }
-          },
-          "400": {
-            "description": "A0001 参数校验失败（driverId 缺失 / 时间格式错误 / 时间晚于当前时间等）"
-          },
-          "409": {
-            "description": "D0001 当前状态不允许该动作（状态机校验）"
-          }
-        },
-        "summary": "⑫ 承运商接单（分配司机）",
-        "description": "承运商确认接单并指派司机：DISPATCHED→CARRIER_ACCEPTED，回填 driver_id（司机须启用且属于任务承运商，司机信息由 ⑩ /drivers/sync 先同步）。计划提车日期由 CRM 在 ① receive 随发运申请下发，本接口不接收。司机支持 driverId（STP 内部ID）或 externalDriverId（第三方司机ID）；承运商支持 carrierId（内部ID）或 externalCarrierId（第三方ID），carrierName 为旧字段仅兼容。",
+        "summary": "⑫ 承运商接单（分配司机并反馈计划）",
+        "description": "DISPATCHED→CARRIER_ACCEPTED。首次接单必须提供 planPickupDate，可一并提供 transportNo 和 estimatedArriveTime；司机可通过 driverId、externalDriverId 或手机号 phone 定位，新司机提供 driverName、phone、idCard 及驾驶证有效期时自动建档。多订单申请必须使用 taskNo 或 applyNo + orderNo 定位；重复接单幂等返回数据库已保存值。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2838,46 +2812,152 @@
                 "properties": {
                   "applyNo": {
                     "type": "string",
-                    "description": "发运申请号（推荐，与 taskNo 二选一）",
-                    "title": "发运申请号"
+                    "description": "发运申请号（多订单时须与 orderNo 联合定位）"
+                  },
+                  "orderNo": {
+                    "type": "string",
+                    "description": "订单号（与 applyNo 联合定位）"
                   },
                   "taskNo": {
                     "type": "string",
-                    "description": "任务单号（兼容）",
-                    "title": "任务单号"
+                    "description": "任务单号（可直接定位）"
                   },
                   "carrierId": {
                     "type": "integer",
-                    "description": "承运商ID（STP 内部ID，carrierId / externalCarrierId / carrierName 三选一）",
-                    "title": "承运商ID"
+                    "description": "STP 内部承运商ID"
                   },
                   "externalCarrierId": {
                     "type": "string",
-                    "maxLength": 64,
-                    "description": "第三方承运商ID（与任务当前承运商校验一致）",
-                    "title": "第三方承运商ID"
-                  },
-                  "carrierName": {
-                    "type": "string",
-                    "description": "承运商名称（旧字段，仅兼容保留，建议改用 carrierId / externalCarrierId）",
-                    "title": "承运商名称",
-                    "deprecated": true
+                    "description": "第三方承运商ID"
                   },
                   "driverId": {
                     "type": "integer",
-                    "description": "司机ID（STP 内部ID，与 externalDriverId 二选一）",
-                    "title": "司机ID"
+                    "description": "STP 内部司机ID（与 externalDriverId、phone 三选一）"
                   },
                   "externalDriverId": {
                     "type": "string",
-                    "maxLength": 64,
-                    "description": "第三方司机ID（与 driverId 二选一）",
-                    "title": "第三方司机ID"
+                    "description": "第三方司机ID"
+                  },
+                  "driverName": {
+                    "type": "string",
+                    "description": "司机姓名；新司机自动建档时必填"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "司机手机号；可按手机号定位或自动建档"
+                  },
+                  "idCard": {
+                    "type": "string",
+                    "description": "身份证号；新司机自动建档时必填"
+                  },
+                  "licenseNo": {
+                    "type": "string",
+                    "description": "驾驶证号"
+                  },
+                  "licenseType": {
+                    "type": "string",
+                    "description": "准驾车型"
+                  },
+                  "licenseValidFrom": {
+                    "type": "string",
+                    "description": "驾驶证有效期起（YYYY-MM-DD）"
+                  },
+                  "licenseValidTo": {
+                    "type": "string",
+                    "description": "驾驶证有效期止（YYYY-MM-DD）"
+                  },
+                  "transportNo": {
+                    "type": "string",
+                    "description": "承运商承运单号"
+                  },
+                  "planPickupDate": {
+                    "type": "string",
+                    "description": "计划提车日期（YYYY-MM-DD，首次接单必填）"
+                  },
+                  "estimatedArriveTime": {
+                    "type": "string",
+                    "description": "预计到达时间（YYYY-MM-DD HH:mm:ss）"
                   }
-                },
-                "required": []
+                }
+              },
+              "example": {
+                "applyNo": "APPLY-20261020-001",
+                "orderNo": "SO-2610-0201",
+                "externalCarrierId": "SQ-001",
+                "driverId": 1,
+                "transportNo": "SQ202610200001",
+                "planPickupDate": "2026-10-22",
+                "estimatedArriveTime": "2026-10-24 18:00:00"
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "接单成功或幂等返回",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "00000",
+                  "message": "接单成功，已分配司机：张师傅",
+                  "data": {
+                    "taskNo": "FY202610200001",
+                    "status": "CARRIER_ACCEPTED",
+                    "transportNo": "SQ202610200001",
+                    "planPickupDate": "2026-10-22",
+                    "estimatedArriveTime": "2026-10-24 18:00:00"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A0001 定位参数、司机参数或计划提车日期缺失/格式错误"
+          },
+          "409": {
+            "description": "D0001 当前状态不允许接单"
+          }
+        }
+      }
+    },
+    "/api/external/shipping-tasks/cancel-accept": {
+      "post": {
+        "tags": [
+          "12 外部接口·承运商通用"
+        ],
+        "summary": "⑫ 承运商取消接单",
+        "description": "仅 CARRIER_ACCEPTED 可取消，退回 DISPATCHED 并清除司机、承运单号、计划提车日期和预计到达时间；已是 DISPATCHED 时幂等返回。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "taskNo": {
+                    "type": "string"
+                  },
+                  "applyNo": {
+                    "type": "string"
+                  },
+                  "orderNo": {
+                    "type": "string"
+                  },
+                  "cancelReason": {
+                    "type": "string",
+                    "description": "取消接单原因"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "取消接单成功或幂等返回"
+          },
+          "409": {
+            "description": "D0001 当前状态不允许取消接单"
           }
         }
       }

@@ -228,7 +228,26 @@ export interface DriverQuery extends PageQuery {
   license_no?: string
   external_driver_id?: string
   carrier_id?: number | '' | null
+  source?: DriverSource | '' | null
   status?: DriverStatus | '' | null
+}
+
+/** Excel 导入逐行处理结果 */
+export interface DriverImportRowResult {
+  /** Excel 行号（含表头） */
+  row: number
+  success: boolean
+  code: string
+  message: string
+  driverId?: number
+}
+
+/** POST /api/drivers/import 响应 */
+export interface DriverImportResult {
+  total: number
+  success: number
+  failed: number
+  results: DriverImportRowResult[]
 }
 
 /** GET /api/drivers/options 返回项（狮桥接单模拟用） */
@@ -249,11 +268,17 @@ export interface ShippingTaskListItem extends AuditFields {
   task_no: string
   apply_no: string
   order_no?: string | null
+  /** 承运商接单返回的第三方运输单号 */
+  transport_no?: string | null
   customer_name: string
   /** GROUP_CONCAT 顿号连接 */
   vins?: string
   vehicle_models?: string | null
   ship_location?: string | null
+  start_longitude?: number | string | null
+  start_latitude?: number | string | null
+  end_longitude?: number | string | null
+  end_latitude?: number | string | null
   delivery_address?: string | null
   carrier_name?: string | null
   driver_name?: string | null
@@ -261,6 +286,7 @@ export interface ShippingTaskListItem extends AuditFields {
   /** 里程 km（CRM 发运申请下发，到达回传可覆盖） */
   mileage?: number | string | null
   plan_pickup_date?: string | null
+  estimated_arrive_time?: string | null
   outbound_date?: string | null
   ship_time?: string | null
   arrive_time?: string | null
@@ -373,6 +399,8 @@ export interface ShippingTaskQuery extends PageQuery {
   carrier_id?: number | '' | null
   start_date?: string
   end_date?: string
+  plan_pickup_start?: string
+  plan_pickup_end?: string
 }
 
 /** 派单/改派请求体 */
@@ -442,6 +470,7 @@ export interface TrackingTask {
   task_no: string
   order_no?: string | null
   apply_no?: string
+  transport_no?: string | null
   customer_name?: string
   vins?: string
   vehicle_models?: string
@@ -449,11 +478,17 @@ export interface TrackingTask {
   driver_name?: string | null
   driver_phone?: string | null
   ship_location?: string | null
+  start_longitude?: number | string | null
+  start_latitude?: number | string | null
+  end_longitude?: number | string | null
+  end_latitude?: number | string | null
   delivery_address?: string | null
   plan_freight?: MoneyValue
   /** 里程 km（CRM 发运申请下发） */
   mileage?: number | string | null
   status: TaskStatus
+  plan_pickup_date?: string | null
+  estimated_arrive_time?: string | null
   ship_time?: string | null
   outbound_date?: string | null
   arrive_time?: string | null
@@ -468,6 +503,9 @@ export interface TrackingQuery extends PageQuery {
   task_no?: string
   apply_no?: string
   transport_no?: string
+  customer_name?: string
+  vin?: string
+  carrier_id?: number | '' | null
 }
 
 /** 全国态势行：列表字段 + 轨迹折线（经纬度对，已降采样） */
@@ -531,6 +569,8 @@ export interface FreightBillQuery extends PageQuery {
   order_no?: string
   carrier_id?: number | '' | null
   reconcile_status?: ReconcileStatus | '' | null
+  start_time?: string
+  end_time?: string
 }
 
 /** 运费列表响应（含合计金额，契约 5.6） */

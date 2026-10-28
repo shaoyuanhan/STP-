@@ -66,6 +66,7 @@ const filter = reactive({
   status: null as TaskStatus | null,
   carrier_id: null as number | null,
   range: null as [string, string] | null, // 创建日期区间
+  planPickupRange: null as [string, string] | null,
 })
 
 const statusOptions = computed<SelectOption[]>(() =>
@@ -83,6 +84,8 @@ type AppliedQuery = {
   carrier_id?: number
   start_date?: string
   end_date?: string
+  plan_pickup_start?: string
+  plan_pickup_end?: string
   _t: number
 }
 const applied = ref<AppliedQuery>({ _t: 0 })
@@ -98,6 +101,8 @@ function buildAppliedQuery(): AppliedQuery {
     carrier_id: filter.carrier_id ?? undefined,
     start_date: filter.range?.[0],
     end_date: filter.range?.[1],
+    plan_pickup_start: filter.planPickupRange?.[0],
+    plan_pickup_end: filter.planPickupRange?.[1],
     _t: Date.now(),
   }
 }
@@ -115,6 +120,7 @@ function handleReset() {
   filter.status = null
   filter.carrier_id = null
   filter.range = null
+  filter.planPickupRange = null
   applied.value = buildAppliedQuery()
 }
 
@@ -155,6 +161,8 @@ async function fetchTasks({ page, pageSize }: { page: number; pageSize: number }
     carrier_id: q.carrier_id,
     start_date: q.start_date,
     end_date: q.end_date,
+    plan_pickup_start: q.plan_pickup_start,
+    plan_pickup_end: q.plan_pickup_end,
   })
   currentRows.value = result.list ?? []
   // 翻页/筛选后清空勾选（批量派单只作用于当前页快照）
@@ -493,6 +501,15 @@ function refreshList() {
             <span>创建日期</span>
             <n-date-picker
               v-model:formatted-value="filter.range"
+              type="daterange"
+              value-format="yyyy-MM-dd"
+              clearable
+            />
+          </div>
+          <div class="query-item">
+            <span>计划提车日期</span>
+            <n-date-picker
+              v-model:formatted-value="filter.planPickupRange"
               type="daterange"
               value-format="yyyy-MM-dd"
               clearable

@@ -36,42 +36,43 @@ app.get('/api/health', wrap(async (req, res) => {
 }));
 
 // 数据字典（契约 5.1：任务状态/承运商状态/司机状态/司机来源/对账状态/电子签状态/取消派单原因）
-app.get('/api/dictionaries', wrap(async (req, res) => {
-  ok(res, {
-    taskStatus: [
-      { value: 'WAIT_DISPATCH', label: '待派单' },
-      { value: 'DISPATCHED', label: '已派单' },
-      { value: 'CARRIER_ACCEPTED', label: '承运商已接单' },
-      { value: 'PICKED', label: '已提车' },
-      { value: 'OUTBOUND', label: '已出库' },
-      { value: 'IN_TRANSIT', label: '在途' },
-      { value: 'ARRIVED', label: '已到达' },
-      { value: 'FINISHED', label: '已完结' },
-      { value: 'CANCELLED', label: '已取消' },
-    ],
-    carrierStatus: [
-      { value: 1, label: '合作中' },
-      { value: 0, label: '已停用' },
-    ],
-    driverStatus: [
-      { value: 1, label: '启用' },
-      { value: 0, label: '停用' },
-    ],
-    driverSource: [
-      { value: 1, label: '自建' },
-      { value: 2, label: '狮桥同步' },
-    ],
-    reconcileStatus: [
-      { value: 0, label: '待对账' },
-      { value: 1, label: '已对账' },
-    ],
-    esignStatus: [
-      { value: 'WAIT_SIGN', label: '待签署' },
-      { value: 'SIGNED', label: '已签署' },
-      { value: 'CANCELLED', label: '已取消' },
-    ],
-    cancelReasons: ['承运商无法履约', '调度调整', '其他'],
-  });
+const ALL_ENUMS = {
+  taskStatus: [
+    { value: 'WAIT_DISPATCH', label: '待派单' },
+    { value: 'DISPATCHED', label: '已派单' },
+    { value: 'CARRIER_ACCEPTED', label: '承运商已接单' },
+    { value: 'PICKED', label: '已提车' },
+    { value: 'OUTBOUND', label: '已出库' },
+    { value: 'IN_TRANSIT', label: '在途' },
+    { value: 'ARRIVED', label: '已到达' },
+    { value: 'FINISHED', label: '已完结' },
+    { value: 'CANCELLED', label: '已取消' },
+  ],
+  carrierStatus: [
+    { value: 1, label: '合作中' },
+    { value: 0, label: '已停用' },
+  ],
+  driverStatus: [
+    { value: 1, label: '启用' },
+    { value: 0, label: '停用' },
+  ],
+  driverSource: [
+    { value: 1, label: '自建' },
+    { value: 2, label: '狮桥同步' },
+  ],
+  reconcileStatus: [
+    { value: 0, label: '待对账' },
+    { value: 1, label: '已对账' },
+  ],
+  esignStatus: [
+    { value: 'WAIT_SIGN', label: '待签署' },
+    { value: 'SIGNED', label: '已签署' },
+    { value: 'CANCELLED', label: '已取消' },
+  ],
+  cancelReasons: ['承运商无法履约', '调度调整', '其他'],
+};
+app.get(['/api/dictionaries', '/api/app/allEnums'], wrap(async (req, res) => {
+  ok(res, ALL_ENUMS);
 }));
 
 // 业务路由（契约第 5/6/7 节）
@@ -83,6 +84,9 @@ app.use('/api/tracking', trackingRoutes);
 app.use('/api/freight-bills', freightBillRoutes);
 app.use('/api/esign-records', esignRoutes);
 app.use('/api/external', externalRoutes);
+app.use('/api/bos/file', require('./routes/files'));
+app.use('/api/operationLog', require('./routes/operationLogs'));
+app.use('/api/app', require('./routes/cities'));
 
 // 404：未匹配到任何接口
 app.use((req, res) => res.status(404).json({ code: 'D0002', message: '接口不存在', data: null }));

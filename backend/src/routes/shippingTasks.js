@@ -9,13 +9,20 @@ const { Router } = require('express');
 const { query, withTransaction, nextSeq } = require('../db');
 const {
   wrap, ok, errParam, errBiz, errDup, errState, errNotFound,
-  pageOf, pageData, cutStr,
+  pageOf, pageData, queryOf, cutStr,
 } = require('../helpers');
 const { sendXlsx, text, dateOnly, dateTime } = require('../exporter');
 
 const router = Router();
 
 const CANCEL_REASONS = ['承运商无法履约', '调度调整', '其他']; // 取消派单原因枚举（契约 5.1）
+const TASK_WRITE_ALIASES = {
+  taskId: 'task_id',
+  taskIds: 'task_ids',
+  carrierId: 'carrier_id',
+  externalCarrierId: 'external_carrier_id',
+  cancelReason: 'reason',
+};
 
 /** 按状态计算前端可用操作（契约 3.1 版本控制节） */
 function allowedActions(status) {
@@ -75,9 +82,40 @@ async function resolveCarrierDispatchable(conn, { carrierId, externalCarrierId }
   return rows[0];
 }
 
+const TASK_QUERY_ALIASES = {
+  taskNo: 'task_no',
+  applyNo: 'apply_no',
+  orderNo: 'order_no',
+  customerName: 'customer_name',
+  carrierId: 'carrier_id',
+  planPickupDateStart: 'plan_pickup_start',
+  planPickupDateEnd: 'plan_pickup_end',
+  startTime: 'start_date',
+  endTime: 'end_date',
+};
+const TASK_STATUS_BY_CODE = {
+  1: 'WAIT_DISPATCH',
+  2: 'DISPATCHED',
+  3: 'CARRIER_ACCEPTED',
+  4: 'PICKED',
+  5: 'OUTBOUND',
+  6: 'IN_TRANSIT',
+  7: 'ARRIVED',
+  8: 'FINISHED',
+  9: 'CANCELLED',
+};
+
+function taskQuery(req) {
+  const q = queryOf(req, TASK_QUERY_ALIASES);
+  if (q.status !== undefined && q.status !== '' && Number.isFinite(Number(q.status))) {
+    q.status = TASK_STATUS_BY_CODE[Number(q.status)] ?? q.status;
+  }
+  return q;
+}
+
 // ============ 列表 / 导出共用筛选（契约 5.4） ============
 function taskWhere(q) {
-  const { task_no = '', apply_no = '', order_no = '', vin = '', customer_name = '', status = '', carrier_id = '', start_date = '', end_date = '' } = q;
+  const { task_no = '', apply_no = '', order_no = '', vin = '', customer_name = '', status = '', carrier_id = '', start_date = '', end_date = '', plan_pickup_start = '', plan_pickup_end = '' } = q;
   const where = ['t.deleted = 0'];
   const params = [];
   if (task_no) where.push('t.task_no LIKE ?'), params.push(`%${task_no}%`);
@@ -92,6 +130,8 @@ function taskWhere(q) {
   if (carrier_id) where.push('t.carrier_id = ?'), params.push(Number(carrier_id));
   if (start_date) where.push('t.create_time >= ?'), params.push(`${start_date} 00:00:00`);
   if (end_date) where.push('t.create_time <= ?'), params.push(`${end_date} 23:59:59`);
+  if (plan_pickup_start) where.push('t.plan_pickup_date >= ?'), params.push(plan_pickup_start);
+  if (plan_pickup_end) where.push('t.plan_pickup_date <= ?'), params.push(plan_pickup_end);
   return { whereSql: `WHERE ${where.join(' AND ')}`, params };
 }
 
@@ -141,9 +181,10 @@ const TASK_EXPORT_COLUMNS = [
 ];
 
 // ============ 列表：多条件筛选（契约 5.4） ============
-router.get('/', wrap(async (req, res) => {
-  const { page, size, offset } = pageOf(req.query);
-  const { whereSql, params } = taskWhere(req.query);
+async function listTasks(req, res) {
+  const q = taskQuery(req);
+  const { page, size, offset } = pageOf(q);
+  const { whereSql, params } = taskWhere(q);
 
   const totalRows = await query(`SELECT COUNT(*) AS n FROM shipping_task t ${whereSql}`, params);
   const list = await query(
@@ -154,11 +195,13 @@ router.get('/', wrap(async (req, res) => {
     [...params, size, offset]
   );
   ok(res, pageData(list, Number(totalRows[0].n), page, size));
-}));
+}
+router.get('/', wrap(listTasks));
+router.post('/queryPage', wrap(listTasks));
 
 // ============ 导出：按当前筛选条件导出全部（不分页） ============
-router.get('/export', wrap(async (req, res) => {
-  const { whereSql, params } = taskWhere(req.query);
+async function exportTasks(req, res) {
+  const { whereSql, params } = taskWhere(taskQuery(req));
   const rows = await query(
     `${TASK_SELECT}
      ${whereSql}
@@ -167,7 +210,9 @@ router.get('/export', wrap(async (req, res) => {
     params
   );
   sendXlsx(res, { prefix: '发运任务', sheetName: '发运任务', columns: TASK_EXPORT_COLUMNS, rows });
-}));
+}
+router.get('/export', wrap(exportTasks));
+router.post('/export', wrap(exportTasks));
 
 // ============ 详情：head + 车辆 + 派单记录 + 状态日志 + 轨迹 + 电子签 ============
 router.get('/:id', wrap(async (req, res) => {
@@ -203,7 +248,7 @@ router.get('/:id', wrap(async (req, res) => {
 
 // ============ 派单（契约 5.4：线路参考价只读，触发狮桥同步模拟） ============
 router.post('/dispatch', wrap(async (req, res) => {
-  const { task_id, carrier_id, external_carrier_id, remark } = req.body;
+  const { task_id, carrier_id, external_carrier_id, remark } = queryOf(req, TASK_WRITE_ALIASES);
   if (!task_id) throw errParam('任务 ID 必填');
   if (!carrier_id && !external_carrier_id) throw errParam('请选择承运商（carrier_id 或 external_carrier_id）');
   if (remark && String(remark).length > 500) throw errParam('派单备注不能超过 500 字');
@@ -244,7 +289,7 @@ router.post('/dispatch', wrap(async (req, res) => {
 
 // ============ 批量派单（契约 5.4：batch_no 同批相同，返回 dispatched/total_freight/skipped） ============
 router.post('/batch-dispatch', wrap(async (req, res) => {
-  const { task_ids, carrier_id, external_carrier_id, remark } = req.body;
+  const { task_ids, carrier_id, external_carrier_id, remark } = queryOf(req, TASK_WRITE_ALIASES);
   if (!Array.isArray(task_ids) || !task_ids.length) throw errParam('请选择需要派单的任务');
   if (!carrier_id && !external_carrier_id) throw errParam('请选择承运商（carrier_id 或 external_carrier_id）');
   if (remark && String(remark).length > 500) throw errParam('批量派单备注不能超过 500 字');
@@ -308,7 +353,7 @@ router.post('/batch-dispatch', wrap(async (req, res) => {
 
 // ============ 取消派单（仅已派单即司机未接单 -> 待派单，契约 3.1/5.4） ============
 router.post('/dispatch/cancel', wrap(async (req, res) => {
-  const { task_id, reason, remark } = req.body;
+  const { task_id, reason, remark } = queryOf(req, TASK_WRITE_ALIASES);
   if (!task_id) throw errParam('任务 ID 必填');
   if (!reason || !CANCEL_REASONS.includes(reason)) {
     throw errParam(`取消原因必填，且仅支持：${CANCEL_REASONS.join('/')}`);
@@ -349,7 +394,7 @@ router.post('/dispatch/cancel', wrap(async (req, res) => {
 
 // ============ 改派（仅已派单，更换承运商，状态仍为已派单） ============
 router.post('/dispatch/reassign', wrap(async (req, res) => {
-  const { task_id, carrier_id, external_carrier_id, remark } = req.body;
+  const { task_id, carrier_id, external_carrier_id, remark } = queryOf(req, TASK_WRITE_ALIASES);
   if (!task_id) throw errParam('任务 ID 必填');
   if (!carrier_id && !external_carrier_id) throw errParam('请选择新的承运商（carrier_id 或 external_carrier_id）');
   if (remark && String(remark).length > 500) throw errParam('派单备注不能超过 500 字');

@@ -2,7 +2,7 @@
 /**
  * 派单 / 改派弹窗（契约 5.4 + 既有需求 2）
  *
- * - 承运商下拉：仅合作中可选，已停用置灰并标注「不可派单」；改派时排除原承运商
+ * - 承运商下拉：仅从合作中承运商接口加载；改派时排除原承运商
  * - 线路参考价只读（= CRM 同步计划运费，不可修改）
  * - 派单备注 ≤500 字（存 dispatch_record.remark）
  * - 提交携带列表行 version（乐观锁）；D0001 冲突提示并通知父级刷新列表
@@ -14,7 +14,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import type { FormInst, FormRules, SelectOption } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import MoneyText from '@/components/MoneyText.vue'
-import { listCarriers } from '@/services/carriers'
+import { listEnabledCarriers } from '@/services/carriers'
 import { dispatchTask, getShippingTask, reassignDispatch } from '@/services/tasks'
 import type { Carrier, ShippingTask, ShippingTaskDetail, ShippingTaskListItem } from '@/types/api'
 import { buildCarrierOptions, describeApiError, type TaskRowExt } from './shared'
@@ -44,8 +44,7 @@ const carriersLoading = ref(false)
 async function loadCarriers() {
   carriersLoading.value = true
   try {
-    const page = await listCarriers({ page: 1, size: 500 })
-    carriers.value = page.list ?? []
+    carriers.value = await listEnabledCarriers()
   } catch {
     carriers.value = []
   } finally {
