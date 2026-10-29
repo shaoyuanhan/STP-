@@ -13,15 +13,15 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // 本地开发代理到 3002（与 v1.0 的 3000 错开），开发环境 /api 走代理（见 docs/api-contract.md 第 1 节）
+    // 开发环境 /api 与静态资源统一代理到后端 3000 端口
     proxy: {
       '/api': {
-        target: 'http://localhost:3002',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
       // 门户上传的提车/到达照片
       '/static': {
-        target: 'http://localhost:3002',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
     },

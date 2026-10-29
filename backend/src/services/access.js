@@ -31,6 +31,25 @@ const MODULES = [
     ],
   },
   {
+    code: 'factories', name: '工厂管理', kind: 'PLATFORM',
+    actions: [
+      { code: 'factories:view', name: '查看' },
+      { code: 'factories:create', name: '新增' },
+      { code: 'factories:edit', name: '编辑' },
+      { code: 'factories:import', name: '导入' },
+      { code: 'factories:export', name: '导出' },
+    ],
+  },
+  {
+    code: 'pickup-points', name: '发运地点管理', kind: 'PLATFORM',
+    actions: [
+      { code: 'pickup-points:view', name: '查看' },
+      { code: 'pickup-points:create', name: '新增' },
+      { code: 'pickup-points:edit', name: '编辑' },
+      { code: 'pickup-points:status', name: '启用/停用' },
+    ],
+  },
+  {
     code: 'tasks', name: '发运任务', kind: 'PLATFORM',
     actions: [
       { code: 'tasks:view', name: '查看' },
@@ -75,6 +94,10 @@ const MODULES = [
       { code: 'roles:edit', name: '编辑' },
       { code: 'roles:perm', name: '配置权限' },
     ],
+  },
+  {
+    code: 'operationLogs', name: '操作日志', kind: 'PLATFORM',
+    actions: [{ code: 'operationLogs:view', name: '查看' }],
   },
   {
     code: 'portal-dashboard', name: '承运商工作台', kind: 'CARRIER',
@@ -223,6 +246,11 @@ async function ensureAccess() {
       }
       for (const code of perms) {
         await query('INSERT INTO sys_role_perm (role_id, perm_code) VALUES (?, ?)', [id, code]);
+      }
+    }
+    if (role.kind === 'SUPER') {
+      for (const code of codesOf(role.kind)) {
+        await query('INSERT IGNORE INTO sys_role_perm (role_id, perm_code) VALUES (?, ?)', [id, code]);
       }
     }
     const dataCount = await query("SELECT COUNT(*) AS n FROM sys_role_data WHERE role_id = ? AND data_type = 'CARRIER'", [id]);

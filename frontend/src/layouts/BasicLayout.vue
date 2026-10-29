@@ -47,6 +47,18 @@ const BASE_GROUPS: MenuGroup[] = [
     group: '基础数据',
     items: [
       {
+        path: '/factories',
+        title: '工厂管理',
+        perm: 'factories:view',
+        icon: '<path d="M3 21V9l6 3V8l6 4V4h6v17H3z"/><path d="M7 16h2M13 16h2M18 8h3"/>',
+      },
+      {
+        path: '/pickup-points',
+        title: '发运地点管理',
+        perm: 'pickup-points:view',
+        icon: '<path d="M12 21s7-5.1 7-11a7 7 0 1 0-14 0c0 5.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+      },
+      {
         path: '/carriers',
         title: '承运商管理',
         perm: 'carriers:view',
@@ -118,6 +130,12 @@ const SYSTEM_GROUPS: MenuGroup[] = [
         title: '角色管理',
         perm: 'roles:view',
         icon: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8S14 16 14.5 19"/><path d="M17 8h4M19 6v4"/>',
+      },
+      {
+        path: '/operation-logs',
+        title: '操作日志',
+        perm: 'operationLogs:view',
+        icon: '<path d="M7 3h10v4H7z"/><path d="M5 5H3v16h18V5h-2M8 12h8M8 16h6"/>',
       },
     ],
   },

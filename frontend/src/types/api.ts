@@ -180,6 +180,166 @@ export interface CarrierQuery extends PageQuery {
 }
 
 // ---------------------------------------------------------------------------
+// 操作日志（/api/operationLog）
+// ---------------------------------------------------------------------------
+
+export interface OperationLog {
+  id: number
+  trace_id?: string | null
+  operation_type?: string | null
+  business_type?: string | null
+  business_id?: string | null
+  business_no?: string | null
+  operation_desc?: string | null
+  operator_id?: number | null
+  operator_name?: string | null
+  operator_ip?: string | null
+  operator_time: string
+  before_data?: string | null
+  after_data?: string | null
+  changed_fields?: string | null
+  request_url?: string | null
+  request_method?: string | null
+  request_params?: string | null
+  result_status?: string | null
+  error_message?: string | null
+  duration?: number | null
+  extra?: string | null
+  remark?: string | null
+}
+
+export interface OperationLogQuery extends PageQuery {
+  trace_id?: string
+  operation_type?: string | null
+  business_type?: string | null
+  business_id?: string
+  business_id_exact?: string
+  operator_id?: string
+  operator_name?: string | null
+  start_time?: string
+  end_time?: string
+  result_status?: string | null
+  keyword?: string
+  order?: 'asc' | 'desc'
+}
+
+export interface OperationLogOperator {
+  operator_id?: number | null
+  operator_name: string
+  operation_count: number
+  last_operation_time: string
+}
+
+// ---------------------------------------------------------------------------
+// 工厂
+// ---------------------------------------------------------------------------
+
+export interface Factory extends AuditFields {
+  id: number
+  company_code: string
+  company_name: string
+  factory_code: string
+  factory_name: string
+  contact_person: string
+  contact_phone: string
+}
+
+export interface FactoryPayload {
+  company_code: string
+  company_name: string
+  factory_code: string
+  factory_name: string
+  contact_person: string
+  contact_phone: string
+}
+
+export interface FactoryQuery extends PageQuery {
+  company_code?: string
+  company_name?: string
+  factory_code?: string
+  factory_name?: string
+  contact_person?: string
+}
+
+// ---------------------------------------------------------------------------
+// 发运地点（提车点）
+// ---------------------------------------------------------------------------
+
+export interface PickupPoint extends AuditFields {
+  id: number
+  factory_id: number
+  factory_code: string
+  factory_name: string
+  company_code: string
+  company_name: string
+  pickup_code: string
+  pickup_name: string
+  province_code: string
+  province_name: string
+  city_code: string
+  city_name: string
+  district_code: string
+  district_name: string
+  detail_address: string
+  contact_person: string
+  contact_phone: string
+  is_default: number
+  enabled: number
+  remark?: string | null
+}
+
+export interface PickupPointPayload {
+  factory_id: number
+  pickup_code: string
+  pickup_name: string
+  province_code: string
+  city_code: string
+  district_code: string
+  detail_address: string
+  contact_person: string
+  contact_phone: string
+  is_default: boolean
+  remark?: string
+}
+
+export interface PickupPointQuery extends PageQuery {
+  factory_id?: number
+  pickup_code?: string
+  pickup_name?: string
+  province_code?: string
+  contact_person?: string
+  enabled?: string
+}
+
+export interface PickupPointFactoryOption {
+  id: number
+  factory_code: string
+  factory_name: string
+  company_name: string
+}
+
+export interface RegionOption {
+  label: string
+  value: string
+  children?: RegionOption[]
+}
+
+export interface FactoryImportRowResult {
+  row: number
+  success: boolean
+  code: string
+  message: string
+  factoryId?: number
+}
+
+export interface FactoryImportResult {
+  total: number
+  success: number
+  failed: number
+  results: FactoryImportRowResult[]
+}
+
+// ---------------------------------------------------------------------------
 // 司机
 // ---------------------------------------------------------------------------
 

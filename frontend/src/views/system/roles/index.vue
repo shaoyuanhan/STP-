@@ -108,7 +108,7 @@ const MENU_GROUPS = [
   { key: 'g-freight', label: '应付运费', mods: ['freight'] },
   { key: 'g-esign', label: '电子签章', mods: ['esigns'] },
   { key: 'g-base', label: '基础数据', mods: ['carriers', 'drivers'] },
-  { key: 'g-system', label: '系统管理', mods: ['accounts', 'roles'] },
+  { key: 'g-system', label: '系统管理', mods: ['accounts', 'roles', 'operationLogs'] },
   { key: 'g-carrier', label: '承运商后台', mods: ['portal-dashboard', 'portal-tasks', 'portal-drivers', 'portal-messages'] },
   { key: 'g-driver', label: '司机小程序', mods: ['mini-tasks', 'mini-messages'] },
 ] as const

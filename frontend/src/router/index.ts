@@ -30,6 +30,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '承运商管理', group: '基础数据' },
       },
       {
+        path: 'factories',
+        name: 'factories',
+        component: () => import('@/views/base/factories/index.vue'),
+        meta: { title: '工厂管理', group: '基础数据' },
+      },
+      {
+        path: 'pickup-points',
+        name: 'pickup-points',
+        component: () => import('@/views/base/pickup-points/index.vue'),
+        meta: { title: '发运地点管理', group: '基础数据' },
+      },
+      {
         path: 'drivers',
         name: 'drivers',
         component: () => import('@/views/base/drivers/index.vue'),
@@ -73,6 +85,12 @@ const routes: RouteRecordRaw[] = [
         name: 'roles',
         component: () => import('@/views/system/roles/index.vue'),
         meta: { title: '角色管理', group: '系统管理' },
+      },
+      {
+        path: 'operation-logs',
+        name: 'operation-logs',
+        component: () => import('@/views/system/logs/index.vue'),
+        meta: { title: '操作日志', group: '系统管理' },
       },
     ],
   },

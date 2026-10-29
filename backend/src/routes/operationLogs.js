@@ -1,13 +1,9 @@
-/**
- * 系统操作日志：分页查询、详情及业务日志写入。
- * recordOperation 内部捕获全部异常，避免日志失败影响主业务流程。
- */
 const { Router } = require('express');
 const { query } = require('../db');
-const { ok, wrap, errParam, errNotFound, pageOf, pageData, cutStr } = require('../helpers');
+const { ok, wrap, errParam, errNotFound, pageOf, pageData } = require('../helpers');
+const { recordOperation } = require('../services/operationLogger');
 
 const router = Router();
-const JSON_FIELDS = ['before_data', 'after_data', 'changed_fields', 'request_params', 'extra'];
 
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== '';
@@ -38,8 +34,8 @@ function operationLogInput(req) {
   };
 }
 
-function operationLogWhere(q) {
-  const where = ['deleted = 0'];
+async function operationLogWhere(q) {
+  const where = ['deleted = 0', "business_type <> 'AUTH'"];
   const params = [];
   const exactFilters = [
     ['trace_id', 'trace_id'],
@@ -48,21 +44,45 @@ function operationLogWhere(q) {
     ['operator_id', 'operator_id'],
     ['result_status', 'result_status'],
   ];
-
   exactFilters.forEach(([queryKey, column]) => {
     if (hasValue(q[queryKey])) {
       where.push(`${column} = ?`);
       params.push(String(q[queryKey]).trim());
     }
   });
-
-  if (hasValue(q.business_id)) {
-    where.push('business_id LIKE ?');
-    params.push(`%${String(q.business_id).trim()}%`);
+  if (hasValue(q.business_id_exact)) {
+    where.push('business_id = ?');
+    params.push(String(q.business_id_exact).trim());
+  } else if (hasValue(q.business_id)) {
+    const businessNo = String(q.business_id).trim();
+    const keyword = `%${businessNo}%`;
+    const conditions = [
+      'business_id LIKE ?',
+      "JSON_UNQUOTE(JSON_EXTRACT(extra, '$.business_no')) LIKE ?",
+    ];
+    params.push(keyword, keyword);
+    if (!hasValue(q.business_type) || q.business_type === 'SHIPPING_TASK') {
+      const tasks = await query(
+        `SELECT id FROM shipping_task
+         WHERE deleted = 0 AND (task_no LIKE ? OR apply_no LIKE ? OR order_no LIKE ?)
+         LIMIT 500`,
+        [keyword, keyword, keyword]
+      );
+      if (tasks.length) {
+        conditions.push(`(business_type = 'SHIPPING_TASK' AND business_id IN (${tasks.map(() => '?').join(',')}))`);
+        tasks.forEach((task) => params.push(String(task.id)));
+      }
+    }
+    where.push(`(${conditions.join(' OR ')})`);
   }
   if (hasValue(q.operator_name)) {
     where.push('operator_name LIKE ?');
     params.push(`%${String(q.operator_name).trim()}%`);
+  }
+  if (hasValue(q.keyword)) {
+    where.push('(operation_desc LIKE ? OR request_url LIKE ? OR error_message LIKE ? OR remark LIKE ?)');
+    const keyword = `%${String(q.keyword).trim()}%`;
+    params.push(keyword, keyword, keyword, keyword);
   }
   if (hasValue(q.start_time)) {
     where.push('operator_time >= ?');
@@ -72,7 +92,6 @@ function operationLogWhere(q) {
     where.push('operator_time <= ?');
     params.push(timeValue(q.end_time, true));
   }
-
   return { whereSql: `WHERE ${where.join(' AND ')}`, params };
 }
 
@@ -84,90 +103,75 @@ function withCamelKeys(row) {
   return result;
 }
 
+async function attachBusinessNumbers(rows) {
+  const result = rows.map((row) => {
+    let businessNo = null;
+    try {
+      businessNo = row.extra ? JSON.parse(row.extra).business_no : null;
+    } catch {
+      businessNo = null;
+    }
+    return { ...row, business_no: businessNo || row.business_id };
+  });
+  const taskIds = result
+    .filter((row) => row.business_type === 'SHIPPING_TASK' && /^\d+$/.test(String(row.business_id || '')))
+    .map((row) => Number(row.business_id));
+  if (!taskIds.length) return result;
+  const uniqueIds = [...new Set(taskIds)];
+  const tasks = await query(
+    `SELECT id, task_no, apply_no, order_no FROM shipping_task
+     WHERE deleted = 0 AND id IN (${uniqueIds.map(() => '?').join(',')})`,
+    uniqueIds
+  );
+  const taskMap = new Map(tasks.map((task) => [String(task.id), task]));
+  result.forEach((row) => {
+    const task = taskMap.get(String(row.business_id));
+    if (task) row.business_no = task.task_no || task.apply_no || task.order_no || row.business_no;
+  });
+  return result;
+}
+
 async function listOperationLogs(req, res) {
   const input = operationLogInput(req);
   const { page, size, offset } = pageOf(input);
-  const { whereSql, params } = operationLogWhere(input);
+  const { whereSql, params } = await operationLogWhere(input);
+  const direction = String(input.order).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   const totalRows = await query(`SELECT COUNT(*) AS n FROM sys_operation_log ${whereSql}`, params);
   const list = await query(
     `SELECT * FROM sys_operation_log
      ${whereSql}
-     ORDER BY operator_time DESC, id DESC
+     ORDER BY operator_time ${direction}, id ${direction}
      LIMIT ? OFFSET ?`,
     [...params, size, offset]
   );
-  ok(res, pageData(list.map(withCamelKeys), Number(totalRows[0].n), page, size));
+  const enriched = await attachBusinessNumbers(list);
+  ok(res, pageData(enriched.map(withCamelKeys), Number(totalRows[0].n), page, size));
 }
 
 router.get('/', wrap(listOperationLogs));
 router.post('/queryPage', wrap(listOperationLogs));
+
+router.get('/operators', wrap(async (_req, res) => {
+  const rows = await query(
+    `SELECT operator_id, operator_name, COUNT(*) AS operation_count, MAX(operator_time) AS last_operation_time
+     FROM sys_operation_log
+     WHERE deleted = 0 AND business_type <> 'AUTH'
+       AND operator_name IS NOT NULL AND operator_name <> ''
+     GROUP BY operator_id, operator_name
+     ORDER BY last_operation_time DESC
+     LIMIT 500`
+  );
+  ok(res, rows.map(withCamelKeys));
+}));
 
 router.get('/:id', wrap(async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id <= 0) throw errParam('日志 ID 不正确');
   const [row] = await query('SELECT * FROM sys_operation_log WHERE id = ? AND deleted = 0', [id]);
   if (!row) throw errNotFound('操作日志不存在');
-  ok(res, withCamelKeys(row));
+  const [enriched] = await attachBusinessNumbers([row]);
+  ok(res, withCamelKeys(enriched));
 }));
-
-function nullableCut(value, max) {
-  if (value === undefined || value === null) return null;
-  return cutStr(value, max);
-}
-
-function jsonValue(value) {
-  if (value === undefined || value === null || value === '') return null;
-  return typeof value === 'object' ? JSON.stringify(value) : String(value);
-}
-
-/**
- * 写入操作日志。调用方可 await，也可在业务完成后调用；任何失败均只记录服务端错误。
- * JSON 字段可直接传对象/数组，也可传已序列化字符串。
- */
-async function recordOperation(data = {}) {
-  try {
-    const json = {};
-    JSON_FIELDS.forEach((field) => { json[field] = jsonValue(data[field]); });
-    const duration = data.duration === undefined || data.duration === null || data.duration === ''
-      ? null
-      : Number(data.duration);
-
-    const result = await query(
-      `INSERT INTO sys_operation_log
-       (trace_id, operation_type, business_type, business_id, operation_desc,
-        operator_id, operator_name, operator_ip, operator_time, before_data,
-        after_data, changed_fields, request_url, request_method, request_params,
-        result_status, error_message, duration, extra, remark)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        nullableCut(data.trace_id, 64),
-        nullableCut(data.operation_type || 'OTHER', 64),
-        nullableCut(data.business_type, 64),
-        nullableCut(data.business_id, 64),
-        nullableCut(data.operation_desc, 1000),
-        nullableCut(data.operator_id, 64),
-        nullableCut(data.operator_name, 128),
-        nullableCut(data.operator_ip, 64),
-        data.operator_time || new Date(),
-        json.before_data,
-        json.after_data,
-        json.changed_fields,
-        nullableCut(data.request_url, 1024),
-        nullableCut(data.request_method, 16),
-        json.request_params,
-        nullableCut(data.result_status || 'SUCCESS', 32),
-        nullableCut(data.error_message, 2000),
-        Number.isFinite(duration) ? Math.trunc(duration) : null,
-        json.extra,
-        nullableCut(data.remark, 512),
-      ]
-    );
-    return result.insertId;
-  } catch (error) {
-    console.error('[STP 操作日志写入失败]', error);
-    return null;
-  }
-}
 
 module.exports = router;
 module.exports.recordOperation = recordOperation;

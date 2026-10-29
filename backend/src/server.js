@@ -13,6 +13,9 @@ const { query } = require('./db');
 const statsRoutes = require('./routes/stats');
 const carrierRoutes = require('./routes/carriers');
 const driverRoutes = require('./routes/drivers');
+const factoryRoutes = require('./routes/factories');
+const pickupPointRoutes = require('./routes/pickupPoints');
+const { operationLogMiddleware } = require('./services/operationLogger');
 const shippingTaskRoutes = require('./routes/shippingTasks');
 const trackingRoutes = require('./routes/tracking');
 const freightBillRoutes = require('./routes/freightBills');
@@ -34,6 +37,7 @@ const PORT = Number(process.env.PORT) || 3000;
 app.use(cors());
 // 门户图片以 base64 上传，放宽请求体上限（单张 ≤8MB）
 app.use(express.json({ limit: '25mb' }));
+app.use(operationLogMiddleware);
 
 // 提车照片等静态资源（演示环境；生产由 OSS 承载）
 app.use('/static', express.static(path.join(__dirname, '../public')));
@@ -88,6 +92,8 @@ app.get(['/api/dictionaries', '/api/app/allEnums'], wrap(async (req, res) => {
 app.use('/api/stats', statsRoutes);
 app.use('/api/carriers', carrierRoutes);
 app.use('/api/drivers', driverRoutes);
+app.use('/api/factories', factoryRoutes);
+app.use('/api/pickup-points', pickupPointRoutes);
 app.use('/api/shipping-tasks', shippingTaskRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/freight-bills', freightBillRoutes);

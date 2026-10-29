@@ -1,0 +1,9 @@
+ALTER TABLE `factory`
+  DROP KEY `idx_factory_region`,
+  DROP COLUMN `province_code`,
+  DROP COLUMN `province_name`,
+  DROP COLUMN `city_code`,
+  DROP COLUMN `city_name`,
+  DROP COLUMN `district_code`,
+  DROP COLUMN `district_name`,
+  DROP COLUMN `detail_address`;

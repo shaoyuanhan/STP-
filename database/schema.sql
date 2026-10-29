@@ -3,7 +3,7 @@
 -- 依据《STP 智能运输管理平台 后端技术方案》2.4 节 + 《重构统一契约 v2》第 4 节
 -- 执行方式: mysql -u root -p < schema.sql
 -- 说明:
---   1. 库名 tms_vehicle，共 11 张业务表 + 3 张支撑表 + 1 张单据序列号表 sys_sequences
+--   1. 库名 tms_vehicle，共 12 张业务表 + 3 张支撑表 + 1 张单据序列号表 sys_sequences
 --   2. 所有业务表统一审计字段: id/create_id/create_name/create_time/
 --      update_id/update_name/update_time/deleted(0 未删除/1 已删除)
 --   3. 契约增补: shipping_task 新增 delivery_address(交付地址) 与 version(乐观锁)
@@ -24,6 +24,7 @@ DROP TABLE IF EXISTS dispatch_record;
 DROP TABLE IF EXISTS shipping_task_vehicle;
 DROP TABLE IF EXISTS shipping_task;
 DROP TABLE IF EXISTS driver;
+DROP TABLE IF EXISTS factory;
 DROP TABLE IF EXISTS carrier;
 DROP TABLE IF EXISTS sys_file_meta;
 DROP TABLE IF EXISTS sys_operation_log;
@@ -447,7 +448,62 @@ ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `deleted` = 0;
 
 
 -- ---------------------------------------------------------------------
--- 15. sys_sequences 单据序列号表
+-- 15. factory 工厂主数据表
+-- ---------------------------------------------------------------------
+CREATE TABLE `factory` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `company_code` VARCHAR(32) NOT NULL COMMENT '公司编码',
+  `company_name` VARCHAR(128) NOT NULL COMMENT '公司名称',
+  `factory_code` VARCHAR(32) NOT NULL COMMENT '工厂编码，全局唯一',
+  `factory_name` VARCHAR(128) NOT NULL COMMENT '工厂名称',
+  `contact_person` VARCHAR(64) NOT NULL COMMENT '工厂联系人',
+  `contact_phone` VARCHAR(20) NOT NULL COMMENT '工厂联系人电话，E.164',
+  `create_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
+  `create_name` VARCHAR(64) DEFAULT NULL COMMENT '创建人姓名',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '更新人ID',
+  `update_name` VARCHAR(64) DEFAULT NULL COMMENT '更新人姓名',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_factory_code` (`factory_code`),
+  KEY `idx_factory_company` (`company_code`),
+  KEY `idx_factory_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工厂主数据表';
+
+CREATE TABLE `factory_pickup_point` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `factory_id` BIGINT UNSIGNED NOT NULL COMMENT '所属工厂ID',
+  `pickup_code` VARCHAR(32) NOT NULL COMMENT '提车点编码，全局唯一',
+  `pickup_name` VARCHAR(128) NOT NULL COMMENT '提车点名称/仓库',
+  `province_code` CHAR(6) NOT NULL COMMENT '省级行政区划代码',
+  `province_name` VARCHAR(64) NOT NULL COMMENT '省份名称',
+  `city_code` CHAR(6) NOT NULL COMMENT '地级行政区划代码，用于狮桥startCityCode',
+  `city_name` VARCHAR(64) NOT NULL COMMENT '城市名称',
+  `district_code` CHAR(6) NOT NULL COMMENT '县级行政区划代码',
+  `district_name` VARCHAR(64) NOT NULL COMMENT '区县名称',
+  `detail_address` VARCHAR(255) NOT NULL COMMENT '详细地址，用于狮桥startAddress',
+  `contact_person` VARCHAR(64) NOT NULL COMMENT '提车联系人，用于狮桥startContact',
+  `contact_phone` VARCHAR(20) NOT NULL COMMENT '提车联系人电话，E.164，用于狮桥startPhone',
+  `is_default` TINYINT NOT NULL DEFAULT 0 COMMENT '是否默认提车点：0-否，1-是',
+  `enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用：0-停用，1-启用',
+  `remark` VARCHAR(512) DEFAULT NULL COMMENT '备注',
+  `create_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
+  `create_name` VARCHAR(64) DEFAULT NULL COMMENT '创建人姓名',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '更新人ID',
+  `update_name` VARCHAR(64) DEFAULT NULL COMMENT '更新人姓名',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_factory_pickup_code` (`pickup_code`),
+  KEY `idx_factory_pickup_factory` (`factory_id`, `deleted`, `enabled`),
+  KEY `idx_factory_pickup_region` (`province_code`,`city_code`,`district_code`),
+  KEY `idx_factory_pickup_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工厂提车点主数据表';
+
+-- ---------------------------------------------------------------------
+-- 16. sys_sequences 单据序列号表
 --     CAR   -> CAR-001            承运商编码,全局递增
 --     FY    -> FY202610190001     任务单号,按日重置
 --     YF    -> YF202610190001     运费单号,按日重置
