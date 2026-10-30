@@ -124,6 +124,15 @@ router.post('/', wrap(async (req, res) => {
   ok(res, created, '新增工厂成功');
 }));
 
+router.get(['/import/template', '/import-template'], wrap(async (_req, res) => {
+  sendXlsx(res, {
+    prefix: '工厂导入模板',
+    sheetName: '工厂导入',
+    columns: FACTORY_IMPORT_COLUMNS,
+    rows: [],
+  });
+}));
+
 router.get('/:id', wrap(async (req, res) => {
   const [factory] = await query('SELECT * FROM factory WHERE id = ? AND deleted = 0', [Number(req.params.id)]);
   if (!factory) throw errNotFound('工厂不存在');
@@ -158,15 +167,6 @@ const FACTORY_IMPORT_COLUMNS = [
   { key: 'contact_person', header: '工厂联系人', width: 16, required: true },
   { key: 'contact_phone', header: '工厂联系人电话', width: 20, required: true },
 ];
-
-router.get(['/import/template', '/import-template'], wrap(async (_req, res) => {
-  sendXlsx(res, {
-    prefix: '工厂导入模板',
-    sheetName: '工厂导入',
-    columns: FACTORY_IMPORT_COLUMNS,
-    rows: [],
-  });
-}));
 
 function importCellValue(value) {
   if (value === null || value === undefined) return '';

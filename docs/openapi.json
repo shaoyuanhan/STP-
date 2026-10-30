@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "STP 智能运输管理平台 API（重构版）",
-    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：orderNo（订单号，一车一单唯一）优先，其次 taskNo，兼容 applyNo（须唯一对应单任务，多任务时提示改用 orderNo）；都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()\n- 一车一单：一个发运申请可含多台车（单次 ≤200 台），每台车一个全局唯一订单号 orderNo 并生成独立任务；shipping_task.apply_no 为普通索引、order_no 为非空唯一索引；里程 mileage 由 CRM 发运申请下发（同申请多车共用线路里程），司机到达回传可按车覆盖，结算运费单继承\n- 订单号全链路：发运任务、承运商任务、司机任务、电子签台账、应付运费、在途监控均展示订单号，详情页订单号排在发运申请号之前\n- 在途点位：STP 定时拉取狮桥（配置 LQ_TRACKING_URL 启用，默认每 5 分钟，LQ_TRACKING_INTERVAL_MS 可调），按订单号→任务单号→VIN 匹配任务，去重后写入 transport_track 供运输监控地图与轨迹使用；原 /api/external/tracking/report 推送接口仅保留兼容，后续停用\n- 管理端兼容：列表支持 POST {资源}/queryPage，导出支持 POST {资源}/export；分页同时接受 size 与 pageSize，筛选字段同时接受 snake_case 与 camelCase\n- 外部路径别名：CRM 接口另挂 /api/external/crm/...，狮桥与承运商回传另挂 /api/external/sq/...，处理函数与原路径相同\n- 承运商接单可回填 transportNo、planPickupDate、estimatedArriveTime；POST /api/external/shipping-tasks/cancel-accept 取消接单。计划提车日期可由 CRM 下发，未下发时接单必填\n- 公共支撑：GET /api/app/allCities、GET /api/app/allEnums、POST /api/bos/file/upload、POST /api/operationLog/queryPage、POST /api/drivers/import",
-    "version": "2.7.0"
+    "description": "整车发运业务全流程接口，依据《重构统一契约 v2》。覆盖：内部管理接口（/api，snake_case）、外部系统接口（/api/external，camelCase，CRM/狮桥/WMS 调用，均幂等、不走登录态）。\n\n**通用约定**：\n- 统一响应信封 `{ code, message, data }`；code=00000 成功，A0001 参数校验失败，A0002 业务校验失败（重名/VIN 不匹配等），B0001 系统内部异常，C0001 重复请求（幂等拦截，HTTP 409），D0001 状态不允许该操作/版本冲突（HTTP 409），D0002 数据不存在（HTTP 404）\n- 分页 `?page=1&size=10`（size 上限 100），`data` 为 `{ list, total, page, size }`\n- 任务状态机（线性主链，司机先办提车、仓库后出库，出库完成即进在途）：WAIT_DISPATCH 待派单 → DISPATCHED 已派单 → CARRIER_ACCEPTED 承运商已接单 → PICKED 已提车 → OUTBOUND 已出库 → IN_TRANSIT 在途 → ARRIVED 已到达 → FINISHED 已完结；WAIT_DISPATCH → CANCELLED 已取消（CRM 取消）；DISPATCHED → WAIT_DISPATCH（取消派单）；DISPATCHED → DISPATCHED（改派）\n- 单号规则：任务单号 FY+yyyyMMdd+4 位（按日重置），运费单号 YF+yyyyMMdd+4 位（按日重置），批量派单批次号 PD+yyyyMMdd+4 位，承运商编码 CAR-3 位（全局）；任务单号由 STP 自动生成，CRM 不传\n- 派单/取消派单/改派须携带 version 乐观锁，不匹配返回 D0001「任务状态已变化，请刷新后重试」\n- 外部回调统一定位：orderNo（订单号，一车一单唯一）优先，其次 taskNo，兼容 applyNo（须唯一对应单任务，多任务时提示改用 orderNo）；都无 → A0001\n- 金额 DECIMAL(12,2)，接口可能返回字符串，前端展示/计算前 Number()\n- 一车一单：一个发运申请可含多台车（单次 ≤200 台），每台车一个全局唯一订单号 orderNo 并生成独立任务；shipping_task.apply_no 为普通索引、order_no 为非空唯一索引；里程 mileage 由 CRM 发运申请下发（同申请多车共用线路里程），司机到达回传可按车覆盖，结算运费单继承\n- 订单号全链路：发运任务、承运商任务、司机任务、电子签台账、应付运费、在途监控均展示订单号，详情页订单号排在发运申请号之前\n- 在途点位：STP 定时拉取狮桥（配置 LQ_TRACKING_URL 启用，默认每 5 分钟，LQ_TRACKING_INTERVAL_MS 可调），按订单号→任务单号→VIN 匹配任务，去重后写入 transport_track 供运输监控地图与轨迹使用；原 /api/external/tracking/report 推送接口仅保留兼容，后续停用\n- 管理端兼容：列表支持 POST {资源}/queryPage，导出支持 POST {资源}/export；分页同时接受 size 与 pageSize，筛选字段同时接受 snake_case 与 camelCase\n- 外部路径别名：CRM 接口另挂 /api/external/crm/...，狮桥与承运商回传另挂 /api/external/sq/...，处理函数与原路径相同\n- 承运商接单可回填 transportNo、planPickupDate、estimatedArriveTime；POST /api/external/shipping-tasks/cancel-accept 取消接单。计划提车日期可由 CRM 下发，未下发时接单必填\n- 公共支撑：GET /api/app/allCities、GET /api/app/allEnums、POST /api/bos/file/upload、POST /api/operationLog/queryPage、POST /api/drivers/import\n- 基础数据：工厂支持分页、新增、详情、编辑及 Excel 导入导出；发运地点支持分页、新增、编辑、启停及省市区和工厂选项\n- 文档维护：任何接口新增、变更或删除，必须在同一提交中同步更新本文件",
+    "version": "2.8.0"
   },
   "servers": [
     {
@@ -14,6 +14,9 @@
   "tags": [
     {
       "name": "01 通用"
+    },
+    {
+      "name": "02 基础数据·工厂与发运地点"
     },
     {
       "name": "02 基础数据·承运商"
@@ -41,6 +44,9 @@
     },
     {
       "name": "10 外部接口·狮桥物流"
+    },
+    {
+      "name": "11 系统管理·操作日志"
     },
     {
       "name": "12 外部接口·承运商通用"
@@ -200,6 +206,312 @@
                       "调度调整",
                       "其他"
                     ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/factories": {
+      "get": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "工厂分页列表",
+        "parameters": [
+          { "name": "company_code", "in": "query", "schema": { "type": "string" }, "description": "公司编码，模糊匹配" },
+          { "name": "company_name", "in": "query", "schema": { "type": "string" }, "description": "公司名称，模糊匹配" },
+          { "name": "factory_code", "in": "query", "schema": { "type": "string" }, "description": "工厂编码，模糊匹配" },
+          { "name": "factory_name", "in": "query", "schema": { "type": "string" }, "description": "工厂名称，模糊匹配" },
+          { "name": "contact_person", "in": "query", "schema": { "type": "string" }, "description": "工厂联系人，模糊匹配" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "成功，data 为 {list,total,page,size}，list 元素结构见 Factory" }
+        }
+      },
+      "post": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "新增工厂",
+        "description": "工厂编码全局唯一，重复返回 A0002。请求字段同时兼容 camelCase。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FactoryPayload" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "新增成功，data 为完整 Factory" },
+          "400": { "description": "A0001 参数校验失败 / A0002 工厂编码已存在" }
+        }
+      }
+    },
+    "/api/factories/queryPage": {
+      "post": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "工厂分页查询（POST）",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FactoryQuery" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "成功，data 为 {list,total,page,size}，list 元素结构见 Factory" }
+        }
+      }
+    },
+    "/api/factories/{id}": {
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+      ],
+      "get": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "工厂详情",
+        "responses": {
+          "200": { "description": "成功，data 为 Factory" },
+          "404": { "description": "D0002 工厂不存在" }
+        }
+      },
+      "put": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "编辑工厂",
+        "description": "所有主数据字段均需传入；工厂编码仍执行全局唯一校验。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FactoryPayload" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "保存成功，data 为更新后的 Factory" },
+          "400": { "description": "A0001 参数校验失败 / A0002 工厂编码已存在" },
+          "404": { "description": "D0002 工厂不存在" }
+        }
+      }
+    },
+    "/api/factories/export": {
+      "get": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "导出工厂 Excel（GET）",
+        "description": "接受与工厂列表相同的筛选参数，最多导出 50000 条。",
+        "responses": {
+          "200": {
+            "description": "xlsx 文件",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "导出工厂 Excel（POST）",
+        "description": "筛选条件可传 JSON，字段同 FactoryQuery，最多导出 50000 条。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FactoryQuery" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "xlsx 文件",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/factories/import": {
+      "post": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "工厂 Excel 导入",
+        "description": "multipart 字段名为 file，仅支持 .xlsx，文件不超过 5MB。必需表头：公司编码、公司名称、工厂编码、工厂名称、工厂联系人、工厂联系人电话；逐行独立事务。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "导入完成，data 结构见 FactoryImportResult" },
+          "400": { "description": "A0001 文件缺失、格式错误、表头缺失或无有效数据行" }
+        }
+      }
+    },
+    "/api/factories/import/template": {
+      "get": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "下载工厂导入模板",
+        "description": "别名：GET /api/factories/import-template。",
+        "responses": {
+          "200": {
+            "description": "仅含表头的 xlsx 文件",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pickup-points": {
+      "get": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "发运地点（提车点）分页列表",
+        "parameters": [
+          { "name": "factory_id", "in": "query", "schema": { "type": "integer" }, "description": "所属工厂ID" },
+          { "name": "pickup_code", "in": "query", "schema": { "type": "string" }, "description": "提车点编码，模糊匹配" },
+          { "name": "pickup_name", "in": "query", "schema": { "type": "string" }, "description": "提车点名称/仓库，模糊匹配" },
+          { "name": "province_code", "in": "query", "schema": { "type": "string" }, "description": "省级行政区划代码，精确匹配" },
+          { "name": "contact_person", "in": "query", "schema": { "type": "string" }, "description": "提车联系人，模糊匹配" },
+          { "name": "enabled", "in": "query", "schema": { "type": "integer", "enum": [0, 1] }, "description": "1 启用 / 0 停用" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "成功，data 为 {list,total,page,size}，list 元素结构见 PickupPoint" },
+          "400": { "description": "A0001 启用状态筛选值无效" }
+        }
+      },
+      "post": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "新增发运地点（提车点）",
+        "description": "新增后默认启用；省市区代码必须为有效的三级行政区划且层级匹配；城市编码由后端保存，供狮桥 startCityCode 使用。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PickupPointPayload" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "新增成功，data 为 PickupPoint" },
+          "400": { "description": "A0001 参数或行政区划校验失败 / A0002 提车点编码已存在" },
+          "404": { "description": "D0002 所属工厂不存在" }
+        }
+      }
+    },
+    "/api/pickup-points/{id}": {
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+      ],
+      "put": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "编辑发运地点（提车点）",
+        "description": "编辑不改变启停状态；设为默认时自动取消同工厂其他提车点的默认标识，停用点不可设为默认。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PickupPointPayload" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "保存成功，data 为更新后的 PickupPoint" },
+          "400": { "description": "A0001 参数校验失败 / A0002 编码重复或停用点设为默认" },
+          "404": { "description": "D0002 提车点或所属工厂不存在" }
+        }
+      }
+    },
+    "/api/pickup-points/{id}/status": {
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+      ],
+      "put": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "启用/停用发运地点",
+        "description": "停用默认提车点时同步取消其默认标识。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["enabled"],
+                "properties": {
+                  "enabled": { "type": "integer", "enum": [0, 1], "description": "1 启用 / 0 停用" }
+                }
+              },
+              "example": { "enabled": 0 }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "状态更新成功，data 为 PickupPoint" },
+          "400": { "description": "A0001 状态值无效" },
+          "404": { "description": "D0002 提车点不存在" }
+        }
+      }
+    },
+    "/api/pickup-points/regions": {
+      "get": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "省市区级联选项",
+        "responses": {
+          "200": {
+            "description": "成功，data 为三级省市区树",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "string", "example": "00000" },
+                    "message": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/RegionOption" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pickup-points/factory-options": {
+      "get": {
+        "tags": ["02 基础数据·工厂与发运地点"],
+        "summary": "发运地点所属工厂选项",
+        "responses": {
+          "200": {
+            "description": "成功，data 为工厂选项数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "string", "example": "00000" },
+                    "message": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/FactoryOption" }
+                    }
                   }
                 }
               }
@@ -3555,17 +3867,87 @@
         }
       }
     },
+    "/api/operationLog": {
+      "get": {
+        "tags": ["11 系统管理·操作日志"],
+        "summary": "操作日志分页列表（GET）",
+        "description": "查询结果排除 AUTH 登录日志；响应同时包含 snake_case 和 camelCase 字段。",
+        "parameters": [
+          { "name": "trace_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "operation_type", "in": "query", "schema": { "type": "string" } },
+          { "name": "business_type", "in": "query", "schema": { "type": "string" } },
+          { "name": "business_id", "in": "query", "schema": { "type": "string" }, "description": "模糊匹配业务ID或业务单号" },
+          { "name": "business_id_exact", "in": "query", "schema": { "type": "string" }, "description": "业务ID精确匹配，优先于 business_id" },
+          { "name": "operator_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "operator_name", "in": "query", "schema": { "type": "string" }, "description": "模糊匹配" },
+          { "name": "start_time", "in": "query", "schema": { "type": "string" }, "example": "2026-10-01" },
+          { "name": "end_time", "in": "query", "schema": { "type": "string" }, "example": "2026-10-31" },
+          { "name": "result_status", "in": "query", "schema": { "type": "string" } },
+          { "name": "keyword", "in": "query", "schema": { "type": "string" }, "description": "匹配操作描述、请求地址、错误信息和备注" },
+          { "name": "order", "in": "query", "schema": { "type": "string", "enum": ["asc", "desc"], "default": "desc" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 10, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "成功，data 为 {list,total,page,size}，list 元素结构见 OperationLog" }
+        }
+      }
+    },
     "/api/operationLog/queryPage": {
       "post": {
-        "tags": [
-          "01 通用"
-        ],
-        "summary": "操作日志分页",
-        "description": "POST 分页查询 sys_operation_log。详情为 GET /api/operationLog/{id}。",
+        "tags": ["11 系统管理·操作日志"],
+        "summary": "操作日志分页查询（POST）",
+        "description": "查询结果排除 AUTH 登录日志；发运任务支持按任务单号、申请号或订单号关联查询。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OperationLogQuery" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "成功，data 为 {list,total,page,size}，list 元素结构见 OperationLog" }
+        }
+      }
+    },
+    "/api/operationLog/operators": {
+      "get": {
+        "tags": ["11 系统管理·操作日志"],
+        "summary": "操作人筛选项",
+        "description": "按最近操作时间倒序，最多返回 500 个操作人。",
         "responses": {
           "200": {
-            "description": "分页列表"
+            "description": "成功，data 为操作人数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "string", "example": "00000" },
+                    "message": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/OperationLogOperator" }
+                    }
+                  }
+                }
+              }
+            }
           }
+        }
+      }
+    },
+    "/api/operationLog/{id}": {
+      "get": {
+        "tags": ["11 系统管理·操作日志"],
+        "summary": "操作日志详情",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "成功，data 为 OperationLog，包含关联后的 business_no" },
+          "400": { "description": "A0001 日志ID不正确" },
+          "404": { "description": "D0002 操作日志不存在" }
         }
       }
     },
@@ -3586,6 +3968,219 @@
   },
   "components": {
     "schemas": {
+      "Factory": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "company_code": { "type": "string", "example": "SX" },
+          "company_name": { "type": "string", "example": "深向科技" },
+          "factory_code": { "type": "string", "example": "JH" },
+          "factory_name": { "type": "string", "example": "江淮工厂" },
+          "contact_person": { "type": "string", "example": "张三" },
+          "contact_phone": { "type": "string", "example": "13800000000" },
+          "create_time": { "type": "string", "example": "2026-10-29 10:00:00" },
+          "update_time": { "type": "string", "example": "2026-10-29 10:00:00" }
+        }
+      },
+      "FactoryPayload": {
+        "type": "object",
+        "required": ["company_code", "company_name", "factory_code", "factory_name", "contact_person", "contact_phone"],
+        "properties": {
+          "company_code": { "type": "string", "maxLength": 32 },
+          "company_name": { "type": "string", "maxLength": 128 },
+          "factory_code": { "type": "string", "maxLength": 32, "description": "全局唯一" },
+          "factory_name": { "type": "string", "maxLength": 128 },
+          "contact_person": { "type": "string", "maxLength": 64 },
+          "contact_phone": { "type": "string", "maxLength": 20 }
+        },
+        "example": {
+          "company_code": "SX",
+          "company_name": "深向科技",
+          "factory_code": "JH",
+          "factory_name": "江淮工厂",
+          "contact_person": "张三",
+          "contact_phone": "13800000000"
+        }
+      },
+      "FactoryQuery": {
+        "type": "object",
+        "properties": {
+          "company_code": { "type": "string", "description": "模糊匹配" },
+          "company_name": { "type": "string", "description": "模糊匹配" },
+          "factory_code": { "type": "string", "description": "模糊匹配" },
+          "factory_name": { "type": "string", "description": "模糊匹配" },
+          "contact_person": { "type": "string", "description": "模糊匹配" },
+          "page": { "type": "integer", "default": 1 },
+          "size": { "type": "integer", "default": 10, "maximum": 100 }
+        }
+      },
+      "FactoryImportResult": {
+        "type": "object",
+        "properties": {
+          "total": { "type": "integer" },
+          "success": { "type": "integer" },
+          "failed": { "type": "integer" },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": { "type": "integer", "description": "Excel 行号" },
+                "success": { "type": "boolean" },
+                "code": { "type": "string", "example": "00000" },
+                "message": { "type": "string" },
+                "factoryId": { "type": "integer", "description": "导入成功时返回" }
+              }
+            }
+          }
+        }
+      },
+      "FactoryOption": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "factory_code": { "type": "string" },
+          "factory_name": { "type": "string" },
+          "company_name": { "type": "string" }
+        }
+      },
+      "PickupPoint": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "factory_id": { "type": "integer" },
+          "factory_code": { "type": "string" },
+          "factory_name": { "type": "string" },
+          "company_code": { "type": "string" },
+          "company_name": { "type": "string" },
+          "pickup_code": { "type": "string", "example": "JH-HF-SCK" },
+          "pickup_name": { "type": "string", "example": "合肥-生产库" },
+          "province_code": { "type": "string", "example": "340000" },
+          "province_name": { "type": "string", "example": "安徽省" },
+          "city_code": { "type": "string", "example": "340100", "description": "地级行政区划代码，供狮桥 startCityCode 使用" },
+          "city_name": { "type": "string", "example": "合肥市" },
+          "district_code": { "type": "string", "example": "340104" },
+          "district_name": { "type": "string", "example": "蜀山区" },
+          "detail_address": { "type": "string" },
+          "contact_person": { "type": "string" },
+          "contact_phone": { "type": "string" },
+          "is_default": { "type": "integer", "enum": [0, 1] },
+          "enabled": { "type": "integer", "enum": [0, 1] },
+          "remark": { "type": "string", "nullable": true },
+          "create_time": { "type": "string" },
+          "update_time": { "type": "string" }
+        }
+      },
+      "PickupPointPayload": {
+        "type": "object",
+        "required": ["factory_id", "pickup_code", "pickup_name", "province_code", "city_code", "district_code", "detail_address", "contact_person", "contact_phone"],
+        "properties": {
+          "factory_id": { "type": "integer" },
+          "pickup_code": { "type": "string", "maxLength": 32, "description": "全局唯一" },
+          "pickup_name": { "type": "string", "maxLength": 128 },
+          "province_code": { "type": "string", "pattern": "^\\d{6}$" },
+          "city_code": { "type": "string", "pattern": "^\\d{6}$", "description": "地级行政区划代码" },
+          "district_code": { "type": "string", "pattern": "^\\d{6}$" },
+          "detail_address": { "type": "string", "maxLength": 255 },
+          "contact_person": { "type": "string", "maxLength": 64 },
+          "contact_phone": { "type": "string", "maxLength": 20 },
+          "is_default": { "type": "boolean", "default": false, "description": "同一工厂最多一个默认提车点；停用点不可设为默认" },
+          "remark": { "type": "string", "maxLength": 512 }
+        },
+        "example": {
+          "factory_id": 1,
+          "pickup_code": "JH-HF-SCK",
+          "pickup_name": "合肥-生产库",
+          "province_code": "340000",
+          "city_code": "340100",
+          "district_code": "340104",
+          "detail_address": "安徽省合肥市蜀山区锦绣社区江淮重卡厂",
+          "contact_person": "刘海宾",
+          "contact_phone": "17755101872",
+          "is_default": true,
+          "remark": ""
+        }
+      },
+      "PickupPointQuery": {
+        "type": "object",
+        "properties": {
+          "factory_id": { "type": "integer" },
+          "pickup_code": { "type": "string", "description": "模糊匹配" },
+          "pickup_name": { "type": "string", "description": "模糊匹配" },
+          "province_code": { "type": "string", "description": "精确匹配" },
+          "contact_person": { "type": "string", "description": "模糊匹配" },
+          "enabled": { "type": "integer", "enum": [0, 1] },
+          "page": { "type": "integer", "default": 1 },
+          "size": { "type": "integer", "default": 10, "maximum": 100 }
+        }
+      },
+      "RegionOption": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string", "example": "安徽省" },
+          "value": { "type": "string", "example": "340000" },
+          "children": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RegionOption" }
+          }
+        }
+      },
+      "OperationLogQuery": {
+        "type": "object",
+        "properties": {
+          "trace_id": { "type": "string" },
+          "operation_type": { "type": "string" },
+          "business_type": { "type": "string", "example": "SHIPPING_TASK" },
+          "business_id": { "type": "string", "description": "模糊匹配业务ID或业务单号；发运任务可匹配任务单号、申请号、订单号" },
+          "business_id_exact": { "type": "string", "description": "业务ID精确匹配，优先于 business_id" },
+          "operator_id": { "type": "string" },
+          "operator_name": { "type": "string", "description": "模糊匹配" },
+          "start_time": { "type": "string", "example": "2026-10-01" },
+          "end_time": { "type": "string", "example": "2026-10-31" },
+          "result_status": { "type": "string", "example": "SUCCESS" },
+          "keyword": { "type": "string", "description": "匹配操作描述、请求地址、错误信息和备注" },
+          "order": { "type": "string", "enum": ["asc", "desc"], "default": "desc" },
+          "page": { "type": "integer", "default": 1 },
+          "size": { "type": "integer", "default": 10, "maximum": 100 }
+        }
+      },
+      "OperationLog": {
+        "type": "object",
+        "description": "响应同时包含 snake_case 和 camelCase 字段；business_no 为关联后的业务单号",
+        "properties": {
+          "id": { "type": "integer" },
+          "trace_id": { "type": "string", "nullable": true },
+          "operation_type": { "type": "string", "nullable": true },
+          "business_type": { "type": "string", "nullable": true },
+          "business_id": { "type": "string", "nullable": true },
+          "business_no": { "type": "string", "nullable": true },
+          "operation_desc": { "type": "string", "nullable": true },
+          "operator_id": { "type": "string", "nullable": true },
+          "operator_name": { "type": "string", "nullable": true },
+          "operator_ip": { "type": "string", "nullable": true },
+          "operator_time": { "type": "string" },
+          "request_url": { "type": "string", "nullable": true },
+          "request_method": { "type": "string", "nullable": true },
+          "result_status": { "type": "string", "nullable": true },
+          "error_message": { "type": "string", "nullable": true },
+          "duration": { "type": "integer", "nullable": true },
+          "before_data": { "type": "string", "nullable": true, "description": "JSON 字符串" },
+          "after_data": { "type": "string", "nullable": true, "description": "JSON 字符串" },
+          "changed_fields": { "type": "string", "nullable": true, "description": "JSON 字符串" },
+          "request_params": { "type": "string", "nullable": true, "description": "JSON 字符串" },
+          "extra": { "type": "string", "nullable": true, "description": "JSON 字符串" },
+          "remark": { "type": "string", "nullable": true }
+        }
+      },
+      "OperationLogOperator": {
+        "type": "object",
+        "properties": {
+          "operator_id": { "type": "string", "nullable": true },
+          "operator_name": { "type": "string" },
+          "operation_count": { "type": "integer" },
+          "last_operation_time": { "type": "string" }
+        }
+      },
       "DriverSyncItem": {
         "type": "object",
         "description": "司机同步对象，单条请求与批量数组元素通用",
